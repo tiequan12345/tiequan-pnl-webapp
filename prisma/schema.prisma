@@ -21,7 +21,6 @@ model Asset {
   updated_at        DateTime          @updatedAt
 
   ledger_transactions LedgerTransaction[]
-  fee_transactions    LedgerTransaction[] @relation("FeeAssetTransactions")
   price_latest        PriceLatest?
 
   @@index([symbol])

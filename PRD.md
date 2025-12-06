@@ -678,6 +678,13 @@ Unpriced assets:
 
 Phase 3 is complete when holdings math is correct for simple test cases and prices refresh works end‑to‑end.
 
+Current implementation (Phase 3 – in progress, this session):
+	•	Implemented `/api/prices/refresh` that queries AUTO assets, fetches prices via CoinGecko (crypto) and Yahoo Finance (equity), and upserts `prices_latest`.
+	•	Built shared holdings aggregation (`lib/holdings`) and `/api/holdings` returning rows + summary (by type/volatility) with pricing resolution and stale flags.
+	•	Added `/holdings` page with per-account and consolidated views, live quantities/market values, and stale/manual badges.
+	•	Wired `DashboardView` to live holdings data (charts, hero total, top holdings) with stale-price warning and “Refresh Prices” action that calls `/api/prices/refresh` then reloads holdings.
+	•	Schema/migrations cleaned: legacy ledger `base_price/base_value/fee` columns removed; Prisma generate succeeds against current schema.
+
 ⸻
 
 Phase 4 – Dashboard
