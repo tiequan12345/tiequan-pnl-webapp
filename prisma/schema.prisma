@@ -1,0 +1,143 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum AssetType {
+  CRYPTO
+  EQUITY
+  STABLE
+  NFT
+  OFFLINE
+  CASH
+  OTHER
+}
+
+enum VolatilityBucket {
+  CASH_LIKE
+  STABLE
+  VOLATILE
+}
+
+enum PricingMode {
+  AUTO
+  MANUAL
+}
+
+enum AccountType {
+  CEX
+  DEX_WALLET
+  BROKER
+  BANK
+  NFT_WALLET
+  OFFLINE
+  OTHER
+}
+
+enum AccountStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum TxDirection {
+  IN
+  OUT
+}
+
+enum TxType {
+  DEPOSIT
+  WITHDRAWAL
+  TRADE_BUY
+  TRADE_SELL
+  YIELD
+  FEE
+  TRANSFER_IN
+  TRANSFER_OUT
+  NFT_PURCHASE
+  NFT_SALE
+  OFFLINE_IN
+  OFFLINE_OUT
+  OTHER
+}
+
+model Asset {
+  id                Int               @id @default(autoincrement())
+  symbol            String
+  name              String
+  type              AssetType
+  volatility_bucket VolatilityBucket
+  chain_or_market   String
+  pricing_mode      PricingMode
+  manual_price      Decimal?
+  metadata_json     Json?
+  created_at        DateTime          @default(now())
+  updated_at        DateTime          @updatedAt
+
+  ledger_transactions LedgerTransaction[]
+  fee_transactions    LedgerTransaction[] @relation("FeeAssetTransactions")
+  price_latest        PriceLatest?
+
+  @@index([symbol])
+}
+
+model Account {
+  id              Int                 @id @default(autoincrement())
+  name            String
+  platform        String
+  account_type    AccountType
+  chain_or_market String?
+  status          AccountStatus
+  notes           String?
+  created_at      DateTime            @default(now())
+  updated_at      DateTime            @updatedAt
+
+  ledger_transactions LedgerTransaction[]
+
+  @@index([name])
+}
+
+model LedgerTransaction {
+  id                Int        @id @default(autoincrement())
+  date_time         DateTime
+  account_id        Int
+  asset_id          Int
+  quantity          Decimal
+  direction         TxDirection?
+  base_price        Decimal
+  base_value        Decimal
+  tx_type           TxType
+  fee_asset_id      Int?
+  fee_quantity      Decimal?
+  external_reference String?
+  notes             String?
+  created_at        DateTime   @default(now())
+  updated_at        DateTime   @updatedAt
+
+  account   Account @relation(fields: [account_id], references: [id])
+  asset     Asset   @relation(fields: [asset_id], references: [id])
+  fee_asset Asset?  @relation("FeeAssetTransactions", fields: [fee_asset_id], references: [id])
+
+  @@index([date_time])
+  @@index([account_id])
+  @@index([asset_id])
+  @@index([tx_type])
+}
+
+model PriceLatest {
+  id            Int      @id @default(autoincrement())
+  asset_id      Int      @unique
+  price_in_base Decimal
+  source        String
+  last_updated  DateTime
+
+  asset Asset @relation(fields: [asset_id], references: [id])
+}
+
+model Setting {
+  key   String @id
+  value String
+}

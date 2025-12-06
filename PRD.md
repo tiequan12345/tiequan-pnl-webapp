@@ -11,6 +11,12 @@ Tech stack (fixed):
 	•	ORM: Recommended (assume Prisma).
 	•	Auth: Minimal, single user, env-configured.
 
+UI / UX Baseline and Aesthetic Constraints:
+	•	The existing `app/page.tsx` implementation and layout (sidebar, top bar, cards, typography, spacing, and general visual styling) are the canonical design baseline.
+	•	All future phases (including routing, auth, and data wiring) must preserve this aesthetic as closely as possible.
+	•	Enabling functionality (auth, DB, APIs, routing) should be done by wiring real data and flows under or around the existing shell, not by replacing it with a new visual design.
+	•	When refactoring for URL-based routing (e.g., `/`, `/assets`, `/accounts`, `/ledger`, `/holdings`, `/settings`), extract and reuse components from `app/page.tsx` so that the signed-in experience looks and feels the same as the current mock.
+
 ⸻
 
 2. Goals and Non‑Goals
@@ -22,6 +28,7 @@ Goals (MVP)
 	•	Displays a usable, correct dashboard and holdings view.
 	•	Allows manual transaction entry and CSV import.
 	•	Supports basic settings and backups.
+	•	Preserves the existing dashboard shell aesthetic as the primary UX, adding functionality behind it.
 
 Explicit Non‑Goals (MVP)
 	•	Multi‑user support or roles.
@@ -30,6 +37,7 @@ Explicit Non‑Goals (MVP)
 	•	Direct broker/CEX/wallet integrations.
 	•	Complex performance metrics (IRR, drawdowns, risk metrics).
 	•	Historical pricing and time‑series performance.
+	•	Major visual redesign of the dashboard shell; layout changes should be incremental and in service of functionality, not aesthetics.
 
 ⸻
 
@@ -69,7 +77,7 @@ assets
 Behavior:
 	•	If pricing_mode = AUTO, use prices_latest.price_in_base (if present).
 	•	If MANUAL, use manual_price.
-	•	If neither available, asset is “unpriced”; holdings using it should be flagged and either excluded from totals or clearly marked as unpriced in UI and dashboard.
+	•	If neither available, asset is "unpriced"; holdings using it should be flagged and either excluded from totals or clearly marked as unpriced in UI and dashboard.
 
 accounts
 	•	id (PK)
@@ -158,12 +166,13 @@ Rules:
 	•	Unpriced holdings:
 	•	Excluded from total value/allocations or clearly flagged and shown separately (but do not silently include them at 0 without UI warning).
 	•	No historical chart in MVP.
-	•	Should show “Prices stale” if:
+	•	Should show "Prices stale" if:
 	•	Any AUTO assets have prices_latest.last_updated older than configured threshold (e.g., 24h or refresh interval * 3).
+	•	The look and feel of the dashboard (sidebar, typography, cards, charts) should remain consistent with the existing `app/page.tsx` mock; wiring real data must respect this visual design.
 
 4.2.2 Assets (/assets)
 Table:
-	•	Columns: symbol, name, type, volatility bucket, chain/market, pricing mode, manual price (if applicable), last price (from prices_latest if AUTO), last updated, status icon for “unpriced”.
+	•	Columns: symbol, name, type, volatility bucket, chain/market, pricing mode, manual price (if applicable), last price (from prices_latest if AUTO), last updated, status icon for "unpriced".
 
 Actions:
 	•	Create asset:
@@ -226,7 +235,7 @@ Flow:
 	•	Resolve account_id via account name.
 	•	Resolve asset_id via asset symbol.
 	•	If account or asset missing:
-	•	MVP approach (per spec: Option 2 is “MVP‑friendly”):
+	•	MVP approach (per spec: Option 2 is "MVP‑friendly"):
 	•	Show list of unknown accounts/assets with inline creation UI:
 	•	For accounts: name, platform, account_type, status default ACTIVE.
 	•	For assets: symbol, name, type, volatility_bucket, pricing_mode (default MANUAL).
@@ -248,7 +257,7 @@ Two modes:
 
 Columns:
 	•	Asset.
-	•	Account (for per-account view; for consolidated, “All accounts” or aggregated row).
+	•	Account (for per-account view; for consolidated, "All accounts" or aggregated row).
 	•	Quantity.
 	•	Average cost (per unit).
 	•	Total cost basis.
@@ -285,7 +294,7 @@ Holdings logic:
 	•	unrealized_pnl = market_value - total_cost_basis.
 	•	pnl_pct = unrealized_pnl / total_cost_basis (handle 0 cost: show N/A or 0%).
 
-Unpriced assets: mark clearly; show quantity and cost basis, but blank or “Unpriced” for current price, market value, and PnL.
+Unpriced assets: mark clearly; show quantity and cost basis, but blank or "Unpriced" for current price, market value, and PnL.
 
 4.2.7 Settings (/settings)
 Controls:
@@ -294,7 +303,7 @@ Controls:
 	•	Price refresh:
 	•	Toggle AUTO_REFRESH_ON/OFF.
 	•	Interval configuration (e.g., 5/15/60 min).
-	•	Button: “Refresh Prices Now”.
+	•	Button: "Refresh Prices Now".
 	•	Backups / exports:
 	•	Buttons to export:
 	•	Assets as CSV.
@@ -334,6 +343,7 @@ There is no historical price table for MVP.
 	•	App assumed to run behind VPN / private network. Still:
 	•	Use HTTPS if exposed.
 	•	Rate limiting and brute-force protection are nice-to-have, not required for MVP.
+	•	Auth and routing changes must integrate with the existing `app/page.tsx` shell so that the post-login experience retains the current layout and styling.
 
 ⸻
 
@@ -344,10 +354,13 @@ There is no historical price table for MVP.
 	•	Use DB indexes as defined.
 	•	Reliability:
 	•	DB backups via exports.
-	•	If price refresh fails, “Prices stale” warning should be visible.
+	•	If price refresh fails, "Prices stale" warning should be visible.
 	•	Observability (MVP‑light):
 	•	Log API errors.
 	•	Show user‑visible error toasts where sensible.
+	•	UX consistency:
+	•	Major layout changes should be avoided; new functionality should be slotted into or around the existing dashboard shell where possible.
+	•	Refactors for routing or state management should preserve the current aesthetic and interaction patterns.
 
 ⸻
 
@@ -405,7 +418,7 @@ All endpoints are authenticated.
 
 Phase 0 – Project Setup & Skeleton
 
-Objective: Have a running, authenticated Next.js app with DB connected and basic routing.
+Objective: Have a running, authenticated Next.js app with DB connected and basic routing, while preserving the existing dashboard shell aesthetic defined in `app/page.tsx`.
 
 Scope:
 	•	Next.js App Router project initialized.
@@ -415,20 +428,21 @@ Scope:
 	•	Simple login page that checks a single password from env.
 	•	Authenticated layout; all app pages require login.
 	•	Basic layout:
-	•	Top nav with links: Dashboard, Assets, Accounts, Ledger, Holdings, Settings.
-	•	Placeholder content on each page.
+	•	Top-level navigation for Dashboard, Assets, Accounts, Ledger, Holdings, Settings is available via routes and/or shell state.
+	•	The signed-in experience reuses the existing `app/page.tsx` UI shell (sidebar, top bar, cards, colors); refactors must not materially change the visual design, only how data and routing are wired underneath.
+	•	Placeholder content on each page that fits naturally into the current design.
 
-Deliverable: Deployed or locally running app where user can log in and click through empty pages.
+Deliverable: Deployed or locally running app where user can log in and click through empty pages that visually match the existing mock.
 
 Verification steps:
 	1.	Start app; attempt to access /:
 	•	Expect redirect to /login if not authenticated.
 	2.	Enter correct password:
-	•	Expect redirect to / (Dashboard placeholder).
+	•	Expect redirect to / (Dashboard placeholder using the existing shell aesthetic).
 	3.	Enter incorrect password:
 	•	Expect visible error; stay on login page.
 	4.	Navigate to /assets, /accounts, /ledger, /holdings, /settings:
-	•	Each page loads without server errors, displays placeholder headings.
+	•	Each page loads without server errors, displays placeholder headings or cards inside the same visual shell.
 	5.	Check DB:
 	•	After running initial migrations, SQLite file exists.
 	•	Running ORM client in a script can connect without error.
@@ -445,13 +459,14 @@ Scope:
 	•	Implement full schema for assets, accounts, settings (basic keys).
 	•	Build /assets:
 	•	List table with pagination (even if unnecessary now).
-	•	“Add asset” form (modal or separate page).
-	•	“Edit asset” form.
+	•	"Add asset" form (modal or separate page).
+	•	"Edit asset" form.
 	•	Validations for required fields and enums.
 	•	Build /accounts:
 	•	List table.
 	•	Add/edit account.
 	•	Activate/deactivate via toggle.
+	•	UI should reuse and extend components extracted from the existing shell to keep the same aesthetic.
 
 Deliverable: After login, user can create, edit, and list assets and accounts, and data is persisted.
 
@@ -459,14 +474,14 @@ Verification steps:
 
 Assets:
 	1.	Go to /assets:
-	•	Table shows “no assets” state.
-	2.	Click “Add asset”:
+	•	Table shows "no assets" state.
+	2.	Click "Add asset":
 	•	Fill symbol, name, type, volatility bucket, pricing_mode.
 	•	Submit.
 	•	Expect new row in table with correct values.
 	3.	Refresh browser:
 	•	Asset still present with same values.
-	4.	Click “Edit” on asset:
+	4.	Click "Edit" on asset:
 	•	Change name and pricing_mode.
 	•	Save and confirm changes reflected.
 	5.	Attempt invalid input:
@@ -475,7 +490,7 @@ Assets:
 
 Accounts:
 	1.	Go to /accounts:
-	•	Table shows “no accounts” state.
+	•	Table shows "no accounts" state.
 	2.	Add an account:
 	•	Fill name, platform, account_type, chain_or_market, status ACTIVE.
 	•	Save and see row.
@@ -508,6 +523,7 @@ Scope:
 	•	On submit:
 	•	Create ledger_transactions row(s).
 	•	Compute base_value when base_price present.
+	•	UI elements (filters, table, buttons) should be aligned with the current Ledger section styling in `app/page.tsx`.
 
 Deliverable: User can create transactions via UI and see them in list, filtered.
 
@@ -518,7 +534,7 @@ Pre-setup:
 
 Manual entry:
 	2.	Navigate to /ledger:
-	•	Initially empty table with “no transactions” message.
+	•	Initially empty table with "no transactions" message.
 	3.	Add a transaction:
 	•	Date: set a specific date/time.
 	•	Account: select existing account.
@@ -569,11 +585,12 @@ Scope:
 	•	Implement /holdings page:
 	•	Table with quantity, average cost, total cost basis, current price, market value, PnL, PnL%.
 	•	Filters for account and asset type.
-	•	Implement “Refresh Prices Now” on Settings and wire it to /api/prices/refresh.
+	•	Implement "Refresh Prices Now" on Settings and wire it to /api/prices/refresh.
 	•	Implement basic external price fetching for at least:
 	•	Crypto by symbol or symbol+chain.
 	•	Equities by ticker+market.
 	•	If you want to avoid API key headaches, stub this in dev, but PRD assumes actual provider when deployed.
+	•	Holdings UI should evolve from the existing Holdings section design in `app/page.tsx`, maintaining its table style and controls.
 
 Deliverable: User can see holdings and valuations update when prices change.
 
@@ -583,7 +600,7 @@ Setup:
 	1.	Create assets:
 	•	Asset A: BTC, type CRYPTO, pricing_mode AUTO.
 	•	Asset B: USD, type CASH, pricing_mode MANUAL, manual_price 1.
-	2.	Create an account, e.g., “Binance Main”.
+	2.	Create an account, e.g., "Binance Main".
 	3.	Create ledger transactions:
 	•	BUY 1 BTC at 20,000.
 	•	BUY 1 BTC at 30,000.
@@ -616,7 +633,7 @@ Manual pricing:
 
 Auto pricing:
 	7.	Change BTC to pricing_mode = AUTO, clear manual_price.
-	8.	Trigger “Refresh Prices Now” from /settings:
+	8.	Trigger "Refresh Prices Now" from /settings:
 	•	Confirm API is called and prices_latest row for BTC updated.
 	9.	Reload /holdings:
 	•	BTC current_price should match fetched price.
@@ -629,7 +646,7 @@ Unpriced assets:
 	•	On /holdings, asset C should show:
 	•	Quantity present.
 	•	Cost basis present.
-	•	Current price/market value marked as “Unpriced” or blank with warning.
+	•	Current price/market value marked as "Unpriced" or blank with warning.
 	13.	On Dashboard later, ensure unpriced assets are not silently counted.
 
 Phase 3 is complete when holdings math is correct for simple test cases and prices refresh works end‑to‑end.
@@ -638,7 +655,7 @@ Phase 3 is complete when holdings math is correct for simple test cases and pric
 
 Phase 4 – Dashboard
 
-Objective: Show a correct portfolio overview with allocations and activity.
+Objective: Show a correct portfolio overview with allocations and activity, preserving the existing dashboard visual design.
 
 Scope:
 	•	Implement / dashboard:
@@ -647,8 +664,9 @@ Scope:
 	•	Allocation by volatility bucket (pie chart).
 	•	Top 10 holdings by market value (bar or table).
 	•	Recent 10 transactions.
-	•	“Prices stale” warning if appropriate.
+	•	"Prices stale" warning if appropriate.
 	•	Reuse holdings and ledger APIs.
+	•	Use the existing `DashboardView` layout and styling from `app/page.tsx` as the base; swap in live data and state without significantly altering the aesthetic.
 
 Deliverable: Dashboard shows coherent, correct data for current state.
 
@@ -663,7 +681,7 @@ Using data from Phase 3:
 Total portfolio value:
 	2.	Manually compute total:
 	•	From /holdings, sum market_value for all priced assets.
-	3.	Compare with dashboard’s “Total portfolio value”:
+	3.	Compare with dashboard’s "Total portfolio value":
 	•	Values must match within rounding.
 
 Allocation by asset type:
@@ -679,20 +697,20 @@ Top holdings:
 	7.	From holdings:
 	•	Sort by market_value descending.
 	•	Take top 10.
-	8.	Compare with dashboard’s “Top holdings”:
+	8.	Compare with dashboard’s "Top holdings":
 	•	Same ordering, same quantities and market values.
 
 Recent transactions:
 	9.	From /ledger:
 	•	Sort by date_time desc.
 	•	Take 10.
-	10.	Compare with dashboard’s “Recent activity” table:
+	10.	Compare with dashboard’s "Recent activity" table:
 	•	Same 10 rows, same order and values.
 
 Prices stale warning:
 	11.	Manually update DB to set last_updated for some AUTO asset to a very old date (or wait beyond threshold).
 	12.	Reload dashboard:
-	•	“Prices stale” or similar warning visible.
+	•	"Prices stale" or similar warning visible.
 	13.	Set timestamps back to fresh (or re‑refresh prices):
 	•	Warning disappears.
 
@@ -741,7 +759,7 @@ Flow:
 	•	Preview table shows normalized rows with parsed dates, quantities, tx_types.
 	•	Rows with invalid data (if any) are flagged; user can mark them to ignore.
 	6.	Commit:
-	•	Click “Import”/“Commit”.
+	•	Click "Import"/"Commit".
 	•	Success message with counts: created rows, skipped rows.
 	7.	/ledger view:
 	•	Filter by date/account/asset to confirm imported transactions present and correct.
@@ -765,7 +783,7 @@ Scope:
 	•	/settings:
 	•	Set and persist base currency and timezone.
 	•	Toggle auto price refresh and interval.
-	•	“Refresh Prices Now” button (already wired).
+	•	"Refresh Prices Now" button (already wired).
 	•	Export buttons for Assets, Accounts, Ledger, and optional DB.
 	•	All values stored in settings table and used by relevant features (e.g., timezone for date display, base currency in labels).
 
@@ -789,7 +807,7 @@ Price settings:
 	•	If you have a background job, ensure it triggers; if not, this may be a planned future feature – in MVP, at least the flag is saved and inspectable.
 
 Exports:
-	7.	Click “Export Assets”:
+	7.	Click "Export Assets":
 	•	Browser downloads a CSV.
 	•	Open CSV:
 	•	Contains header row and all asset columns.
