@@ -7,73 +7,16 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum AssetType {
-  CRYPTO
-  EQUITY
-  STABLE
-  NFT
-  OFFLINE
-  CASH
-  OTHER
-}
-
-enum VolatilityBucket {
-  CASH_LIKE
-  STABLE
-  VOLATILE
-}
-
-enum PricingMode {
-  AUTO
-  MANUAL
-}
-
-enum AccountType {
-  CEX
-  DEX_WALLET
-  BROKER
-  BANK
-  NFT_WALLET
-  OFFLINE
-  OTHER
-}
-
-enum AccountStatus {
-  ACTIVE
-  INACTIVE
-}
-
-enum TxDirection {
-  IN
-  OUT
-}
-
-enum TxType {
-  DEPOSIT
-  WITHDRAWAL
-  TRADE_BUY
-  TRADE_SELL
-  YIELD
-  FEE
-  TRANSFER_IN
-  TRANSFER_OUT
-  NFT_PURCHASE
-  NFT_SALE
-  OFFLINE_IN
-  OFFLINE_OUT
-  OTHER
-}
-
 model Asset {
   id                Int               @id @default(autoincrement())
   symbol            String
   name              String
-  type              AssetType
-  volatility_bucket VolatilityBucket
+  type              String
+  volatility_bucket String
   chain_or_market   String
-  pricing_mode      PricingMode
+  pricing_mode      String
   manual_price      Decimal?
-  metadata_json     Json?
+  metadata_json     String?
   created_at        DateTime          @default(now())
   updated_at        DateTime          @updatedAt
 
@@ -88,9 +31,9 @@ model Account {
   id              Int                 @id @default(autoincrement())
   name            String
   platform        String
-  account_type    AccountType
+  account_type    String
   chain_or_market String?
-  status          AccountStatus
+  status          String
   notes           String?
   created_at      DateTime            @default(now())
   updated_at      DateTime            @updatedAt
@@ -101,21 +44,21 @@ model Account {
 }
 
 model LedgerTransaction {
-  id                Int        @id @default(autoincrement())
-  date_time         DateTime
-  account_id        Int
-  asset_id          Int
-  quantity          Decimal
-  direction         TxDirection?
-  base_price        Decimal
-  base_value        Decimal
-  tx_type           TxType
-  fee_asset_id      Int?
-  fee_quantity      Decimal?
+  id                 Int        @id @default(autoincrement())
+  date_time          DateTime
+  account_id         Int
+  asset_id           Int
+  quantity           Decimal
+  direction          String?
+  base_price         Decimal
+  base_value         Decimal
+  tx_type            String
+  fee_asset_id       Int?
+  fee_quantity       Decimal?
   external_reference String?
-  notes             String?
-  created_at        DateTime   @default(now())
-  updated_at        DateTime   @updatedAt
+  notes              String?
+  created_at         DateTime   @default(now())
+  updated_at         DateTime   @updatedAt
 
   account   Account @relation(fields: [account_id], references: [id])
   asset     Asset   @relation(fields: [asset_id], references: [id])

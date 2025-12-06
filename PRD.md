@@ -62,6 +62,11 @@ Explicit Non‑Goals (MVP)
 
 4.1 Data Model (DB Schema)
 
+Implementation note (current schema / SQLite):
+	•	All enum-like fields described below are stored as `String` columns in SQLite via Prisma rather than native DB enums.
+	•	The allowed values still follow the enum sets listed in this PRD and are enforced in the application/API layer (validation in API handlers and forms).
+	•	`assets.metadata_json` is implemented as a nullable `String` column that stores JSON text when used, rather than a native JSON column.
+
 assets
 	•	id (PK)
 	•	symbol (string, indexed)
@@ -146,6 +151,11 @@ For MVP you can compute holdings on the fly; positions table can be deferred. If
 ⸻
 
 4.2 Pages / Screens
+
+Routing & layout (current implementation):
+	•	The signed‑in experience is implemented using a Next.js `(authenticated)` route group under `app/(authenticated)`.
+	•	Routes `/`, `/assets`, `/accounts`, `/ledger`, `/holdings`, and `/settings` all render inside a shared `AppShell` layout provided by `app/(authenticated)/layout.tsx`, which wraps pages with the sidebar, top bar, and content shell extracted from the original `app/page.tsx` mock.
+	•	The original monolithic `app/page.tsx` has been superseded by this route‑group layout; it no longer owns the signed‑in experience directly.
 
 4.2.1 Dashboard (/)
 Displays:
@@ -345,6 +355,11 @@ There is no historical price table for MVP.
 	•	Rate limiting and brute-force protection are nice-to-have, not required for MVP.
 	•	Auth and routing changes must integrate with the existing `app/page.tsx` shell so that the post-login experience retains the current layout and styling.
 
+Current implementation (Phase 0):
+	•	Single-user auth is implemented via an `APP_PASSWORD` environment variable that the `/api/login` route validates against the submitted password.
+	•	The `/login` page presents a password form that POSTs to `/api/login`; on success, the handler issues an `app_session` HTTP‑only cookie used to identify the active session.
+	•	`middleware.ts` enforces authentication for all non‑public routes, redirecting unauthenticated requests to `/login?redirect=...` while allowing `/login`, `/api/login`, Next.js internals (e.g. `/_next`), static assets, and `/api/health` to remain publicly accessible.
+
 ⸻
 
 4.5 Non‑Functional Requirements
@@ -367,6 +382,14 @@ There is no historical price table for MVP.
 5. API Endpoints (MVP)
 
 All endpoints are authenticated.
+
+Current implementation (Phase 1 – assets & accounts):
+	•	`GET /api/assets` and `GET /api/accounts` return ordered lists of assets/accounts from Prisma (no search or pagination yet), used by the `/assets` and `/accounts` pages.
+	•	`POST /api/assets` and `POST /api/accounts` create new records with explicit validation of required fields and return 400 responses with informative error messages when input is missing, invalid, or (for assets) when a duplicate symbol is detected.
+	•	`PUT /api/assets/:id` and `PUT /api/accounts/:id` update existing records by numeric id, returning 404 JSON responses when the target asset or account does not exist.
+	•	Enum‑like string fields such as `type`, `volatility_bucket`, `pricing_mode`, `account_type`, and `status` are validated in these handlers against the allowed value sets defined in Section 4.1, even though they are stored as plain `String` columns in SQLite.
+
+Planned / not yet implemented endpoints:
 	•	GET /api/assets – list, with optional search.
 	•	POST /api/assets – create.
 	•	PUT /api/assets/:id – update.
@@ -432,6 +455,11 @@ Scope:
 	•	The signed-in experience reuses the existing `app/page.tsx` UI shell (sidebar, top bar, cards, colors); refactors must not materially change the visual design, only how data and routing are wired underneath.
 	•	Placeholder content on each page that fits naturally into the current design.
 
+Status (current implementation):
+	•	Implemented: Next.js App Router with a shared `AppShell` layout under `app/(authenticated)/layout.tsx`, SQLite database configured via `DATABASE_URL="file:./dev.db"`, and aligned Prisma 5.22.0 CLI/client.
+	•	Implemented: `/login` page posting to `/api/login`, which validates `APP_PASSWORD` and sets an `app_session` HTTP‑only cookie; `middleware.ts` protects all non‑public routes and redirects unauthenticated users to `/login?redirect=...`.
+	•	Implemented: Authenticated routes `/`, `/assets`, `/accounts`, `/ledger`, `/holdings`, and `/settings` all render inside the shared shell with the original dashboard aesthetic; `/ledger`, `/holdings`, and `/settings` currently host placeholder content inside this shell.
+
 Deliverable: Deployed or locally running app where user can log in and click through empty pages that visually match the existing mock.
 
 Verification steps:
@@ -468,6 +496,12 @@ Scope:
 	•	Activate/deactivate via toggle.
 	•	UI should reuse and extend components extracted from the existing shell to keep the same aesthetic.
 
+Status (current implementation):
+	•	Implemented: Schema models for `Asset`, `Account`, and `Setting` exist in `prisma/schema.prisma`, with enum‑like fields stored as `String` columns and constrained by application‑level validation.
+	•	Implemented: `/assets` and `/accounts` pages are server components that query Prisma directly, render Tailwind‑styled tables inside `AppShell`, and provide `+ Add Asset` / `+ Add Account` links to `/assets/new` and `/accounts/new` form pages as well as per‑row `Edit` links to `/assets/[id]` and `/accounts/[id]`.
+	•	Implemented: Client‑side `AssetForm` and `AccountForm` components POST/PUT to `/api/assets`, `/api/assets/:id`, `/api/accounts`, and `/api/accounts/:id`, enforce required fields, validate enum‑like fields against allowed value sets, and redirect back to the list on success.
+	•	Planned: Table pagination, advanced filtering/search, and a dedicated activate/deactivate toggle UX on `/accounts` are still to be added to fully meet the “pagination” and “status toggle” aspects of this phase.
+
 Deliverable: After login, user can create, edit, and list assets and accounts, and data is persisted.
 
 Verification steps:
@@ -501,8 +535,8 @@ Accounts:
 
 DB checks:
 	•	Query DB directly (or via ORM console):
-	•	SELECT * FROM assets returns created asset row.
-	•	SELECT * FROM accounts returns created account row.
+	•	SELECT * FROM asset returns created asset row.
+	•	SELECT * FROM account returns created account row.
 
 Phase 1 is complete when all tests pass and no 500 errors occur during normal operations.
 
