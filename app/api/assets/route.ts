@@ -11,7 +11,7 @@ const ALLOWED_ASSET_TYPES = [
   'OTHER',
 ] as const;
 
-const ALLOWED_VOLATILITY_BUCKETS = ['CASH_LIKE', 'STABLE', 'VOLATILE'] as const;
+const ALLOWED_VOLATILITY_BUCKETS = ['CASH_LIKE', 'VOLATILE'] as const;
 
 const ALLOWED_PRICING_MODES = ['AUTO', 'MANUAL'] as const;
 

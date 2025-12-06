@@ -91,8 +91,7 @@ const ALLOCATION_DATA = [
 ];
 
 const VOLATILITY_DATA = [
-  { name: 'Volatile', value: 161015 },
-  { name: 'Stable', value: 25000 },
+  { name: 'Volatile', value: 186015 },
   { name: 'Cash-Like', value: 45000 },
 ];
 

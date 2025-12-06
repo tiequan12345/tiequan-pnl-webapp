@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Card } from '../_components/ui/Card';
 
 const ASSET_TYPES = ['CRYPTO', 'EQUITY', 'STABLE', 'NFT', 'OFFLINE', 'CASH', 'OTHER'] as const;
-const VOLATILITY_BUCKETS = ['CASH_LIKE', 'STABLE', 'VOLATILE'] as const;
+const VOLATILITY_BUCKETS = ['CASH_LIKE', 'VOLATILE'] as const;
 const PRICING_MODES = ['AUTO', 'MANUAL'] as const;
 
 export type AssetFormInitialValues = {

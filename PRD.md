@@ -72,7 +72,7 @@ assets
 	•	symbol (string, indexed)
 	•	name (string)
 	•	type (enum): CRYPTO, EQUITY, STABLE, NFT, OFFLINE, CASH, OTHER
-	•	volatility_bucket (enum): CASH_LIKE, STABLE, VOLATILE
+	•	volatility_bucket (enum): CASH_LIKE, VOLATILE
 	•	chain_or_market (string) — e.g., ETH, SOL, NASDAQ, OFFLINE
 	•	pricing_mode (enum): AUTO, MANUAL
 	•	manual_price (decimal, nullable)
@@ -709,7 +709,7 @@ Verification steps:
 Using data from Phase 3:
 	1.	Ensure there are at least:
 	•	2–3 asset types (e.g., CRYPTO, CASH, OFFLINE).
-	•	2–3 volatility buckets (CASH_LIKE, STABLE, VOLATILE).
+	•	2 volatility buckets (CASH_LIKE, VOLATILE).
 	•	10+ transactions in ledger.
 
 Total portfolio value:
