@@ -44,25 +44,19 @@ model Account {
 }
 
 model LedgerTransaction {
-  id                 Int        @id @default(autoincrement())
+  id                 Int      @id @default(autoincrement())
   date_time          DateTime
   account_id         Int
   asset_id           Int
   quantity           Decimal
-  direction          String?
-  base_price         Decimal
-  base_value         Decimal
   tx_type            String
-  fee_asset_id       Int?
-  fee_quantity       Decimal?
   external_reference String?
   notes              String?
-  created_at         DateTime   @default(now())
-  updated_at         DateTime   @updatedAt
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
 
-  account   Account @relation(fields: [account_id], references: [id])
-  asset     Asset   @relation(fields: [asset_id], references: [id])
-  fee_asset Asset?  @relation("FeeAssetTransactions", fields: [fee_asset_id], references: [id])
+  account Account @relation(fields: [account_id], references: [id])
+  asset   Asset   @relation(fields: [asset_id], references: [id])
 
   @@index([date_time])
   @@index([account_id])

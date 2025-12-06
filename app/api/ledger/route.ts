@@ -1,21 +1,13 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 
-const ALLOWED_DIRECTIONS = ['IN', 'OUT'] as const;
-
 const ALLOWED_TX_TYPES = [
   'DEPOSIT',
   'WITHDRAWAL',
-  'TRADE_BUY',
-  'TRADE_SELL',
+  'TRADE',
   'YIELD',
-  'FEE',
-  'TRANSFER_IN',
-  'TRANSFER_OUT',
-  'NFT_PURCHASE',
-  'NFT_SALE',
-  'OFFLINE_IN',
-  'OFFLINE_OUT',
+  'NFT_TRADE',
+  'OFFLINE_TRADE',
   'OTHER',
 ] as const;
 
@@ -24,11 +16,7 @@ type LedgerPayload = {
   account_id?: number | string;
   asset_id?: number | string;
   quantity?: string | number | null;
-  direction?: string | null;
-  base_price?: string | number | null;
   tx_type?: string;
-  fee_asset_id?: number | string | null;
-  fee_quantity?: string | number | null;
   external_reference?: string | null;
   notes?: string | null;
 };
@@ -39,12 +27,7 @@ type LedgerListItem = {
   account_id: number;
   asset_id: number;
   quantity: string;
-  direction: string | null;
-  base_price: string;
-  base_value: string;
   tx_type: string;
-  fee_asset_id: number | null;
-  fee_quantity: string | null;
   external_reference: string | null;
   notes: string | null;
   account: {
@@ -56,10 +39,6 @@ type LedgerListItem = {
     symbol: string;
     name: string;
   };
-  fee_asset: {
-    id: number;
-    symbol: string;
-  } | null;
 };
 
 type LedgerListResponse = {
@@ -231,12 +210,6 @@ export async function GET(request: Request) {
             name: true,
           },
         },
-        fee_asset: {
-          select: {
-            id: true,
-            symbol: true,
-          },
-        },
       },
     });
 
@@ -246,12 +219,7 @@ export async function GET(request: Request) {
       account_id: tx.account_id,
       asset_id: tx.asset_id,
       quantity: tx.quantity.toString(),
-      direction: tx.direction,
-      base_price: tx.base_price.toString(),
-      base_value: tx.base_value.toString(),
       tx_type: tx.tx_type,
-      fee_asset_id: tx.fee_asset_id ?? null,
-      fee_quantity: tx.fee_quantity ? tx.fee_quantity.toString() : null,
       external_reference: tx.external_reference ?? null,
       notes: tx.notes ?? null,
       account: {
@@ -263,12 +231,6 @@ export async function GET(request: Request) {
         symbol: tx.asset.symbol,
         name: tx.asset.name,
       },
-      fee_asset: tx.fee_asset
-        ? {
-            id: tx.fee_asset.id,
-            symbol: tx.fee_asset.symbol,
-          }
-        : null,
     }));
 
     const totalPages =
@@ -310,7 +272,6 @@ export async function POST(request: Request) {
     const accountIdRaw = body.account_id;
     const assetIdRaw = body.asset_id;
     const quantityInput = body.quantity ?? null;
-    const basePriceInput = body.base_price ?? null;
     const txTypeRaw = (body.tx_type ?? '').trim().toUpperCase();
 
     if (
@@ -318,13 +279,12 @@ export async function POST(request: Request) {
       accountIdRaw === undefined ||
       assetIdRaw === undefined ||
       quantityInput === null ||
-      basePriceInput === null ||
       !txTypeRaw
     ) {
       return NextResponse.json(
         {
           error:
-            'date_time, account_id, asset_id, quantity, base_price, and tx_type are required.',
+            'date_time, account_id, asset_id, quantity, and tx_type are required.',
         },
         { status: 400 },
       );
@@ -368,61 +328,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const basePriceParsed = parseDecimal(basePriceInput);
-    if (basePriceParsed === null) {
-      return NextResponse.json(
-        { error: 'base_price must be a valid number.' },
-        { status: 400 },
-      );
-    }
-    if (basePriceParsed === undefined) {
-      return NextResponse.json(
-        { error: 'base_price is required.' },
-        { status: 400 },
-      );
-    }
-
     const txType = txTypeRaw;
     if (!isInAllowedList(txType, ALLOWED_TX_TYPES)) {
       return NextResponse.json(
         { error: 'Invalid tx_type.' },
-        { status: 400 },
-      );
-    }
-
-    const directionRaw = body.direction
-      ? body.direction.toString().trim().toUpperCase()
-      : null;
-
-    if (
-      directionRaw &&
-      !isInAllowedList(directionRaw, ALLOWED_DIRECTIONS)
-    ) {
-      return NextResponse.json(
-        { error: 'Invalid direction.' },
-        { status: 400 },
-      );
-    }
-
-    const feeAssetIdRaw = body.fee_asset_id;
-    let feeAssetId: number | null = null;
-    if (feeAssetIdRaw !== null && feeAssetIdRaw !== undefined) {
-      feeAssetId = Number(feeAssetIdRaw);
-      if (!Number.isFinite(feeAssetId)) {
-        return NextResponse.json(
-          { error: 'Invalid fee_asset_id.' },
-          { status: 400 },
-        );
-      }
-    }
-
-    const feeQuantityParsed = parseDecimal(body.fee_quantity ?? null);
-    if (feeQuantityParsed === null) {
-      return NextResponse.json(
-        {
-          error:
-            'fee_quantity must be a valid number if provided.',
-        },
         { status: 400 },
       );
     }
@@ -435,29 +344,6 @@ export async function POST(request: Request) {
 
     const notesRaw = body.notes ?? null;
     const notes = notesRaw === null ? null : notesRaw.toString();
-
-    const quantityNumber = Number(quantityParsed);
-    const basePriceNumber = Number(basePriceParsed);
-
-    if (
-      !Number.isFinite(quantityNumber) ||
-      !Number.isFinite(basePriceNumber)
-    ) {
-      return NextResponse.json(
-        { error: 'Failed to compute base_value.' },
-        { status: 400 },
-      );
-    }
-
-    const baseValueNumber = quantityNumber * basePriceNumber;
-    if (!Number.isFinite(baseValueNumber)) {
-      return NextResponse.json(
-        { error: 'Failed to compute base_value.' },
-        { status: 400 },
-      );
-    }
-
-    const baseValueParsed = baseValueNumber.toString();
 
     const account = await prisma.account.findUnique({
       where: { id: accountId },
@@ -481,32 +367,13 @@ export async function POST(request: Request) {
       );
     }
 
-    if (feeAssetId !== null) {
-      const feeAsset = await prisma.asset.findUnique({
-        where: { id: feeAssetId },
-      });
-
-      if (!feeAsset) {
-        return NextResponse.json(
-          { error: 'Fee asset not found.' },
-          { status: 400 },
-        );
-      }
-    }
-
     const created = await prisma.ledgerTransaction.create({
       data: {
         date_time: dateTime,
         account_id: accountId,
         asset_id: assetId,
         quantity: quantityParsed,
-        direction: directionRaw,
-        base_price: basePriceParsed,
-        base_value: baseValueParsed,
         tx_type: txType,
-        fee_asset_id: feeAssetId,
-        fee_quantity:
-          feeQuantityParsed === undefined ? undefined : feeQuantityParsed,
         external_reference: externalReference,
         notes,
       },

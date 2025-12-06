@@ -18,16 +18,10 @@ type LedgerFiltersProps = {
 const TX_TYPES = [
   'DEPOSIT',
   'WITHDRAWAL',
-  'TRADE_BUY',
-  'TRADE_SELL',
+  'TRADE',
   'YIELD',
-  'FEE',
-  'TRANSFER_IN',
-  'TRANSFER_OUT',
-  'NFT_PURCHASE',
-  'NFT_SALE',
-  'OFFLINE_IN',
-  'OFFLINE_OUT',
+  'NFT_TRADE',
+  'OFFLINE_TRADE',
   'OTHER',
 ] as const;
 

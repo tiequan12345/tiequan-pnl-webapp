@@ -99,23 +99,18 @@ ledger_transactions
 	•	date_time (timestamp, UTC)
 	•	account_id (FK → accounts.id)
 	•	asset_id (FK → assets.id)
-	•	quantity (decimal; positive amount; direction captured separately OR allow negative)
-	•	direction (enum, nullable if using sign): IN, OUT
-	•	base_price (decimal; price per unit in base currency at transaction time)
-	•	base_value (decimal; stored or derived = quantity * base_price)
-	•	tx_type (enum):
-	•	DEPOSIT, WITHDRAWAL, TRADE_BUY, TRADE_SELL, YIELD, FEE, TRANSFER_IN, TRANSFER_OUT, NFT_PURCHASE, NFT_SALE, OFFLINE_IN, OFFLINE_OUT, OTHER
-	•	fee_asset_id (FK → assets.id, nullable)
-	•	fee_quantity (decimal, nullable)
+	•	quantity (decimal; **signed**; positive = asset quantity increases in the account, negative = decreases)
+	•	tx_type (enum): DEPOSIT, WITHDRAWAL, TRADE, YIELD, NFT_TRADE, OFFLINE_TRADE, OTHER
 	•	external_reference (string, nullable)
 	•	notes (text, nullable)
 	•	created_at, updated_at
 
 Indexes:
-	•	date_time
-	•	account_id
-	•	asset_id
-	•	tx_type
+	•	Keep the existing indexes on date_time, account_id, asset_id, tx_type as-is (these are still valid).
+
+Behavior:
+	•	`quantity` is the only numeric field describing how holdings change; pricing and value are derived from separate price tables (e.g. prices_latest) when needed.
+	•	Trade-like events (TRADE, NFT_TRADE, OFFLINE_TRADE) are represented as two rows (double-entry) for a given account: one positive row for the asset received, one negative row for the asset spent.
 
 prices_latest
 	•	id (PK)
@@ -210,7 +205,7 @@ Behavior:
 
 4.2.4 Ledger (/ledger)
 List view:
-	•	Columns: date, account, asset, tx_type, quantity, base_price, base_value, fee (asset+quantity), notes.
+	•	Columns: Date/Time, Account, Asset, Tx Type, signed Quantity, Notes, Actions.
 	•	Pagination: 50–100 rows per page.
 	•	Filters:
 	•	Date range (from/to).
@@ -219,15 +214,26 @@ List view:
 	•	tx_type (multi-select).
 
 Manual entry form:
-	•	Required fields: date, account, asset, quantity, tx_type.
-	•	Optional: base_price, direction, fee fields, notes, external_reference.
-	•	If base_price provided and base_value not, compute base_value.
-	•	If base_price omitted:
-	•	MVP choice: require price or allow empty?
-	•	To avoid silent nonsense, MVP requirement: either:
-	•	Require base_price, or
-	•	Autofill with current price and show it in UI before save.
-	•	Choose one and stick to it. If you want less friction: autofill base_price with current price (if available) and display it.
+	•	Required fields: date/time, account, tx_type, and appropriate asset + quantity inputs:
+	•	For non-trade types (DEPOSIT, WITHDRAWAL, YIELD, OTHER): a single asset and a positive quantity magnitude.
+	•	For trade types (TRADE, NFT_TRADE, OFFLINE_TRADE): two legs – "Asset In + Quantity In" (asset being acquired) and "Asset Out + Quantity Out" (asset being spent) – which the app converts into two ledger rows.
+	•	Optional: notes, external_reference.
+	•	On submit:
+	•	Create ledger_transactions row(s) according to tx_type semantics:
+	•	DEPOSIT/YIELD/OTHER → single row with positive quantity.
+	•	WITHDRAWAL → single row with negative quantity.
+	•	TRADE / NFT_TRADE / OFFLINE_TRADE → two rows (double-entry): one positive row for the acquired asset and one negative row for the spent asset, both tied to the same account and date_time.
+	•	UI elements (filters, table, buttons) should be aligned with the current Ledger section styling in the authenticated shell.
+
+Notes on pricing:
+	•	The ledger does not store a base currency value per row (no base_price or base_value columns).
+	•	When holdings or valuations are displayed, prices are derived from cached prices (e.g. prices_latest) at view time when available; if no price is present, the position remains unpriced rather than forcing a synthetic base_value.
+
+Table view:
+	•	Columns: Date/Time, Account, Asset, Tx Type, signed Quantity, Notes, Actions.
+	•	Quantity is rendered with its sign (e.g. +10.0 for an inflow, -5.0 for an outflow).
+	•	Actions provide per-row Edit and Delete controls for quick adjustments.
+	•	Remove any references here to "Direction", "Base price", "Base value", or fee-related columns in the ledger table.
 
 CSV import: separate page (/ledger/import) – see 4.2.5.
 
@@ -238,7 +244,7 @@ Flow:
 	•	Infer delimiter, header row.
 	2.	Column mapping:
 	•	User maps CSV columns to canonical fields:
-	•	date, account name, asset symbol, quantity, base_price, base_value, tx_type, fee_currency, fee_quantity, notes, external_reference.
+	•	date/time, account name, asset symbol, quantity (signed), tx_type, notes, external_reference.
 	•	Show a sample of first N rows to help mapping.
 	3.	Validation / mapping:
 	•	For each row:
@@ -284,7 +290,7 @@ Filters:
 Holdings logic:
 	•	For each (account_id, asset_id):
 	•	quantity:
-	•	Sum of INs minus OUTs (direction-based) or sum of signed quantities.
+	•	Sum of signed quantities (positive = inflows, negative = outflows).
 	•	Cost basis: average cost method:
 	•	Maintain total_cost_basis and quantity.
 	•	For buys/IN:
@@ -500,7 +506,7 @@ Status (current implementation):
 	•	Implemented: Schema models for `Asset`, `Account`, and `Setting` exist in `prisma/schema.prisma`, with enum‑like fields stored as `String` columns and constrained by application‑level validation.
 	•	Implemented: `/assets` and `/accounts` pages are server components that query Prisma directly, render Tailwind‑styled tables inside `AppShell`, and provide `+ Add Asset` / `+ Add Account` links to `/assets/new` and `/accounts/new` form pages as well as per‑row `Edit` links to `/assets/[id]` and `/accounts/[id]`.
 	•	Implemented: Client‑side `AssetForm` and `AccountForm` components POST/PUT to `/api/assets`, `/api/assets/:id`, `/api/accounts`, and `/api/accounts/:id`, enforce required fields, validate enum‑like fields against allowed value sets, and redirect back to the list on success.
-	•	Planned: Table pagination, advanced filtering/search, and a dedicated activate/deactivate toggle UX on `/accounts` are still to be added to fully meet the “pagination” and “status toggle” aspects of this phase.
+	•	Planned: Table pagination, advanced filtering/search, and a dedicated activate/deactivate toggle UX on `/accounts` are still to be added to fully meet the "pagination" and "status toggle" aspects of this phase.
 
 Deliverable: After login, user can create, edit, and list assets and accounts, and data is persisted.
 
@@ -547,63 +553,50 @@ Phase 2 – Ledger: Manual Transactions & List View
 Objective: Ability to record transactions manually and view/filter them.
 
 Scope:
-	•	Implement full ledger_transactions schema and indexes.
-	•	/ledger page:
-	•	Table view with pagination, sorted by date_time desc.
-	•	Filters: date range, account, asset, tx_type.
+	•	Expose a /ledger page under the authenticated shell that lists ledger_transactions rows with filters (by date range, account, asset, tx_type) and simple pagination.
 	•	Manual transaction entry form on /ledger:
-	•	Required: date, account, asset, quantity, tx_type.
-	•	Optional: base_price, fee details, notes, external_reference.
-	•	On submit:
-	•	Create ledger_transactions row(s).
-	•	Compute base_value when base_price present.
-	•	UI elements (filters, table, buttons) should be aligned with the current Ledger section styling in `app/page.tsx`.
+	•	Required: date/time, account, tx_type, and either a single asset+quantity (for DEPOSIT/WITHDRAWAL/YIELD/OTHER) or Asset In/Quantity In and Asset Out/Quantity Out (for TRADE/NFT_TRADE/OFFLINE_TRADE).
+	•	Optional: notes, external_reference.
+	•	On submit, create one or two ledger_transactions rows with signed quantities based on tx_type (positive for inflows, negative for outflows).
+	•	Table columns: Date/Time, Account, Asset, Tx Type, signed Quantity, Notes, Actions (Edit/Delete).
+	•	No base_price / base_value or fee fields are captured at this stage; any valuation logic happens later using cached prices.
+
+	•	Remove the prior Phase 2 bullet that said "Compute base_value when base_price present." – that logic is no longer applicable with the signed-quantity-only ledger.
 
 Deliverable: User can create transactions via UI and see them in list, filtered.
 
-Verification steps:
+Phase 2 – Verification: Ledger manual entry and filters
 
-Pre-setup:
-	1.	Ensure at least one asset and one account exist (from Phase 1).
-
-Manual entry:
-	2.	Navigate to /ledger:
-	•	Initially empty table with "no transactions" message.
-	3.	Add a transaction:
-	•	Date: set a specific date/time.
-	•	Account: select existing account.
-	•	Asset: select existing asset.
-	•	Quantity: 10.
-	•	tx_type: TRADE_BUY.
-	•	base_price: 100.
-	•	Submit.
-	4.	Confirm new row appears in ledger table:
-	•	Quantity = 10.
-	•	base_price = 100.
-	•	base_value = 1000.
-	•	Account and asset names correct.
-	5.	Refresh page:
-	•	Transaction still present.
-
-Filters:
-	6.	Add a second transaction on a different date and with different tx_type, e.g.:
-	•	TRADE_SELL, quantity 5, base_price 120.
-	7.	Test date filter:
-	•	Filter by range that should show only first transaction → confirm.
-	•	Filter by range that shows only second → confirm.
-	8.	Test account filter:
-	•	If multiple accounts exist, filter by account and confirm rows.
-	9.	Test tx_type filter:
-	•	Filter by TRADE_BUY only → only buy rows visible.
-
-Error handling:
-	10.	Try to create transaction with missing required fields:
-	•	Empty account or asset → error message, nothing saved.
-	11.	Try invalid quantity (e.g., non-numeric) → validation error.
-
-DB checks:
-	12.	Query ledger_transactions:
-	•	Records exist with values matching UI.
+	1.	Create at least one Asset and one Account via /assets and /accounts.
+	2.	Visit /ledger.
+	3.	Add a deposit:
+		•	Date: set a specific date/time.
+		•	Account: select an existing account.
+		•	Asset: select an existing asset.
+		•	Quantity: 10.
+		•	tx_type: DEPOSIT.
+		•	Submit.
+	4.	Confirm the new row appears in the ledger table:
+		•	Quantity shows as +10 (signed quantity).
+		•	Account and asset names match the selections.
+	5.	Add a withdrawal:
+		•	tx_type: WITHDRAWAL.
+		•	Same account and asset as above.
+		•	Quantity: 5.
+	6.	Confirm the ledger table shows a second row with:
+		•	Quantity = -5 for that asset/account.
+	7.	Add a trade:
+		•	tx_type: TRADE.
+		•	Asset In: BTC, Quantity In: 2.
+		•	Asset Out: USDT, Quantity Out: 200000.
+	8.	Confirm the ledger table shows two new rows for the same date/account:
+		•	One row with +2 BTC.
+		•	One row with -200000 USDT.
+	9.	Use the filters:
+		•	Filter by account and verify only rows for that account remain.
+		•	Filter by asset (e.g., BTC) and verify only that asset’s rows remain.
+		•	Filter by tx_type = TRADE and verify only TRADE rows are shown (no legacy TRADE_BUY / TRADE_SELL types).
+	10.	Use the per-row Delete action to remove a row and verify it disappears from the table and is no longer returned by the ledger API.
 
 Phase 2 is complete when all these behaviors work consistently.
 
@@ -770,11 +763,11 @@ Deliverable: User can import a CSV ledger into the app and see the resulting tra
 Verification steps:
 
 Prepare a CSV file with, e.g., 5–10 rows including:
-	•	Column headers: date,account,asset,quantity,price,tx_type,notes.
+	•	Column headers: date,account,asset,quantity,tx_type,notes.
 	•	At least:
 	•	2 rows referencing existing accounts/assets.
 	•	2 rows referencing new accounts/assets.
-	•	Mixed tx_types (e.g., TRADE_BUY, DEPOSIT).
+	•	Mixed tx_types (e.g., TRADE, DEPOSIT).
 
 Flow:
 	1.	Go to /ledger/import.
@@ -797,7 +790,7 @@ Flow:
 	•	Success message with counts: created rows, skipped rows.
 	7.	/ledger view:
 	•	Filter by date/account/asset to confirm imported transactions present and correct.
-	•	Spot-check base_value and other derived fields.
+	•	Spot-check quantities, tx_types, and account/asset mappings.
 
 Negative tests:
 	8.	Upload CSV with wrong delimiter or malformed row:

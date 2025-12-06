@@ -4,6 +4,7 @@ import { Card } from '../_components/ui/Card';
 import { LedgerForm } from './LedgerForm';
 import { LedgerFilters } from './LedgerFilters';
 import { LedgerPagination } from './LedgerPagination';
+import { LedgerRowActions } from './LedgerRowActions';
 
 type LedgerPageProps = {
   searchParams?: {
@@ -23,11 +24,7 @@ type LedgerRow = {
   accountName: string;
   assetLabel: string;
   txType: string;
-  direction: string | null;
   quantity: string;
-  basePrice: string;
-  baseValue: string;
-  feeSummary: string | null;
   notes: string | null;
 };
 
@@ -138,12 +135,6 @@ export default async function LedgerPage({ searchParams }: LedgerPageProps) {
           name: true,
         },
       },
-      fee_asset: {
-        select: {
-          id: true,
-          symbol: true,
-        },
-      },
     },
   });
 
@@ -170,14 +161,7 @@ export default async function LedgerPage({ searchParams }: LedgerPageProps) {
     accountName: tx.account.name,
     assetLabel: `${tx.asset.symbol} (${tx.asset.name})`,
     txType: tx.tx_type,
-    direction: tx.direction,
     quantity: tx.quantity.toString(),
-    basePrice: tx.base_price.toString(),
-    baseValue: tx.base_value.toString(),
-    feeSummary:
-      tx.fee_asset && tx.fee_quantity
-        ? `${tx.fee_quantity.toString()} ${tx.fee_asset.symbol}`
-        : null,
     notes: tx.notes ?? null,
   }));
 
@@ -220,7 +204,11 @@ export default async function LedgerPage({ searchParams }: LedgerPageProps) {
               Add Transaction
             </h3>
           </div>
-          <LedgerForm accounts={accountsForSelect} assets={assetsForSelect} />
+          <LedgerForm
+            mode="create"
+            accounts={accountsForSelect}
+            assets={assetsForSelect}
+          />
         </div>
       </Card>
 
@@ -241,19 +229,16 @@ export default async function LedgerPage({ searchParams }: LedgerPageProps) {
                 <th className="px-4 py-3 font-medium">Account</th>
                 <th className="px-4 py-3 font-medium">Asset</th>
                 <th className="px-4 py-3 font-medium">Tx Type</th>
-                <th className="px-4 py-3 font-medium">Direction</th>
                 <th className="px-4 py-3 font-medium text-right">Quantity</th>
-                <th className="px-4 py-3 font-medium text-right">Base Price</th>
-                <th className="px-4 py-3 font-medium text-right">Base Value</th>
-                <th className="px-4 py-3 font-medium">Fee</th>
                 <th className="px-4 py-3 font-medium">Notes</th>
+                <th className="px-4 py-3 font-medium text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800">
               {rows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={7}
                     className="px-4 py-8 text-center text-sm text-zinc-500"
                   >
                     No ledger transactions found. Once you add transactions, they
@@ -269,23 +254,16 @@ export default async function LedgerPage({ searchParams }: LedgerPageProps) {
                     </td>
                     <td className="px-4 py-3 text-zinc-300">{row.assetLabel}</td>
                     <td className="px-4 py-3 text-zinc-400">{row.txType}</td>
-                    <td className="px-4 py-3 text-zinc-400">
-                      {row.direction ?? '—'}
-                    </td>
                     <td className="px-4 py-3 text-right text-zinc-300">
-                      {row.quantity}
-                    </td>
-                    <td className="px-4 py-3 text-right text-zinc-300">
-                      {row.basePrice}
-                    </td>
-                    <td className="px-4 py-3 text-right text-zinc-300">
-                      {row.baseValue}
-                    </td>
-                    <td className="px-4 py-3 text-zinc-400">
-                      {row.feeSummary ?? '—'}
+                      {row.quantity.startsWith('-')
+                        ? row.quantity
+                        : `+${row.quantity}`}
                     </td>
                     <td className="px-4 py-3 text-zinc-500 max-w-xs truncate">
                       {row.notes ?? '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <LedgerRowActions transactionId={row.id} />
                     </td>
                   </tr>
                 ))
