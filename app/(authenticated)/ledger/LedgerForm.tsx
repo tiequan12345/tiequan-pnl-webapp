@@ -20,8 +20,8 @@ type LedgerFormProps = {
   mode: LedgerFormMode;
   transactionId?: number;
   initialValues?: LedgerFormInitialValues;
-  accounts: { id: number; name: string }[];
-  assets: { id: number; symbol: string; name: string }[];
+  accounts: { id: number; name: string; usageCount?: number }[];
+  assets: { id: number; symbol: string; name: string; usageCount?: number }[];
 };
 
 type TxType = LedgerTxType;
@@ -77,14 +77,28 @@ export function LedgerForm({
     if (initialValues?.account_id != null) {
       return String(initialValues.account_id);
     }
-    return accounts.length > 0 ? String(accounts[0].id) : '';
+    if (accounts.length > 0) {
+      // Find the account with the highest usage count, fallback to first if all have 0
+      const mostUsedAccount = accounts.reduce((prev, current) =>
+        (current.usageCount || 0) > (prev.usageCount || 0) ? current : prev
+      );
+      return String(mostUsedAccount.id);
+    }
+    return '';
   });
 
   const [assetId, setAssetId] = useState<string>(() => {
     if (initialValues?.asset_id != null) {
       return String(initialValues.asset_id);
     }
-    return assets.length > 0 ? String(assets[0].id) : '';
+    if (assets.length > 0) {
+      // Find the asset with the highest usage count, fallback to first if all have 0
+      const mostUsedAsset = assets.reduce((prev, current) =>
+        (current.usageCount || 0) > (prev.usageCount || 0) ? current : prev
+      );
+      return String(mostUsedAsset.id);
+    }
+    return '';
   });
 
   const [txType, setTxType] = useState<TxType>(() => {
@@ -100,13 +114,27 @@ export function LedgerForm({
   );
   const [notes, setNotes] = useState<string>(initialValues?.notes ?? '');
 
-  const [assetInId, setAssetInId] = useState<string>(
-    assets.length > 0 ? String(assets[0].id) : '',
-  );
+  const [assetInId, setAssetInId] = useState<string>(() => {
+    if (assets.length > 0) {
+      // Find the asset with the highest usage count for trade form
+      const mostUsedAsset = assets.reduce((prev, current) =>
+        (current.usageCount || 0) > (prev.usageCount || 0) ? current : prev
+      );
+      return String(mostUsedAsset.id);
+    }
+    return '';
+  });
   const [quantityIn, setQuantityIn] = useState<string>('');
-  const [assetOutId, setAssetOutId] = useState<string>(
-    assets.length > 0 ? String(assets[0].id) : '',
-  );
+  const [assetOutId, setAssetOutId] = useState<string>(() => {
+    if (assets.length > 0) {
+      // Find the asset with the highest usage count for trade form
+      const mostUsedAsset = assets.reduce((prev, current) =>
+        (current.usageCount || 0) > (prev.usageCount || 0) ? current : prev
+      );
+      return String(mostUsedAsset.id);
+    }
+    return '';
+  });
   const [quantityOut, setQuantityOut] = useState<string>('');
 
   const [submitting, setSubmitting] = useState<boolean>(false);

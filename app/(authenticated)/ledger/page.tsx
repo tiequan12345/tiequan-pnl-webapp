@@ -127,21 +127,33 @@ export default async function LedgerPage({ searchParams }: LedgerPageProps) {
     },
   });
 
-  const accounts = await prisma.account.findMany({
-    orderBy: { name: 'asc' },
+  // Get accounts with usage counts
+  const accountsWithUsage = await prisma.account.findMany({
     select: {
       id: true,
       name: true,
+      _count: {
+        select: {
+          ledger_transactions: true,
+        },
+      },
     },
+    orderBy: { name: 'asc' },
   });
 
-  const assets = await prisma.asset.findMany({
-    orderBy: { symbol: 'asc' },
+  // Get assets with usage counts
+  const assetsWithUsage = await prisma.asset.findMany({
     select: {
       id: true,
       symbol: true,
       name: true,
+      _count: {
+        select: {
+          ledger_transactions: true,
+        },
+      },
     },
+    orderBy: { symbol: 'asc' },
   });
 
   const rows: LedgerTableRow[] = transactions.map((tx) => ({
@@ -157,15 +169,17 @@ export default async function LedgerPage({ searchParams }: LedgerPageProps) {
 
   const totalPages = totalItems === 0 ? 0 : Math.ceil(totalItems / pageSize);
 
-  const accountsForSelect = accounts.map((account) => ({
+  const accountsForSelect = accountsWithUsage.map((account) => ({
     id: account.id,
     name: account.name,
+    usageCount: account._count.ledger_transactions,
   }));
 
-  const assetsForSelect = assets.map((asset) => ({
+  const assetsForSelect = assetsWithUsage.map((asset) => ({
     id: asset.id,
     symbol: asset.symbol,
     name: asset.name,
+    usageCount: asset._count.ledger_transactions,
   }));
 
   const initialFilters = {

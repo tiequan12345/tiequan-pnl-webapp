@@ -46,6 +46,22 @@ function validateAccountEnums(payload: AccountPayload): string | null {
 export async function GET() {
   try {
     const accounts = await prisma.account.findMany({
+      select: {
+        id: true,
+        name: true,
+        platform: true,
+        account_type: true,
+        chain_or_market: true,
+        status: true,
+        notes: true,
+        created_at: true,
+        updated_at: true,
+        _count: {
+          select: {
+            ledger_transactions: true,
+          },
+        },
+      },
       orderBy: { name: 'asc' },
     });
 

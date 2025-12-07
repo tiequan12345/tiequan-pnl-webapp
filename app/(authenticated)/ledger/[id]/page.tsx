@@ -28,20 +28,30 @@ export default async function EditLedgerPage({ params }: EditLedgerPageProps) {
   }
 
   const accounts = await prisma.account.findMany({
-    orderBy: { name: 'asc' },
     select: {
       id: true,
       name: true,
+      _count: {
+        select: {
+          ledger_transactions: true,
+        },
+      },
     },
+    orderBy: { name: 'asc' },
   });
 
   const assets = await prisma.asset.findMany({
-    orderBy: { symbol: 'asc' },
     select: {
       id: true,
       symbol: true,
       name: true,
+      _count: {
+        select: {
+          ledger_transactions: true,
+        },
+      },
     },
+    orderBy: { symbol: 'asc' },
   });
 
   const initialValues: LedgerFormInitialValues = {
@@ -57,12 +67,14 @@ export default async function EditLedgerPage({ params }: EditLedgerPageProps) {
   const accountsForSelect = accounts.map((account) => ({
     id: account.id,
     name: account.name,
+    usageCount: account._count.ledger_transactions,
   }));
 
   const assetsForSelect = assets.map((asset) => ({
     id: asset.id,
     symbol: asset.symbol,
     name: asset.name,
+    usageCount: asset._count.ledger_transactions,
   }));
 
   return (

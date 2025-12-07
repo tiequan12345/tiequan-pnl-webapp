@@ -79,6 +79,24 @@ function parseManualPrice(input: string | number | null | undefined): string | n
 export async function GET() {
   try {
     const assets = await prisma.asset.findMany({
+      select: {
+        id: true,
+        symbol: true,
+        name: true,
+        type: true,
+        volatility_bucket: true,
+        chain_or_market: true,
+        pricing_mode: true,
+        manual_price: true,
+        metadata_json: true,
+        created_at: true,
+        updated_at: true,
+        _count: {
+          select: {
+            ledger_transactions: true,
+          },
+        },
+      },
       orderBy: { symbol: 'asc' },
     });
 

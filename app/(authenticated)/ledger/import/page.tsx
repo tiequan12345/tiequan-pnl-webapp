@@ -48,8 +48,8 @@ type CommitResult = {
   errors: { index: number; message: string }[];
 };
 
-type Account = { id: number; name: string };
-type Asset = { id: number; symbol: string; name: string };
+type Account = { id: number; name: string; _count?: { ledger_transactions: number } };
+type Asset = { id: number; symbol: string; name: string; _count?: { ledger_transactions: number } };
 
 const REQUIRED_FIELDS: (keyof Mapping)[] = [
   'date_time',

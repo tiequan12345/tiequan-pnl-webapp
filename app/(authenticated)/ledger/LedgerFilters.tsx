@@ -5,8 +5,8 @@ import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { ALLOWED_TX_TYPES } from '@/lib/ledger';
 
 type LedgerFiltersProps = {
-  accounts: { id: number; name: string }[];
-  assets: { id: number; symbol: string; name: string }[];
+  accounts: { id: number; name: string; usageCount?: number }[];
+  assets: { id: number; symbol: string; name: string; usageCount?: number }[];
   initialFilters: {
     dateFrom?: string;
     dateTo?: string;
