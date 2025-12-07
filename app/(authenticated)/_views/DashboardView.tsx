@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   PieChart as RePieChart,
   Pie,
@@ -14,11 +15,34 @@ import { Badge } from '../_components/ui/Badge';
 import type { HoldingRow, HoldingsSummary } from '@/lib/holdings';
 import { isPriceStale } from '@/lib/pricing';
 
+type LedgerItem = {
+  id: number;
+  dateTime: string;
+  accountName: string;
+  assetSymbol: string;
+  txType: string;
+  quantity: number;
+  notes: string | null;
+};
+
+type LedgerResponse = {
+  items: {
+    id: number;
+    date_time: string;
+    account: { name: string };
+    asset: { symbol: string };
+    tx_type: string;
+    quantity: string;
+    notes: string | null;
+  }[];
+};
+
 type HoldingsResponse = {
   rows: HoldingRow[];
   summary: HoldingsSummary;
   baseCurrency: string;
   refreshIntervalMinutes: number;
+  timezone: string;
 };
 
 type DashboardState = {
@@ -27,6 +51,8 @@ type DashboardState = {
   baseCurrency: string;
   refreshIntervalMinutes: number;
   lastUpdated: Date | null;
+  timezone: string;
+  ledgerItems: LedgerItem[];
 };
 
 const INITIAL_STATE: DashboardState = {
@@ -35,6 +61,8 @@ const INITIAL_STATE: DashboardState = {
   baseCurrency: 'USD',
   refreshIntervalMinutes: 0,
   lastUpdated: null,
+  timezone: 'UTC',
+  ledgerItems: [],
 };
 
 const COLORS = ['#3b82f6', '#10b981', '#6366f1', '#f59e0b', '#ec4899'];
@@ -50,11 +78,28 @@ function formatCurrency(value: number | null | undefined, currency: string) {
   }).format(value);
 }
 
+function formatDateTime(value: Date | null, timezone: string) {
+  if (!value) {
+    return 'Unknown';
+  }
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone || 'UTC',
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(value);
+}
+
 export function DashboardView() {
+  const router = useRouter();
   const [state, setState] = useState<DashboardState>(INITIAL_STATE);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [ledgerError, setLedgerError] = useState<string | null>(null);
 
   const fetchHoldings = useCallback(async () => {
     setLoading(true);
@@ -78,18 +123,54 @@ export function DashboardView() {
         ? new Date(normalizedSummary.updatedAt)
         : null;
 
-      setState({
+      setState((prev) => ({
+        ...prev,
         rows: payload.rows ?? [],
         summary: normalizedSummary,
         baseCurrency: payload.baseCurrency ?? 'USD',
         refreshIntervalMinutes: payload.refreshIntervalMinutes ?? 0,
         lastUpdated: updatedAt,
-      });
+        timezone: payload.timezone ?? 'UTC',
+      }));
     } catch (fetchError) {
       console.error(fetchError);
       setError('Unable to load holdings right now.');
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const fetchRecentLedger = useCallback(async () => {
+    setLedgerLoading(true);
+    setLedgerError(null);
+    try {
+      const response = await fetch('/api/ledger?page=1&pageSize=10', {
+        cache: 'no-store',
+      });
+      if (!response.ok) {
+        throw new Error('Failed to load recent activity');
+      }
+      const payload = (await response.json()) as LedgerResponse;
+      const items =
+        payload.items?.map((item) => ({
+          id: item.id,
+          dateTime: item.date_time,
+          accountName: item.account.name,
+          assetSymbol: item.asset.symbol,
+          txType: item.tx_type,
+          quantity: Number(item.quantity),
+          notes: item.notes,
+        })) ?? [];
+
+      setState((prev) => ({
+        ...prev,
+        ledgerItems: items,
+      }));
+    } catch (ledgerErr) {
+      console.error(ledgerErr);
+      setLedgerError('Unable to load recent activity.');
+    } finally {
+      setLedgerLoading(false);
     }
   }, []);
 
@@ -114,7 +195,8 @@ export function DashboardView() {
 
   useEffect(() => {
     fetchHoldings();
-  }, [fetchHoldings]);
+    fetchRecentLedger();
+  }, [fetchHoldings, fetchRecentLedger]);
 
   const allocationData = useMemo(() => {
     return Object.entries(state.summary?.byType ?? {}).map(([name, value]) => ({
@@ -140,6 +222,14 @@ export function DashboardView() {
   const staleBadge = pricesStale ? <Badge type="red">Stale prices</Badge> : null;
   const refreshLabel = refreshing ? 'Refreshing…' : 'Refresh Prices';
 
+  const handleAddTrade = useCallback(() => {
+    router.push('/ledger');
+  }, [router]);
+
+  const handleImportCsv = useCallback(() => {
+    router.push('/ledger/import');
+  }, [router]);
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -155,7 +245,7 @@ export function DashboardView() {
                 </div>
                 {lastUpdated ? (
                   <div className="text-xs text-zinc-500 mt-1">
-                    Updated {lastUpdated.toLocaleString()}
+                    Updated {formatDateTime(lastUpdated, state.timezone)}
                     {state.refreshIntervalMinutes
                       ? ` · Refresh every ${state.refreshIntervalMinutes} min`
                       : ''}
@@ -189,13 +279,19 @@ export function DashboardView() {
             Quick Actions
           </h2>
           <div className="grid grid-cols-2 gap-3">
-            <button className="flex flex-col items-center justify-center p-3 bg-zinc-800/50 hover:bg-zinc-800 rounded-lg transition text-xs text-zinc-300 gap-2 border border-zinc-700/50">
+            <button
+              onClick={handleAddTrade}
+              className="flex flex-col items-center justify-center p-3 bg-zinc-800/50 hover:bg-zinc-800 rounded-lg transition text-xs text-zinc-300 gap-2 border border-zinc-700/50"
+            >
               <span className="w-5 h-5 rounded-md bg-zinc-900/60 flex items-center justify-center text-zinc-400">
                 +
               </span>
               Add Trade
             </button>
-            <button className="flex flex-col items-center justify-center p-3 bg-zinc-800/50 hover:bg-zinc-800 rounded-lg transition text-xs text-zinc-300 gap-2 border border-zinc-700/50">
+            <button
+              onClick={handleImportCsv}
+              className="flex flex-col items-center justify-center p-3 bg-zinc-800/50 hover:bg-zinc-800 rounded-lg transition text-xs text-zinc-300 gap-2 border border-zinc-700/50"
+            >
               <span className="w-5 h-5 rounded-md bg-zinc-900/60 flex items-center justify-center text-zinc-400">
                 ⬆
               </span>
@@ -368,6 +464,67 @@ export function DashboardView() {
                             />
                           </div>
                         </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-zinc-100 font-semibold">Recent Activity</h3>
+          <button
+            onClick={handleAddTrade}
+            className="text-xs text-blue-400 hover:text-blue-300"
+          >
+            View Ledger
+          </button>
+        </div>
+        {ledgerLoading ? (
+          <div className="px-4 py-6 text-center text-sm text-zinc-500">
+            Loading recent activity…
+          </div>
+        ) : ledgerError ? (
+          <div className="px-4 py-6 text-center text-sm text-rose-300">
+            {ledgerError}
+          </div>
+        ) : state.ledgerItems.length === 0 ? (
+          <div className="px-4 py-6 text-center text-sm text-zinc-500">
+            No recent transactions. Add a trade to get started.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm text-zinc-400">
+              <thead className="border-b border-zinc-800 text-xs uppercase tracking-wider">
+                <tr>
+                  <th className="pb-3 font-medium">Date</th>
+                  <th className="pb-3 font-medium">Account</th>
+                  <th className="pb-3 font-medium">Asset</th>
+                  <th className="pb-3 font-medium text-right">Quantity</th>
+                  <th className="pb-3 font-medium text-right">Type</th>
+                  <th className="pb-3 font-medium">Notes</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800/50">
+                {state.ledgerItems.map((item) => {
+                  const date = new Date(item.dateTime);
+                  return (
+                    <tr key={item.id}>
+                      <td className="py-3 text-zinc-200">
+                        {formatDateTime(date, state.timezone)}
+                      </td>
+                      <td className="py-3 text-zinc-300">{item.accountName}</td>
+                      <td className="py-3 text-zinc-300">{item.assetSymbol}</td>
+                      <td className="py-3 text-right text-zinc-200">
+                        {item.quantity}
+                      </td>
+                      <td className="py-3 text-right text-zinc-400">{item.txType}</td>
+                      <td className="py-3 text-zinc-500">
+                        {item.notes ? item.notes : '—'}
                       </td>
                     </tr>
                   );

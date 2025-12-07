@@ -678,12 +678,12 @@ Unpriced assets:
 
 Phase 3 is complete when holdings math is correct for simple test cases and prices refresh works end‑to‑end.
 
-Current implementation (Phase 3 – in progress, this session):
-	•	Implemented `/api/prices/refresh` that queries AUTO assets, fetches prices via CoinGecko (crypto) and Yahoo Finance (equity), and upserts `prices_latest`.
-	•	Built shared holdings aggregation (`lib/holdings`) and `/api/holdings` returning rows + summary (by type/volatility) with pricing resolution and stale flags.
-	•	Added `/holdings` page with per-account and consolidated views, live quantities/market values, and stale/manual badges.
-	•	Wired `DashboardView` to live holdings data (charts, hero total, top holdings) with stale-price warning and “Refresh Prices” action that calls `/api/prices/refresh` then reloads holdings.
-	•	Schema/migrations cleaned: legacy ledger `base_price/base_value/fee` columns removed; Prisma generate succeeds against current schema.
+Current implementation (Phase 6 – delivered):
+	•	`/api/prices/refresh`, `/api/holdings`, and `/api/ledger` drive live pricing, summary, and recent activity feeds while flagging stale values.
+	•	`DashboardView` shows live totals, allocation pies, top holdings, quick-action links, and a recent activity table within the existing shell.
+	•	`/ledger/import` plus `/api/ledger/import/commit` support CSV upload, column mapping, preview/ignore rows, inline creation of missing accounts/assets, and bulk ledger inserts.
+	•	`/settings` persists base currency/timezone/auto-refresh preferences, triggers the configured refresh endpoint, and exposes CSV + SQLite exports via the new `/api/export/*` routes.
+	•	Shared utilities (`lib/ledger`, `lib/csv`) keep validation and serialization consistent, and the Prisma schema/migrations match the current models.
 
 ⸻
 
@@ -750,6 +750,8 @@ Prices stale warning:
 
 Phase 4 is complete when all these checks pass.
 
+Status: Complete – the dashboard now loads live holdings and ledger summaries, surfaces the stale-price badge, quick actions, and recent activity entirely within the existing shell aesthetic.
+
 ⸻
 
 Phase 5 – CSV Import
@@ -807,6 +809,8 @@ Negative tests:
 
 Phase 5 is complete when imports work end-to-end on a realistic file.
 
+Status: Complete – `/ledger/import` handles CSV upload, mapping, validation, inline account/asset creation, previewing flagged rows, and committing the valid entries via `/api/ledger/import/commit`.
+
 ⸻
 
 Phase 6 – Settings, Exports, and Backup
@@ -853,6 +857,8 @@ Exports:
 	•	File downloads and can be opened by SQLite client.
 
 Phase 6 is complete when settings survive reload and exports are accurate.
+
+Status: Complete – `/settings` persists currency/timezone/pricing preferences, can trigger the configured refresh endpoint, and exposes CSV/DB exports through `/api/export/{assets,accounts,ledger,db}`.
 
 ⸻
 

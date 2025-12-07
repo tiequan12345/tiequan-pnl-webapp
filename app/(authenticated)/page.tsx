@@ -1,6 +1,5 @@
-import React from 'react';
 import { DashboardView } from './_views/DashboardView';
 
-export default function DashboardPage() {
+export default function Page() {
   return <DashboardView />;
 }

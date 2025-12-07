@@ -1,15 +1,11 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-
-const ALLOWED_TX_TYPES = [
-  'DEPOSIT',
-  'WITHDRAWAL',
-  'TRADE',
-  'YIELD',
-  'NFT_TRADE',
-  'OFFLINE_TRADE',
-  'OTHER',
-] as const;
+import {
+  ALLOWED_TX_TYPES,
+  isAllowedTxType,
+  parseLedgerDateTime,
+  parseLedgerDecimal,
+} from '@/lib/ledger';
 
 type LedgerPayload = {
   date_time?: string;
@@ -50,49 +46,8 @@ type LedgerListResponse = {
   hasNextPage: boolean;
 };
 
-function isInAllowedList(value: string | undefined, list: readonly string[]): boolean {
-  if (!value) {
-    return false;
-  }
-  return list.includes(value);
-}
-
-function parseDecimal(
-  input: string | number | null | undefined,
-): string | null | undefined {
-  if (input === null || input === undefined) {
-    return undefined;
-  }
-
-  if (typeof input === 'number') {
-    if (!Number.isFinite(input)) {
-      return null;
-    }
-    return input.toString();
-  }
-
-  const trimmed = input.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-
-  const numeric = Number(trimmed);
-  if (!Number.isFinite(numeric)) {
-    return null;
-  }
-
-  return trimmed;
-}
-
-function parseDateTime(input: string | undefined): Date | null {
-  if (!input) {
-    return null;
-  }
-  const date = new Date(input);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  return date;
+function parseDateParam(input: string | undefined): Date | null {
+  return parseLedgerDateTime(input);
 }
 
 export async function GET(request: Request) {
@@ -118,8 +73,8 @@ export async function GET(request: Request) {
     const dateFromRaw = searchParams.get('dateFrom') || undefined;
     const dateToRaw = searchParams.get('dateTo') || undefined;
 
-    const dateFrom = parseDateTime(dateFromRaw);
-    const dateTo = parseDateTime(dateToRaw);
+    const dateFrom = parseDateParam(dateFromRaw);
+    const dateTo = parseDateParam(dateToRaw);
 
     if (dateFromRaw && !dateFrom) {
       return NextResponse.json(
@@ -158,8 +113,8 @@ export async function GET(request: Request) {
       .map((value) => value.trim().toUpperCase())
       .filter((value) => Boolean(value));
 
-    const txTypes = txTypesRaw.filter((value) =>
-      isInAllowedList(value, ALLOWED_TX_TYPES),
+    const txTypes = txTypesRaw.filter(
+      (value): value is (typeof ALLOWED_TX_TYPES)[number] => isAllowedTxType(value),
     );
 
     const where: Record<string, unknown> = {};
@@ -290,7 +245,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const dateTime = parseDateTime(dateTimeStr);
+    const dateTime = parseLedgerDateTime(dateTimeStr);
     if (!dateTime) {
       return NextResponse.json(
         { error: 'Invalid date_time.' },
@@ -314,7 +269,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const quantityParsed = parseDecimal(quantityInput);
+    const quantityParsed = parseLedgerDecimal(quantityInput);
     if (quantityParsed === null) {
       return NextResponse.json(
         { error: 'quantity must be a valid number.' },
@@ -328,13 +283,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const txType = txTypeRaw;
-    if (!isInAllowedList(txType, ALLOWED_TX_TYPES)) {
+    if (!isAllowedTxType(txTypeRaw)) {
       return NextResponse.json(
         { error: 'Invalid tx_type.' },
         { status: 400 },
       );
     }
+    const txType: (typeof ALLOWED_TX_TYPES)[number] = txTypeRaw;
 
     const externalReferenceRaw = body.external_reference ?? null;
     const externalReference =

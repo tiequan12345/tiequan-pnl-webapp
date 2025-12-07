@@ -33,6 +33,7 @@ export async function GET(request: Request) {
       summary,
       baseCurrency: settings.baseCurrency,
       refreshIntervalMinutes: settings.priceAutoRefreshIntervalMinutes,
+      timezone: settings.timezone ?? 'UTC',
     });
   } catch {
     return NextResponse.json(
