@@ -93,6 +93,42 @@ function formatDateTime(value: Date | null, timezone: string) {
   }).format(value);
 }
 
+function PieTooltip({
+  active,
+  payload,
+  total,
+  currency,
+}: {
+  active?: boolean;
+  payload?: { payload: { value?: number }; name?: string; value?: number }[];
+  total: number;
+  currency: string;
+}) {
+  if (!active || !payload || payload.length === 0) {
+    return null;
+  }
+
+  const entry = payload[0];
+  const rawValue =
+    typeof entry.value === 'number'
+      ? entry.value
+      : typeof entry.payload?.value === 'number'
+      ? entry.payload.value
+      : 0;
+  const value = rawValue ?? 0;
+  const percent = total > 0 ? (value / total) * 100 : 0;
+  const amountLabel = formatCurrency(value, currency);
+
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200">
+      <div className="font-semibold">{entry.name}</div>
+      <div>
+        {amountLabel} / {percent.toFixed(1)}%
+      </div>
+    </div>
+  );
+}
+
 export function DashboardView() {
   const router = useRouter();
   const [state, setState] = useState<DashboardState>(INITIAL_STATE);
@@ -223,6 +259,29 @@ export function DashboardView() {
   const staleBadge = pricesStale ? <Badge type="red">Stale prices</Badge> : null;
   const refreshLabel = refreshing ? 'Refreshing…' : 'Refresh Prices';
 
+  const allocationTotal = allocationData.reduce(
+    (sum, entry) => sum + entry.value,
+    0,
+  );
+  const volatilityTotal = volatilityData.reduce(
+    (sum, entry) => sum + entry.value,
+    0,
+  );
+
+  const createPieLabel = (total: number) => (entry: {
+    name: string;
+    value: number;
+  }) => {
+    if (total <= 0 || entry.value <= 0) {
+      return '';
+    }
+    const percent = (entry.value / total) * 100;
+    if (percent < 5) {
+      return '';
+    }
+    return `${percent.toFixed(1)}%`;
+  };
+
   const handleAddTrade = useCallback(() => {
     router.push('/ledger');
   }, [router]);
@@ -319,6 +378,8 @@ export function DashboardView() {
                   paddingAngle={5}
                   dataKey="value"
                   stroke="none"
+                  labelLine={false}
+                  label={createPieLabel(allocationTotal)}
                 >
                   {allocationData.map((entry, index) => (
                     <Cell
@@ -328,18 +389,10 @@ export function DashboardView() {
                   ))}
                 </Pie>
                 <ReTooltip
-                  contentStyle={{
-                    backgroundColor: '#18181b',
-                    borderColor: '#27272a',
-                    borderRadius: '8px',
-                  }}
-                  itemStyle={{ color: '#e4e4e7' }}
-                  formatter={(value) =>
-                    formatCurrency(
-                      Array.isArray(value) ? (value[0] as number) : (value as number),
-                      totalCurrency,
-                    )
+                  content={
+                    <PieTooltip total={allocationTotal} currency={totalCurrency} />
                   }
+                  cursor={{ fill: 'transparent' }}
                 />
                 <Legend
                   verticalAlign="bottom"
@@ -367,6 +420,8 @@ export function DashboardView() {
                   paddingAngle={5}
                   dataKey="value"
                   stroke="none"
+                  labelLine={false}
+                  label={createPieLabel(volatilityTotal)}
                 >
                   {volatilityData.map((entry, index) => (
                     <Cell
@@ -376,18 +431,13 @@ export function DashboardView() {
                   ))}
                 </Pie>
                 <ReTooltip
-                  contentStyle={{
-                    backgroundColor: '#18181b',
-                    borderColor: '#27272a',
-                    borderRadius: '8px',
-                  }}
-                  itemStyle={{ color: '#e4e4e7' }}
-                  formatter={(value) =>
-                    formatCurrency(
-                      Array.isArray(value) ? (value[0] as number) : (value as number),
-                      totalCurrency,
-                    )
+                  content={
+                    <PieTooltip
+                      total={volatilityTotal}
+                      currency={totalCurrency}
+                    />
                   }
+                  cursor={{ fill: 'transparent' }}
                 />
                 <Legend
                   verticalAlign="bottom"
