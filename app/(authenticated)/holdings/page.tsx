@@ -130,6 +130,7 @@ export default async function HoldingsPage({ searchParams }: HoldingsPageProps) 
             rows={rows}
             baseCurrency={baseCurrency}
             emptyMessage="No holdings found. Add ledger transactions to see holdings here."
+            showRefreshButton
           />
         </div>
       </Card>

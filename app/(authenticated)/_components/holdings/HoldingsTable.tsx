@@ -1,5 +1,7 @@
 'use client';
 
+import { useCallback, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Badge } from '../ui/Badge';
 import type { HoldingRow } from '@/lib/holdings';
 
@@ -15,6 +17,7 @@ type HoldingsTableProps = {
   emptyMessage?: string;
   showPriceSourceBadges?: boolean;
   priceFormatter?: (value: number, currency: string) => string;
+  showRefreshButton?: boolean;
 };
 
 function formatCurrencyValue(
@@ -46,23 +49,44 @@ function PriceCell({
   currency,
   showSourceBadges = true,
   priceFormatter,
+  showRefreshButton = false,
+  isRefreshing = false,
+  onRefresh,
 }: {
   row: HoldingRow;
   currency: string;
   showSourceBadges?: boolean;
   priceFormatter?: (value: number, currency: string) => string;
+  showRefreshButton?: boolean;
+  isRefreshing?: boolean;
+  onRefresh?: (assetId: number) => void;
 }) {
-  if (!row.price) {
-    return <span className="text-zinc-500">Unpriced</span>;
-  }
+  const formattedPrice = row.price
+    ? priceFormatter
+      ? priceFormatter(row.price, currency)
+      : defaultPriceFormatter(row.price)
+    : 'Unpriced';
 
-  const formattedPrice = priceFormatter
-    ? priceFormatter(row.price, currency)
-    : defaultPriceFormatter(row.price);
+  const needsRefresh = showRefreshButton && (!row.price || row.isStale);
 
   return (
     <div className="flex items-center justify-end gap-2">
-      <span className="text-zinc-200">{formattedPrice}</span>
+      <span className={`text-zinc-200 ${row.price ? '' : 'text-zinc-500'}`}>
+        {formattedPrice}
+      </span>
+      {needsRefresh && onRefresh ? (
+        <button
+          type="button"
+          className="text-xs text-blue-400 hover:text-blue-300 disabled:text-zinc-500"
+          disabled={isRefreshing}
+          onClick={(event) => {
+            event.preventDefault();
+            onRefresh(row.assetId);
+          }}
+        >
+          {isRefreshing ? 'Refreshing…' : 'Refresh'}
+        </button>
+      ) : null}
       {showSourceBadges && row.priceSource ? (
         <Badge type={row.isManual ? 'orange' : 'green'}>
           {row.isManual ? 'Manual' : 'Auto'}
@@ -80,7 +104,34 @@ export function HoldingsTable({
   emptyMessage,
   showPriceSourceBadges = true,
   priceFormatter,
+  showRefreshButton = false,
 }: HoldingsTableProps) {
+  const router = useRouter();
+  const [refreshingAssetIds, setRefreshingAssetIds] = useState<number[]>([]);
+
+  const handleRefreshAsset = useCallback(
+    async (assetId: number) => {
+      setRefreshingAssetIds((prev) =>
+        prev.includes(assetId) ? prev : [...prev, assetId],
+      );
+
+      try {
+        const response = await fetch(`/api/prices/refresh/${assetId}`, {
+          method: 'POST',
+        });
+        if (!response.ok) {
+          throw new Error('Failed to refresh price.');
+        }
+        router.refresh();
+      } catch (refreshError) {
+        console.error('Asset price refresh failed', refreshError);
+      } finally {
+        setRefreshingAssetIds((prev) => prev.filter((id) => id !== assetId));
+      }
+    },
+    [router],
+  );
+
   const displayedRows =
     limit && limit > 0 ? rows.slice(0, Math.min(rows.length, limit)) : rows;
   const showEmptyState = displayedRows.length === 0;
@@ -105,7 +156,8 @@ export function HoldingsTable({
               colSpan={7}
               className="px-4 py-8 text-center text-sm text-zinc-500"
             >
-              {emptyMessage ?? 'No holdings found. Add ledger transactions to see holdings here.'}
+              {emptyMessage ??
+                'No holdings found. Add ledger transactions to see holdings here.'}
             </td>
           </tr>
         ) : (
@@ -142,6 +194,9 @@ export function HoldingsTable({
                   currency={baseCurrency}
                   showSourceBadges={showPriceSourceBadges}
                   priceFormatter={priceFormatter}
+                  showRefreshButton={showRefreshButton}
+                  isRefreshing={refreshingAssetIds.includes(row.assetId)}
+                  onRefresh={handleRefreshAsset}
                 />
               </td>
               <td className="px-4 py-3 text-right text-zinc-200">
