@@ -69,7 +69,7 @@ export function NetExposureTable({ rows }: NetExposureTableProps) {
 
   const toolbar = (
     <span className="text-xs text-zinc-500">
-      {rows.length === 1 ? '1 exposure' : `${rows.length} exposures`}
+      {rows.length === 1 ? '1 volatile exposure' : `${rows.length} volatile exposures`}
     </span>
   );
 
@@ -79,8 +79,8 @@ export function NetExposureTable({ rows }: NetExposureTableProps) {
       rows={rows}
       keyFn={(row) => row.assetId}
       defaultSort={{ columnId: 'assetSymbol', direction: 'asc' }}
-      globalSearch={{ placeholder: 'Search exposures' }}
-      emptyMessage="No hedge exposures yet. Add HEDGE transactions to see net exposure."
+      globalSearch={{ placeholder: 'Search volatile exposures' }}
+      emptyMessage="No volatile hedge exposures yet. Add HEDGE transactions for volatile assets to see net exposure."
       rowClassName={() => 'hover:bg-zinc-800/30'}
       toolbar={toolbar}
     />
@@ -147,8 +147,8 @@ export function HedgeTransactionsTable({ rows }: HedgeTransactionsTableProps) {
   const toolbar = (
     <span className="text-xs text-zinc-500">
       {rows.length === 1
-        ? '1 hedge entry on this page'
-        : `${rows.length} hedge entries on this page`}
+        ? '1 volatile hedge entry'
+        : `${rows.length} volatile hedge entries`}
     </span>
   );
 
@@ -158,8 +158,8 @@ export function HedgeTransactionsTable({ rows }: HedgeTransactionsTableProps) {
       rows={rows}
       keyFn={(row) => row.id}
       defaultSort={{ columnId: 'dateTime', direction: 'desc' }}
-      globalSearch={{ placeholder: 'Search hedge entries' }}
-      emptyMessage="No hedge transactions found. Add HEDGE entries in the ledger to see them here."
+      globalSearch={{ placeholder: 'Search volatile hedge entries' }}
+      emptyMessage="No volatile hedge transactions found. Add HEDGE entries for volatile assets in the ledger to see them here."
       rowClassName={() => 'hover:bg-zinc-800/30'}
       toolbar={toolbar}
     />

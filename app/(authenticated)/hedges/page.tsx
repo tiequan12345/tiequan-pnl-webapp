@@ -8,49 +8,81 @@ import {
 } from './HedgesTables';
 
 export default async function HedgesPage() {
-  const [activeHedges, grouped] = await Promise.all([
+  const [activeHedges, groupedHedges, groupedHoldings] = await Promise.all([
     prisma.ledgerTransaction.findMany({
       where: { tx_type: 'HEDGE' },
       orderBy: { date_time: 'desc' },
       include: {
         account: { select: { name: true } },
-        asset: { select: { symbol: true, name: true } },
+        asset: { select: { symbol: true, name: true, volatility_bucket: true } },
       },
     }),
     prisma.ledgerTransaction.groupBy({
       by: ['asset_id'],
+      where: { tx_type: 'HEDGE' },
+      _sum: { quantity: true },
+    }),
+    // Get holdings by excluding HEDGE transactions
+    prisma.ledgerTransaction.groupBy({
+      by: ['asset_id'],
+      where: { tx_type: { not: 'HEDGE' } },
       _sum: { quantity: true },
     }),
   ]);
 
-  const assetIds = grouped.map((item) => item.asset_id);
-  const assets = assetIds.length
+  const allAssetIds = Array.from(new Set([
+    ...groupedHedges.map(item => item.asset_id),
+    ...groupedHoldings.map(item => item.asset_id)
+  ]));
+  
+  const assets = allAssetIds.length
     ? await prisma.asset.findMany({
-        where: { id: { in: assetIds } },
-        select: { id: true, symbol: true, name: true },
+        where: { id: { in: allAssetIds } },
+        select: { id: true, symbol: true, name: true, volatility_bucket: true },
       })
     : [];
 
   const assetById = new Map(assets.map((asset) => [asset.id, asset]));
-  const netExposureRows: NetExposureRow[] = grouped
-    .map((item) => {
-      const asset = assetById.get(item.asset_id);
-      const netQuantity = item._sum.quantity?.toString() ?? '0';
-      const netQuantityValue = Number(netQuantity);
+  
+  // Create maps for quick lookup
+  const hedgeByAssetId = new Map<number, number>();
+  for (const item of groupedHedges) {
+    hedgeByAssetId.set(item.asset_id, Number(item._sum.quantity?.toString() ?? '0'));
+  }
+  
+  const holdingsByAssetId = new Map<number, number>();
+  for (const item of groupedHoldings) {
+    holdingsByAssetId.set(item.asset_id, Number(item._sum.quantity?.toString() ?? '0'));
+  }
+
+  const netExposureRows: NetExposureRow[] = allAssetIds
+    .map((assetId) => {
+      const asset = assetById.get(assetId);
+      const holdings = holdingsByAssetId.get(assetId) || 0;
+      const hedge = hedgeByAssetId.get(assetId) || 0;
+      const netExposure = holdings + hedge; // holdings + (negative hedge)
       return asset
         ? {
             assetId: asset.id,
             assetSymbol: asset.symbol,
             assetName: asset.name,
-            netQuantity,
-            netQuantityValue,
+            netQuantity: netExposure.toString(),
+            netQuantityValue: netExposure,
           }
         : null;
     })
-    .filter((row): row is NetExposureRow => Boolean(row))
+    .filter((row): row is NetExposureRow => {
+      if (!row) return false;
+      // Only include assets that have hedge transactions AND are volatile
+      const asset = assetById.get(row.assetId);
+      return asset?.volatility_bucket === 'VOLATILE' && hedgeByAssetId.has(row.assetId);
+    })
     .sort((a, b) => a.assetSymbol.localeCompare(b.assetSymbol));
 
-  const hedgeRows: HedgeTableRow[] = activeHedges.map((tx) => ({
+  // Filter out CASH_LIKE assets from hedge transactions
+  const volatileActiveHedges = activeHedges.filter(tx => tx.asset.volatility_bucket !== 'CASH_LIKE');
+  
+  const hedgeRows: HedgeTableRow[] = volatileActiveHedges.map((tx) => ({
     id: tx.id,
     dateTime: tx.date_time.toISOString(),
     accountName: tx.account.name,
@@ -67,16 +99,20 @@ export default async function HedgesPage() {
         <h2 className="text-xl font-bold text-white">Hedges</h2>
         <div className="text-xs text-zinc-500">
           {hedgeRows.length === 0
-            ? 'No hedge transactions yet'
-            : `${hedgeRows.length} active hedge entries`}
+            ? 'No volatile hedge transactions yet'
+            : `${hedgeRows.length} volatile hedge entries`}
         </div>
+      </div>
+
+      <div className="text-xs text-zinc-500 mb-4">
+        Showing only VOLATILE assets. CASH_LIKE assets (like USDT/USDC) are excluded from hedge analysis.
       </div>
 
       <Card>
         <div className="border-b border-zinc-800 px-4 py-3">
           <h3 className="text-sm font-semibold text-zinc-100">Net Exposure by Asset</h3>
           <p className="text-xs text-zinc-500 mt-1">
-            Sum of signed hedge quantities grouped by asset.
+            Net exposure = holdings + hedge transactions, for volatile assets only. CASH_LIKE assets excluded.
           </p>
         </div>
         <NetExposureTable rows={netExposureRows} />
@@ -86,7 +122,7 @@ export default async function HedgesPage() {
         <div className="border-b border-zinc-800 px-4 py-3">
           <h3 className="text-sm font-semibold text-zinc-100">Active Hedges</h3>
           <p className="text-xs text-zinc-500 mt-1">
-            Latest hedge transactions with account and notes.
+            Latest hedge transactions with account and notes. CASH_LIKE assets excluded.
           </p>
         </div>
         <HedgeTransactionsTable rows={hedgeRows} />
