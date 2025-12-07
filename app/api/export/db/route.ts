@@ -3,6 +3,9 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { NextResponse } from 'next/server';
 
+// Force this route to be dynamic to avoid static generation issues
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   const dbUrl = process.env.DATABASE_URL;
   if (!dbUrl) {

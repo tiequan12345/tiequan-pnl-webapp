@@ -39,8 +39,8 @@ export async function GET() {
       row.tx_type ?? '',
       row.notes ?? '',
       row.external_reference ?? '',
-      row.account_id ?? '',
-      row.asset_id ?? '',
+      row.account_id !== null && row.account_id !== undefined ? String(row.account_id) : '',
+      row.asset_id !== null && row.asset_id !== undefined ? String(row.asset_id) : '',
     ]);
 
     const csv = serializeCsv([headers, ...rows]);
