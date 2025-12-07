@@ -1,8 +1,8 @@
 'use client';
 
-import Link from 'next/link';
 import { DataTable, type DataTableColumn } from '../_components/table/DataTable';
 import { Badge } from '../_components/ui/Badge';
+import { AssetRowActions } from './AssetRowActions';
 
 export type AssetRow = {
   id: number;
@@ -82,14 +82,7 @@ export function AssetsTable({ rows }: AssetsTableProps) {
     {
       id: 'actions',
       header: 'Actions',
-      cell: (row) => (
-        <Link
-          href={`/assets/${row.id}`}
-          className="text-xs text-blue-400 hover:text-blue-300"
-        >
-          Edit
-        </Link>
-      ),
+      cell: (row) => <AssetRowActions assetId={row.id} />,
       sortable: false,
       align: 'right',
       className: 'text-right',

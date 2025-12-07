@@ -192,3 +192,52 @@ export async function PUT(request: Request, context: RouteContext) {
     );
   }
 }
+
+export async function DELETE(_request: Request, context: RouteContext) {
+  const id = Number(context.params.id);
+
+  if (!Number.isFinite(id)) {
+    return NextResponse.json(
+      { error: 'Invalid asset id.' },
+      { status: 400 },
+    );
+  }
+
+  try {
+    const existing = await prisma.asset.findUnique({
+      where: { id },
+    });
+
+    if (!existing) {
+      return NextResponse.json(
+        { error: 'Asset not found.' },
+        { status: 404 },
+      );
+    }
+
+    // Check if there are any ledger transactions that reference this asset
+    const transactionsCount = await prisma.ledgerTransaction.count({
+      where: { asset_id: id },
+    });
+
+    if (transactionsCount > 0) {
+      return NextResponse.json(
+        {
+          error: `Cannot delete asset. It is referenced by ${transactionsCount} ledger transaction(s). Please delete the transactions first.`
+        },
+        { status: 400 },
+      );
+    }
+
+    await prisma.asset.delete({
+      where: { id },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch {
+    return NextResponse.json(
+      { error: 'Failed to delete asset.' },
+      { status: 500 },
+    );
+  }
+}
