@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card } from '../../_components/ui/Card';
+import { DataTable, type DataTableColumn } from '../../_components/table/DataTable';
 import { parseCsv } from '@/lib/csv';
 import {
   isAllowedTxType,
@@ -31,6 +32,7 @@ type PreviewRow = {
   assetSymbol?: string;
   quantityRaw?: string;
   quantityParsed?: string | null | undefined;
+  quantityValue?: number | null;
   txType?: string;
   notes?: string | null;
   externalReference?: string | null;
@@ -258,6 +260,7 @@ export default function LedgerImportPage() {
       if (quantityParsed === null || quantityParsed === undefined) {
         errors.push('Invalid quantity');
       }
+      const quantityValue = quantityParsed ? Number(quantityParsed) : null;
 
       if (!isAllowedTxType(txTypeRaw)) {
         errors.push('Invalid tx_type');
@@ -280,6 +283,7 @@ export default function LedgerImportPage() {
         assetSymbol,
         quantityRaw,
         quantityParsed,
+        quantityValue,
         txType: txTypeRaw,
         notes: notes || null,
         externalReference: externalReference || null,
@@ -304,6 +308,110 @@ export default function LedgerImportPage() {
     );
     setCommitResult(null);
   };
+
+  const previewColumns: DataTableColumn<PreviewRow>[] = [
+    {
+      id: 'index',
+      header: '#',
+      accessor: (row) => row.index,
+      cell: (row) => <span className="text-zinc-500">{row.index + 1}</span>,
+      sortable: true,
+    },
+    {
+      id: 'dateTime',
+      header: 'Date',
+      accessor: (row) => (row.dateTime ? row.dateTime.getTime() : -Infinity),
+      cell: (row) => (
+        <span className="text-zinc-300">
+          {row.dateTime ? row.dateTime.toISOString() : 'Invalid'}
+        </span>
+      ),
+      sortable: true,
+    },
+    {
+      id: 'accountName',
+      header: 'Account',
+      accessor: (row) => row.accountName ?? '—',
+      cell: (row) => (
+        <span className="text-zinc-200">
+          {row.accountName || '—'}
+          {row.accountId ? '' : ' (new)'}
+        </span>
+      ),
+      sortable: true,
+    },
+    {
+      id: 'assetSymbol',
+      header: 'Asset',
+      accessor: (row) => row.assetSymbol ?? '—',
+      cell: (row) => (
+        <span className="text-zinc-200">
+          {row.assetSymbol || '—'}
+          {row.assetId ? '' : ' (new)'}
+        </span>
+      ),
+      sortable: true,
+    },
+    {
+      id: 'quantityValue',
+      header: 'Quantity',
+      accessor: (row) => row.quantityValue ?? -Infinity,
+      cell: (row) => (
+        <span className="text-zinc-200">{row.quantityRaw ?? '—'}</span>
+      ),
+      sortable: true,
+      align: 'right',
+      className: 'text-right',
+    },
+    {
+      id: 'txType',
+      header: 'Tx Type',
+      accessor: (row) => row.txType ?? '—',
+      cell: (row) => <span className="text-zinc-300">{row.txType || '—'}</span>,
+      sortable: true,
+    },
+    {
+      id: 'notes',
+      header: 'Notes',
+      accessor: (row) => row.notes ?? '—',
+      cell: (row) => (
+        <span className="text-zinc-500 max-w-xs truncate">{row.notes ?? '—'}</span>
+      ),
+      sortable: true,
+    },
+    {
+      id: 'errors',
+      header: 'Errors',
+      accessor: (row) => (row.errors.length === 0 ? 'OK' : row.errors.join(' ')),
+      cell: (row) =>
+        row.errors.length === 0 ? (
+          <span className="text-emerald-300 text-xs">OK</span>
+        ) : (
+          <div className="text-rose-300 text-xs space-y-1">
+            {row.errors.map((err, idx) => (
+              <div key={`${row.index}-err-${idx}`}>{err}</div>
+            ))}
+          </div>
+        ),
+      sortable: true,
+    },
+    {
+      id: 'ignore',
+      header: 'Ignore',
+      accessor: (row) => row.ignore,
+      cell: (row) => (
+        <input
+          type="checkbox"
+          checked={row.ignore}
+          onChange={() => toggleIgnore(row.index)}
+          className="h-4 w-4 accent-blue-500"
+        />
+      ),
+      sortable: false,
+      align: 'right',
+      className: 'text-right',
+    },
+  ];
 
   const createMissingEntities = async () => {
     if (unknownAccounts.length === 0 && unknownAssets.length === 0) {
@@ -554,76 +662,14 @@ export default function LedgerImportPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-zinc-400">
-            <thead className="bg-zinc-900/50 border-y border-zinc-800 text-xs uppercase tracking-wide">
-              <tr>
-                <th className="px-4 py-3 font-medium">#</th>
-                <th className="px-4 py-3 font-medium">Date</th>
-                <th className="px-4 py-3 font-medium">Account</th>
-                <th className="px-4 py-3 font-medium">Asset</th>
-                <th className="px-4 py-3 font-medium text-right">Quantity</th>
-                <th className="px-4 py-3 font-medium">Tx Type</th>
-                <th className="px-4 py-3 font-medium">Notes</th>
-                <th className="px-4 py-3 font-medium">Errors</th>
-                <th className="px-4 py-3 font-medium text-right">Ignore</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-800">
-              {previewRows.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={9}
-                    className="px-4 py-8 text-center text-sm text-zinc-500"
-                  >
-                    Upload and map a CSV to see a preview.
-                  </td>
-                </tr>
-              ) : (
-                previewRows.map((row) => (
-                  <tr key={row.index} className="hover:bg-zinc-800/30">
-                    <td className="px-4 py-3 text-zinc-500">{row.index + 1}</td>
-                    <td className="px-4 py-3 text-zinc-300">
-                      {row.dateTime ? row.dateTime.toISOString() : 'Invalid'}
-                    </td>
-                    <td className="px-4 py-3 text-zinc-200">
-                      {row.accountName || '—'}
-                      {row.accountId ? '' : ' (new)'}
-                    </td>
-                    <td className="px-4 py-3 text-zinc-200">
-                      {row.assetSymbol || '—'}
-                      {row.assetId ? '' : ' (new)'}
-                    </td>
-                    <td className="px-4 py-3 text-right text-zinc-200">
-                      {row.quantityRaw ?? '—'}
-                    </td>
-                    <td className="px-4 py-3 text-zinc-300">{row.txType || '—'}</td>
-                    <td className="px-4 py-3 text-zinc-500 max-w-xs truncate">
-                      {row.notes ?? '—'}
-                    </td>
-                    <td className="px-4 py-3 text-xs">
-                      {row.errors.length === 0 ? (
-                        <span className="text-emerald-300">OK</span>
-                      ) : (
-                        <div className="text-rose-300 space-y-1">
-                          {row.errors.map((err, idx) => (
-                            <div key={`${row.index}-err-${idx}`}>{err}</div>
-                          ))}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <input
-                        type="checkbox"
-                        checked={row.ignore}
-                        onChange={() => toggleIgnore(row.index)}
-                        className="h-4 w-4 accent-blue-500"
-                      />
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+          <DataTable
+            columns={previewColumns}
+            rows={previewRows}
+            keyFn={(row) => row.index}
+            emptyMessage="Upload and map a CSV to see a preview."
+            globalSearch={{ placeholder: 'Search preview' }}
+            rowClassName={() => 'hover:bg-zinc-800/30'}
+          />
         </div>
 
         <div className="flex items-center justify-between px-4 py-3 border-t border-zinc-800 text-xs text-zinc-500">

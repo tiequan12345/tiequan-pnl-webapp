@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 import { Card } from '../_components/ui/Card';
 import { Badge } from '../_components/ui/Badge';
+import { DataTable, type DataTableColumn } from '../_components/table/DataTable';
 import { HoldingsTable } from '../_components/holdings/HoldingsTable';
 import type { HoldingRow, HoldingsSummary } from '@/lib/holdings';
 import { isPriceStale } from '@/lib/pricing';
@@ -290,6 +291,64 @@ export function DashboardView() {
     router.push('/ledger/import');
   }, [router]);
 
+  const recentColumns = useMemo<DataTableColumn<LedgerItem>[]>(
+    () => [
+      {
+        id: 'dateTime',
+        header: 'Date',
+        accessor: (row) => new Date(row.dateTime).getTime(),
+        cell: (row) => (
+          <span className="text-zinc-200">
+            {formatDateTime(new Date(row.dateTime), state.timezone)}
+          </span>
+        ),
+        sortable: true,
+      },
+      {
+        id: 'accountName',
+        header: 'Account',
+        accessor: (row) => row.accountName,
+        cell: (row) => <span className="text-zinc-300">{row.accountName}</span>,
+        sortable: true,
+      },
+      {
+        id: 'assetSymbol',
+        header: 'Asset',
+        accessor: (row) => row.assetSymbol,
+        cell: (row) => <span className="text-zinc-300">{row.assetSymbol}</span>,
+        sortable: true,
+      },
+      {
+        id: 'quantity',
+        header: 'Quantity',
+        accessor: (row) => row.quantity,
+        cell: (row) => (
+          <span className="text-zinc-200">{row.quantity.toLocaleString()}</span>
+        ),
+        sortable: true,
+        align: 'right',
+        className: 'text-right',
+      },
+      {
+        id: 'txType',
+        header: 'Type',
+        accessor: (row) => row.txType,
+        cell: (row) => <span className="text-zinc-400">{row.txType}</span>,
+        sortable: true,
+      },
+      {
+        id: 'notes',
+        header: 'Notes',
+        accessor: (row) => row.notes ?? '—',
+        cell: (row) => (
+          <span className="text-zinc-500 max-w-xs truncate">{row.notes ?? '—'}</span>
+        ),
+        sortable: true,
+      },
+    ],
+    [state.timezone],
+  );
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -499,39 +558,14 @@ export function DashboardView() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-zinc-400">
-              <thead className="border-b border-zinc-800 text-xs uppercase tracking-wider">
-                <tr>
-                  <th className="pb-3 font-medium">Date</th>
-                  <th className="pb-3 font-medium">Account</th>
-                  <th className="pb-3 font-medium">Asset</th>
-                  <th className="pb-3 font-medium text-right">Quantity</th>
-                  <th className="pb-3 font-medium text-right">Type</th>
-                  <th className="pb-3 font-medium">Notes</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-800/50">
-                {state.ledgerItems.map((item) => {
-                  const date = new Date(item.dateTime);
-                  return (
-                    <tr key={item.id}>
-                      <td className="py-3 text-zinc-200">
-                        {formatDateTime(date, state.timezone)}
-                      </td>
-                      <td className="py-3 text-zinc-300">{item.accountName}</td>
-                      <td className="py-3 text-zinc-300">{item.assetSymbol}</td>
-                      <td className="py-3 text-right text-zinc-200">
-                        {item.quantity}
-                      </td>
-                      <td className="py-3 text-right text-zinc-400">{item.txType}</td>
-                      <td className="py-3 text-zinc-500">
-                        {item.notes ? item.notes : '—'}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <DataTable
+              columns={recentColumns}
+              rows={state.ledgerItems}
+              keyFn={(row) => row.id}
+              defaultSort={{ columnId: 'dateTime', direction: 'desc' }}
+              globalSearch={{ placeholder: 'Search recent activity' }}
+              rowClassName={() => 'hover:bg-zinc-800/30'}
+            />
           </div>
         )}
       </Card>

@@ -1,10 +1,9 @@
-import React from 'react';
 import { prisma } from '@/lib/db';
 import { Card } from '../_components/ui/Card';
 import { LedgerForm } from './LedgerForm';
 import { LedgerFilters } from './LedgerFilters';
 import { LedgerPagination } from './LedgerPagination';
-import { LedgerRowActions } from './LedgerRowActions';
+import { LedgerTable, LedgerTableRow } from './LedgerTable';
 
 type LedgerPageProps = {
   searchParams?: {
@@ -16,16 +15,6 @@ type LedgerPageProps = {
     assetIds?: string;
     txTypes?: string;
   };
-};
-
-type LedgerRow = {
-  id: number;
-  dateTime: string;
-  accountName: string;
-  assetLabel: string;
-  txType: string;
-  quantity: string;
-  notes: string | null;
 };
 
 function parseDateTime(input: string | undefined): Date | null {
@@ -155,13 +144,14 @@ export default async function LedgerPage({ searchParams }: LedgerPageProps) {
     },
   });
 
-  const rows: LedgerRow[] = transactions.map((tx) => ({
+  const rows: LedgerTableRow[] = transactions.map((tx) => ({
     id: tx.id,
     dateTime: tx.date_time.toISOString(),
     accountName: tx.account.name,
     assetLabel: `${tx.asset.symbol} (${tx.asset.name})`,
     txType: tx.tx_type,
     quantity: tx.quantity.toString(),
+    quantityValue: Number(tx.quantity.toString()),
     notes: tx.notes ?? null,
   }));
 
@@ -222,54 +212,7 @@ export default async function LedgerPage({ searchParams }: LedgerPageProps) {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-zinc-400">
-            <thead className="bg-zinc-900/50 border-b border-zinc-800 text-xs uppercase tracking-wide">
-              <tr>
-                <th className="px-4 py-3 font-medium">Date / Time</th>
-                <th className="px-4 py-3 font-medium">Account</th>
-                <th className="px-4 py-3 font-medium">Asset</th>
-                <th className="px-4 py-3 font-medium">Tx Type</th>
-                <th className="px-4 py-3 font-medium text-right">Quantity</th>
-                <th className="px-4 py-3 font-medium">Notes</th>
-                <th className="px-4 py-3 font-medium text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-800">
-              {rows.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className="px-4 py-8 text-center text-sm text-zinc-500"
-                  >
-                    No ledger transactions found. Once you add transactions, they
-                    will appear here.
-                  </td>
-                </tr>
-              ) : (
-                rows.map((row) => (
-                  <tr key={row.id} className="hover:bg-zinc-800/30">
-                    <td className="px-4 py-3 text-zinc-300">{row.dateTime}</td>
-                    <td className="px-4 py-3 text-zinc-200 font-semibold">
-                      {row.accountName}
-                    </td>
-                    <td className="px-4 py-3 text-zinc-300">{row.assetLabel}</td>
-                    <td className="px-4 py-3 text-zinc-400">{row.txType}</td>
-                    <td className="px-4 py-3 text-right text-zinc-300">
-                      {row.quantity.startsWith('-')
-                        ? row.quantity
-                        : `+${row.quantity}`}
-                    </td>
-                    <td className="px-4 py-3 text-zinc-500 max-w-xs truncate">
-                      {row.notes ?? '—'}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <LedgerRowActions transactionId={row.id} />
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+          <LedgerTable rows={rows} />
         </div>
 
         <div className="flex items-center justify-between px-4 py-3 border-t border-zinc-800 text-xs text-zinc-500">

@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { Badge } from '../ui/Badge';
 import type { HoldingRow } from '@/lib/holdings';
+import { DataTable, type DataTableColumn, type GlobalSearch } from '../table/DataTable';
 
 type CurrencyFormatOptions = {
   minimumFractionDigits?: number;
@@ -18,6 +19,8 @@ type HoldingsTableProps = {
   showPriceSourceBadges?: boolean;
   priceFormatter?: (value: number, currency: string) => string;
   showRefreshButton?: boolean;
+  globalSearch?: GlobalSearch<HoldingRow>;
+  toolbar?: ReactNode;
 };
 
 function formatCurrencyValue(
@@ -112,6 +115,8 @@ export function HoldingsTable({
   showPriceSourceBadges = true,
   priceFormatter,
   showRefreshButton = false,
+  globalSearch,
+  toolbar,
 }: HoldingsTableProps) {
   const router = useRouter();
   const [refreshingAssetIds, setRefreshingAssetIds] = useState<number[]>([]);
@@ -141,83 +146,112 @@ export function HoldingsTable({
 
   const displayedRows =
     limit && limit > 0 ? rows.slice(0, Math.min(rows.length, limit)) : rows;
-  const showEmptyState = displayedRows.length === 0;
+
+  const columns: DataTableColumn<HoldingRow>[] = [
+    {
+      id: 'asset',
+      header: 'Asset',
+      accessor: (row) => `${row.assetSymbol} ${row.assetName}`,
+      cell: (row) => (
+        <div className="flex items-center gap-2">
+          <div className="h-8 w-8 rounded-full bg-zinc-800 text-sm font-semibold text-zinc-200 flex items-center justify-center">
+            {row.assetSymbol?.[0] ?? ''}
+          </div>
+          <div>
+            <div className="font-semibold text-zinc-200">{row.assetSymbol}</div>
+            <div className="text-xs text-zinc-500">{row.assetName}</div>
+          </div>
+        </div>
+      ),
+      sortable: true,
+    },
+    {
+      id: 'accountName',
+      header: 'Account',
+      accessor: (row) => row.accountName,
+      cell: (row) => (
+        <span className="font-medium text-zinc-200">{row.accountName}</span>
+      ),
+      sortable: true,
+    },
+    {
+      id: 'quantity',
+      header: 'Quantity',
+      accessor: (row) => row.quantity,
+      cell: (row) => (
+        <span className="text-zinc-200">{formatQuantity(row.quantity)}</span>
+      ),
+      sortable: true,
+      sortFn: (a, b) => a.quantity - b.quantity,
+      align: 'right',
+      className: 'text-right',
+    },
+    {
+      id: 'price',
+      header: 'Price',
+      accessor: (row) => row.price ?? -Infinity,
+      cell: (row) => (
+        <PriceCell
+          row={row}
+          currency={baseCurrency}
+          showSourceBadges={showPriceSourceBadges}
+          priceFormatter={priceFormatter}
+          showRefreshButton={showRefreshButton}
+          isRefreshing={refreshingAssetIds.includes(row.assetId)}
+          onRefresh={handleRefreshAsset}
+        />
+      ),
+      sortable: true,
+      sortFn: (a, b) => (a.price ?? -Infinity) - (b.price ?? -Infinity),
+      align: 'right',
+      className: 'text-right',
+    },
+    {
+      id: 'marketValue',
+      header: 'Market Value',
+      accessor: (row) => row.marketValue ?? -Infinity,
+      cell: (row) => (
+        <span className="text-zinc-200">
+          {row.marketValue !== null && row.marketValue !== undefined
+            ? formatCurrencyValue(row.marketValue, baseCurrency)
+            : 'Unpriced'}
+        </span>
+      ),
+      sortable: true,
+      sortFn: (a, b) =>
+        (a.marketValue ?? -Infinity) - (b.marketValue ?? -Infinity),
+      align: 'right',
+      className: 'text-right',
+    },
+    {
+      id: 'assetType',
+      header: 'Type',
+      accessor: (row) => row.assetType,
+      cell: (row) => <Badge type="blue">{row.assetType}</Badge>,
+      sortable: true,
+    },
+    {
+      id: 'volatilityBucket',
+      header: 'Volatility',
+      accessor: (row) => row.volatilityBucket,
+      cell: (row) => <span className="text-zinc-400">{row.volatilityBucket}</span>,
+      sortable: true,
+    },
+  ];
 
   return (
-    <table className="w-full text-left text-sm text-zinc-400">
-      <thead className="bg-zinc-900/50 border-b border-zinc-800 text-xs uppercase tracking-wide">
-        <tr>
-          <th className="px-4 py-3 font-medium">Asset</th>
-          <th className="px-4 py-3 font-medium">Account</th>
-          <th className="px-4 py-3 font-medium text-right">Quantity</th>
-          <th className="px-4 py-3 font-medium text-right">Price</th>
-          <th className="px-4 py-3 font-medium text-right">Market Value</th>
-          <th className="px-4 py-3 font-medium">Type</th>
-          <th className="px-4 py-3 font-medium">Volatility</th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-zinc-800">
-        {showEmptyState ? (
-          <tr>
-            <td
-              colSpan={7}
-              className="px-4 py-8 text-center text-sm text-zinc-500"
-            >
-              {emptyMessage ??
-                'No holdings found. Add ledger transactions to see holdings here.'}
-            </td>
-          </tr>
-        ) : (
-          displayedRows.map((row) => (
-            <tr
-              key={`${row.assetId}-${row.accountId}`}
-              className="hover:bg-zinc-800/30"
-            >
-              <td className="px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-sm text-zinc-200 font-semibold">
-                    {row.assetSymbol?.[0] ?? ''}
-                  </div>
-                  <div>
-                    <div className="text-zinc-200 font-semibold">
-                      {row.assetSymbol}
-                    </div>
-                    <div className="text-xs text-zinc-500">{row.assetName}</div>
-                  </div>
-                </div>
-              </td>
-              <td className="px-4 py-3 text-zinc-200 font-medium">
-                {row.accountName}
-              </td>
-              <td className="px-4 py-3 text-right text-zinc-200">
-                {formatQuantity(row.quantity)}
-              </td>
-              <td className="px-4 py-3 text-right">
-                <PriceCell
-                  row={row}
-                  currency={baseCurrency}
-                  showSourceBadges={showPriceSourceBadges}
-                  priceFormatter={priceFormatter}
-                  showRefreshButton={showRefreshButton}
-                  isRefreshing={refreshingAssetIds.includes(row.assetId)}
-                  onRefresh={handleRefreshAsset}
-                />
-              </td>
-              <td className="px-4 py-3 text-right text-zinc-200">
-                {row.marketValue !== null
-                  ? formatCurrencyValue(row.marketValue, baseCurrency)
-                  : 'Unpriced'}
-              </td>
-              <td className="px-4 py-3">
-                <Badge type="blue">{row.assetType}</Badge>
-              </td>
-              <td className="px-4 py-3 text-zinc-400">
-                {row.volatilityBucket}
-              </td>
-            </tr>
-          ))
-        )}
-      </tbody>
-    </table>
+    <DataTable
+      columns={columns}
+      rows={displayedRows}
+      keyFn={(row) => `${row.assetId}-${row.accountId}`}
+      emptyMessage={
+        emptyMessage ??
+        'No holdings found. Add ledger transactions to see holdings here.'
+      }
+      defaultSort={{ columnId: 'marketValue', direction: 'desc' }}
+      globalSearch={globalSearch}
+      rowClassName={() => 'hover:bg-zinc-800/30'}
+      toolbar={toolbar}
+    />
   );
 }
