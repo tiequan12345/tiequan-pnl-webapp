@@ -8,6 +8,8 @@ export type NetExposureRow = {
   assetName: string;
   netQuantity: string;
   netQuantityValue: number;
+  price: number | null;
+  marketValue: number | null;
 };
 
 export type HedgeTableRow = {
@@ -18,7 +20,8 @@ export type HedgeTableRow = {
   assetName: string;
   quantity: string;
   quantityValue: number;
-  notes: string | null;
+  price: number | null;
+  marketValue: number | null;
 };
 
 const HEDGE_DATE_FORMAT = new Intl.DateTimeFormat('en-US', {
@@ -56,14 +59,63 @@ export function NetExposureTable({ rows }: NetExposureTableProps) {
       id: 'netQuantityValue',
       header: 'Net Quantity',
       accessor: (row) => row.netQuantityValue,
-      cell: (row) => (
-        <span className="text-zinc-300">
-          {row.netQuantity.startsWith('-') ? row.netQuantity : `+${row.netQuantity}`}
-        </span>
-      ),
+      cell: (row) => {
+        const absValue = Math.abs(row.netQuantityValue);
+        const formatted = absValue.toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+        return (
+          <span className="text-zinc-300">
+            {row.netQuantityValue < 0 ? `-${formatted}` : `+${formatted}`}
+          </span>
+        );
+      },
       sortable: true,
       align: 'right',
       className: 'text-right',
+      headerClassName: 'text-right',
+    },
+    {
+      id: 'price',
+      header: 'Price',
+      accessor: (row) => row.price ?? -Infinity,
+      cell: (row) => (
+        <span className="text-zinc-300">
+          {row.price ? `$${row.price.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 6,
+          })}` : '—'}
+        </span>
+      ),
+      sortable: true,
+      sortFn: (a, b) => (a.price ?? -Infinity) - (b.price ?? -Infinity),
+      align: 'right',
+      className: 'text-right',
+      headerClassName: 'text-right',
+    },
+    {
+      id: 'marketValue',
+      header: 'Market Value',
+      accessor: (row) => row.marketValue ?? -Infinity,
+      cell: (row) => {
+        const value = row.marketValue;
+        if (value === null || value === undefined) return <span className="text-zinc-300">—</span>;
+        const formatted = Math.abs(value).toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+        return (
+          <span className={`text-zinc-300 ${value < 0 ? 'text-red-400' : ''}`}>
+            {value < 0 ? `-$${formatted}` : `$${formatted}`}
+          </span>
+        );
+      },
+      sortable: true,
+      sortFn: (a, b) => (a.marketValue ?? -Infinity) - (b.marketValue ?? -Infinity),
+      align: 'right',
+      className: 'text-right',
+      headerClassName: 'text-right',
     },
   ];
 
@@ -124,23 +176,60 @@ export function HedgeTransactionsTable({ rows }: HedgeTransactionsTableProps) {
       id: 'quantityValue',
       header: 'Quantity',
       accessor: (row) => row.quantityValue,
-      cell: (row) => (
-        <span className="text-zinc-300">
-          {row.quantity.startsWith('-') ? row.quantity : `+${row.quantity}`}
-        </span>
-      ),
+      cell: (row) => {
+        const absValue = Math.abs(row.quantityValue);
+        const formatted = absValue.toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+        return (
+          <span className="text-zinc-300">
+            {row.quantityValue < 0 ? `-${formatted}` : `+${formatted}`}
+          </span>
+        );
+      },
       sortable: true,
       align: 'right',
       className: 'text-right',
     },
     {
-      id: 'notes',
-      header: 'Notes',
-      accessor: (row) => row.notes ?? '—',
+      id: 'price',
+      header: 'Price',
+      accessor: (row) => row.price ?? -Infinity,
       cell: (row) => (
-        <span className="text-zinc-500 max-w-xs truncate">{row.notes ?? '—'}</span>
+        <span className="text-zinc-300">
+          {row.price ? `$${row.price.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 6,
+          })}` : '—'}
+        </span>
       ),
       sortable: true,
+      sortFn: (a, b) => (a.price ?? -Infinity) - (b.price ?? -Infinity),
+      align: 'right',
+      className: 'text-right',
+    },
+    {
+      id: 'marketValue',
+      header: 'Market Value',
+      accessor: (row) => row.marketValue ?? -Infinity,
+      cell: (row) => {
+        const value = row.marketValue;
+        if (value === null || value === undefined) return <span className="text-zinc-300">—</span>;
+        const formatted = value.toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+        return (
+          <span className={`text-zinc-300 ${value < 0 ? 'text-red-400' : ''}`}>
+            {value < 0 ? `-$${formatted.slice(1)}` : `$${formatted}`}
+          </span>
+        );
+      },
+      sortable: true,
+      sortFn: (a, b) => (a.marketValue ?? -Infinity) - (b.marketValue ?? -Infinity),
+      align: 'right',
+      className: 'text-right',
     },
   ];
 
