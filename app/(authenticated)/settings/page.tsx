@@ -106,37 +106,37 @@ export default function SettingsPage() {
       <Card className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">General</h2>
-          {loading && <span className="text-sm text-gray-500">Loading…</span>}
+          {loading && <span className="text-sm text-zinc-500">Loading…</span>}
         </div>
         {error && (
-          <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/40 rounded-lg px-3 py-2">
             {error}
           </div>
         )}
         {saveStatus && (
-          <div className="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+          <div className="text-xs text-green-400 bg-green-500/10 border border-green-500/40 rounded-lg px-3 py-2">
             {saveStatus}
           </div>
         )}
         <div className="grid gap-4 md:grid-cols-2">
           <label className="space-y-2">
-            <span className="block text-sm font-medium text-gray-700">Base Currency</span>
+            <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Base Currency</span>
             <input
               type="text"
               value={settings.baseCurrency}
               onChange={(e) => handleChange('baseCurrency', e.target.value.toUpperCase())}
-              className="w-full rounded border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-black focus:outline-none"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               placeholder="USD"
               disabled={loading}
             />
           </label>
           <label className="space-y-2">
-            <span className="block text-sm font-medium text-gray-700">Timezone</span>
+            <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Timezone</span>
             <input
               type="text"
               value={settings.timezone}
               onChange={(e) => handleChange('timezone', e.target.value)}
-              className="w-full rounded border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-black focus:outline-none"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               placeholder="UTC"
               disabled={loading}
             />
@@ -146,13 +146,13 @@ export default function SettingsPage() {
               type="checkbox"
               checked={settings.priceAutoRefresh}
               onChange={(e) => handleChange('priceAutoRefresh', e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-black focus:ring-black"
+              className="h-4 w-4 rounded border-zinc-800 bg-zinc-900 text-blue-600 focus:ring-blue-500 focus:ring-2"
               disabled={loading}
             />
-            <span className="text-sm font-medium text-gray-700">Auto refresh prices</span>
+            <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Auto refresh prices</span>
           </label>
           <label className="space-y-2">
-            <span className="block text-sm font-medium text-gray-700">Auto Refresh Interval (minutes)</span>
+            <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Auto Refresh Interval (minutes)</span>
             <input
               type="number"
               min={1}
@@ -162,17 +162,17 @@ export default function SettingsPage() {
                 const clamped = Number.isFinite(numeric) ? Math.max(1, Math.floor(numeric)) : 1;
                 handleChange('priceAutoRefreshIntervalMinutes', clamped);
               }}
-              className="w-full rounded border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-black focus:outline-none"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               disabled={loading}
             />
           </label>
           <label className="md:col-span-2 space-y-2">
-            <span className="block text-sm font-medium text-gray-700">Price Refresh Endpoint</span>
+            <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Price Refresh Endpoint</span>
             <input
               type="text"
               value={settings.priceRefreshEndpoint}
               onChange={(e) => handleChange('priceRefreshEndpoint', e.target.value)}
-              className="w-full rounded border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-black focus:outline-none"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               disabled={loading}
             />
           </label>
@@ -182,7 +182,7 @@ export default function SettingsPage() {
             type="button"
             onClick={handleSave}
             disabled={!canSave}
-            className="rounded bg-black px-4 py-2 text-sm font-medium text-white shadow-sm disabled:opacity-60"
+            className="text-sm px-3 py-2 rounded-lg border border-blue-500/40 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-700/60 text-white font-medium transition-colors"
           >
             Save Settings
           </button>
@@ -192,15 +192,15 @@ export default function SettingsPage() {
       <Card className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Manual Price Refresh</h2>
-          {refreshStatus && <span className="text-sm text-gray-600">{refreshStatus}</span>}
+          {refreshStatus && <span className="text-sm text-zinc-400">{refreshStatus}</span>}
         </div>
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-zinc-400">
           Trigger an immediate price refresh without waiting for the scheduled interval.
         </p>
         <button
           type="button"
           onClick={handleManualRefresh}
-          className="rounded bg-black px-4 py-2 text-sm font-medium text-white shadow-sm"
+          className="text-sm px-3 py-2 rounded-lg border border-blue-500/40 bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors"
         >
           Refresh Prices Now
         </button>
@@ -208,28 +208,28 @@ export default function SettingsPage() {
 
       <Card className="space-y-3">
         <h2 className="text-lg font-semibold">Exports</h2>
-        <p className="text-sm text-gray-600">Download your data as CSV or the raw SQLite database.</p>
+        <p className="text-sm text-zinc-400">Download your data as CSV or the raw SQLite database.</p>
         <div className="flex flex-wrap gap-3">
           <a
-            className="rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 shadow-sm hover:bg-gray-50"
+            className="text-sm px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 transition-colors"
             href="/api/export/assets"
           >
             Export Assets CSV
           </a>
           <a
-            className="rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 shadow-sm hover:bg-gray-50"
+            className="text-sm px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 transition-colors"
             href="/api/export/accounts"
           >
             Export Accounts CSV
           </a>
           <a
-            className="rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 shadow-sm hover:bg-gray-50"
+            className="text-sm px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 transition-colors"
             href="/api/export/ledger"
           >
             Export Ledger CSV
           </a>
           <a
-            className="rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 shadow-sm hover:bg-gray-50"
+            className="text-sm px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 transition-colors"
             href="/api/export/db"
           >
             Download SQLite DB
