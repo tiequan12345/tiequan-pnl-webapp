@@ -184,15 +184,11 @@ export default async function HedgesPage() {
         </div>
       </div>
 
-      <div className="text-xs text-zinc-500 mb-4">
-        Showing only VOLATILE assets. CASH_LIKE assets (like USDT/USDC) are excluded from hedge analysis.
-      </div>
-
       <Card>
         <div className="border-b border-zinc-800 px-4 py-3">
           <h3 className="text-sm font-semibold text-zinc-100">Net Exposure by Asset</h3>
           <p className="text-xs text-zinc-500 mt-1">
-            Net exposure = holdings + hedge transactions, with price and market value for volatile assets. CASH_LIKE assets excluded.
+            Net exposure = holdings + hedge transactions, with price and market value for volatile assets. 
           </p>
         </div>
         <NetExposureTable rows={netExposureRows} />

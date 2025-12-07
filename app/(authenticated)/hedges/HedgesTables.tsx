@@ -106,7 +106,7 @@ export function NetExposureTable({ rows }: NetExposureTableProps) {
           maximumFractionDigits: 2,
         });
         return (
-          <span className={`text-zinc-300 ${value < 0 ? 'text-red-400' : ''}`}>
+          <span className="text-zinc-300">
             {value < 0 ? `-$${formatted}` : `$${formatted}`}
           </span>
         );
@@ -221,7 +221,7 @@ export function HedgeTransactionsTable({ rows }: HedgeTransactionsTableProps) {
           maximumFractionDigits: 2,
         });
         return (
-          <span className={`text-zinc-300 ${value < 0 ? 'text-red-400' : ''}`}>
+          <span className="text-zinc-300">
             {value < 0 ? `-$${formatted.slice(1)}` : `$${formatted}`}
           </span>
         );
