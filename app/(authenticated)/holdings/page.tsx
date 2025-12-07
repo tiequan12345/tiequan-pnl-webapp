@@ -2,7 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import { Card } from '../_components/ui/Card';
 import { Badge } from '../_components/ui/Badge';
-import { HoldingsTable } from '../_components/holdings/HoldingsTable';
+import { HoldingsList } from './HoldingsList';
 import {
   consolidateHoldingsByAsset,
   getHoldings,
@@ -75,7 +75,7 @@ export default async function HoldingsPage({ searchParams }: HoldingsPageProps) 
         <h2 className="text-xl font-bold text-white">Holdings</h2>
         <div className="inline-flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-lg p-1">
           <Link
-            href={{ pathname: '/holdings' }}
+            href={{ pathname: '/holdings', query: { view: 'per-account' } }}
             className={`px-3 py-1.5 text-sm rounded-md transition ${
               viewMode === 'per-account'
                 ? 'bg-blue-600 text-white'
@@ -125,14 +125,11 @@ export default async function HoldingsPage({ searchParams }: HoldingsPageProps) 
       </div>
 
       <Card className="p-0">
-        <div className="overflow-x-auto">
-          <HoldingsTable
-            rows={rows}
-            baseCurrency={baseCurrency}
-            emptyMessage="No holdings found. Add ledger transactions to see holdings here."
-            showRefreshButton
-          />
-        </div>
+        <HoldingsList
+          rows={rows}
+          baseCurrency={baseCurrency}
+          showRefreshButton
+        />
       </Card>
     </div>
   );

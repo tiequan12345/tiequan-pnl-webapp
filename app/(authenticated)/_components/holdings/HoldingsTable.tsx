@@ -29,12 +29,19 @@ function formatCurrencyValue(
     return 'Unpriced';
   }
 
-  const { minimumFractionDigits = 0, maximumFractionDigits = 2 } = options ?? {};
+  const { minimumFractionDigits = 2, maximumFractionDigits = 2 } = options ?? {};
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency,
     minimumFractionDigits,
     maximumFractionDigits,
+  }).format(value);
+}
+
+function formatQuantity(value: number) {
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(value);
 }
 
@@ -183,10 +190,7 @@ export function HoldingsTable({
                 {row.accountName}
               </td>
               <td className="px-4 py-3 text-right text-zinc-200">
-                {row.quantity.toLocaleString(undefined, {
-                  minimumFractionDigits: 0,
-                  maximumFractionDigits: 8,
-                })}
+                {formatQuantity(row.quantity)}
               </td>
               <td className="px-4 py-3 text-right">
                 <PriceCell
