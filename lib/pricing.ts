@@ -10,47 +10,118 @@ const COINGECKO_OVERRIDES: Record<string, string> = {
   USDC: 'usd-coin',
 };
 
+import { coingeckoRateLimiter } from './rateLimiter';
+
 export type ProviderPrice = {
   price: number;
   source: string;
   updatedAt: Date;
 };
 
-export async function fetchCryptoPrice(symbol: string): Promise<ProviderPrice | null> {
-  try {
-    const normalized = symbol.trim().toUpperCase();
-    const coinId = COINGECKO_OVERRIDES[normalized] ?? normalized.toLowerCase();
+export interface BatchedCryptoPrices {
+  [coinId: string]: ProviderPrice | null;
+}
 
-    const response = await fetch(
-      `${COINGECKO_BASE}/simple/price?ids=${encodeURIComponent(
-        coinId,
-      )}&vs_currencies=usd`,
-      {
+/**
+ * Fetch multiple crypto prices in a single batched API call
+ * @param symbols Array of crypto symbols to fetch prices for
+ * @returns Object mapping symbol to price data
+ */
+export async function fetchBatchCryptoPrices(symbols: string[]): Promise<BatchedCryptoPrices> {
+  try {
+    // Normalize symbols to coin IDs
+    const coinIds = symbols.map(symbol => {
+      const normalized = symbol.trim().toUpperCase();
+      return COINGECKO_OVERRIDES[normalized] ?? normalized.toLowerCase();
+    });
+
+    // Create comma-separated list of coin IDs (limit to avoid URL too long)
+    const maxCoinsPerBatch = 10; // As specified in requirements
+    const results: BatchedCryptoPrices = {};
+
+    // Process in batches of maxCoinsPerBatch
+    for (let i = 0; i < coinIds.length; i += maxCoinsPerBatch) {
+      const batch = coinIds.slice(i, i + maxCoinsPerBatch);
+      const coinIdList = batch.join(',');
+      
+      // Wait for rate limit slot
+      await coingeckoRateLimiter.waitForSlot();
+
+      // Build API URL with optional API key
+      const apiKey = process.env.COINGECKO_API_KEY;
+      const url = new URL(`${COINGECKO_BASE}/simple/price`);
+      url.searchParams.set('ids', coinIdList);
+      url.searchParams.set('vs_currencies', 'usd');
+      
+      if (apiKey) {
+        url.searchParams.set('x_cg_demo_api_key', apiKey);
+      }
+
+      const response = await fetch(url.toString(), {
         headers: {
           Accept: 'application/json',
+          ...(apiKey && { 'x-cg-demo-api-key': apiKey }),
         },
-      },
-    );
+      });
 
-    if (!response.ok) {
-      return null;
+      if (!response.ok) {
+        console.error(`CoinGecko API error for batch ${i / maxCoinsPerBatch + 1}:`, response.status, response.statusText);
+        // Mark all symbols in this batch as failed
+        const batchStartIndex = i;
+        const batchEndIndex = Math.min(i + maxCoinsPerBatch, symbols.length);
+        for (let j = batchStartIndex; j < batchEndIndex; j++) {
+          results[symbols[j]] = null;
+        }
+        continue;
+      }
+
+      const data = await response.json() as Record<string, { usd?: number }>;
+
+      // Process results for this batch
+      for (const coinId of batch) {
+        const quote = data[coinId];
+        const symbolIndex = coinIds.indexOf(coinId);
+        const originalSymbol = symbols[symbolIndex];
+
+        if (!quote || typeof quote.usd !== 'number') {
+          results[originalSymbol] = null;
+        } else {
+          results[originalSymbol] = {
+            price: quote.usd,
+            source: 'CoinGecko',
+            updatedAt: new Date(),
+          };
+        }
+      }
     }
 
-    const data = (await response.json()) as Record<string, { usd?: number }>;
-
-    const quote = data[coinId];
-    if (!quote || typeof quote.usd !== 'number') {
-      return null;
+    return results;
+  } catch (error) {
+    console.error('Error fetching batch crypto prices:', error);
+    // Return null for all symbols on error
+    const results: BatchedCryptoPrices = {};
+    for (const symbol of symbols) {
+      results[symbol] = null;
     }
-
-    return {
-      price: quote.usd,
-      source: 'CoinGecko',
-      updatedAt: new Date(),
-    };
-  } catch {
-    return null;
+    return results;
   }
+}
+
+/**
+ * Legacy single crypto price fetch function for backward compatibility
+ * @param symbol Single crypto symbol
+ * @returns Price data or null
+ */
+export async function fetchCryptoPrice(symbol: string): Promise<ProviderPrice | null> {
+  const batchResults = await fetchBatchCryptoPrices([symbol]);
+  return batchResults[symbol] || null;
+}
+
+/**
+ * Get rate limiter statistics for monitoring
+ */
+export function getCoinGeckoRateLimitStats() {
+  return coingeckoRateLimiter.getStats();
 }
 
 export async function fetchEquityPrice(symbol: string): Promise<ProviderPrice | null> {
