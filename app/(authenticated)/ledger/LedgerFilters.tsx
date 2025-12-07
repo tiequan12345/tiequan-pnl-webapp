@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import { ALLOWED_TX_TYPES } from '@/lib/ledger';
 
 type LedgerFiltersProps = {
   accounts: { id: number; name: string }[];
@@ -14,16 +15,6 @@ type LedgerFiltersProps = {
     txType?: string | null;
   };
 };
-
-const TX_TYPES = [
-  'DEPOSIT',
-  'WITHDRAWAL',
-  'TRADE',
-  'YIELD',
-  'NFT_TRADE',
-  'OFFLINE_TRADE',
-  'OTHER',
-] as const;
 
 export function LedgerFilters({ accounts, assets, initialFilters }: LedgerFiltersProps) {
   const router = useRouter();
@@ -194,7 +185,7 @@ export function LedgerFilters({ accounts, assets, initialFilters }: LedgerFilter
           className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 min-w-[160px]"
         >
           <option value="">All Types</option>
-          {TX_TYPES.map((type) => (
+          {ALLOWED_TX_TYPES.map((type) => (
             <option key={type} value={type}>
               {type}
             </option>

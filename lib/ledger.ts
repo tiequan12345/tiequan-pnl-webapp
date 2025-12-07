@@ -6,6 +6,7 @@ export const ALLOWED_TX_TYPES = [
   'NFT_TRADE',
   'OFFLINE_TRADE',
   'OTHER',
+  'HEDGE',
 ] as const;
 
 export type LedgerTxType = (typeof ALLOWED_TX_TYPES)[number];

@@ -1,15 +1,11 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-
-const ALLOWED_TX_TYPES = [
-  'DEPOSIT',
-  'WITHDRAWAL',
-  'TRADE',
-  'YIELD',
-  'NFT_TRADE',
-  'OFFLINE_TRADE',
-  'OTHER',
-] as const;
+import {
+  ALLOWED_TX_TYPES,
+  isAllowedTxType,
+  parseLedgerDateTime,
+  parseLedgerDecimal,
+} from '@/lib/ledger';
 
 type RouteContext = {
   params: {
@@ -26,51 +22,6 @@ type LedgerPayload = {
   external_reference?: string | null;
   notes?: string | null;
 };
-
-function isInAllowedList(value: string | undefined, list: readonly string[]): boolean {
-  if (!value) {
-    return false;
-  }
-  return list.includes(value);
-}
-
-function parseDecimal(
-  input: string | number | null | undefined,
-): string | null | undefined {
-  if (input === null || input === undefined) {
-    return undefined;
-  }
-
-  if (typeof input === 'number') {
-    if (!Number.isFinite(input)) {
-      return null;
-    }
-    return input.toString();
-  }
-
-  const trimmed = input.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-
-  const numeric = Number(trimmed);
-  if (!Number.isFinite(numeric)) {
-    return null;
-  }
-
-  return trimmed;
-}
-
-function parseDateTime(input: string | undefined): Date | null {
-  if (!input) {
-    return null;
-  }
-  const date = new Date(input);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  return date;
-}
 
 export async function PUT(request: Request, context: RouteContext) {
   const id = Number(context.params.id);
@@ -127,7 +78,7 @@ export async function PUT(request: Request, context: RouteContext) {
       );
     }
 
-    const dateTime = parseDateTime(dateTimeStr);
+    const dateTime = parseLedgerDateTime(dateTimeStr);
     if (!dateTime) {
       return NextResponse.json(
         { error: 'Invalid date_time.' },
@@ -151,7 +102,7 @@ export async function PUT(request: Request, context: RouteContext) {
       );
     }
 
-    const quantityParsed = parseDecimal(quantityInput);
+    const quantityParsed = parseLedgerDecimal(quantityInput);
     if (quantityParsed === null) {
       return NextResponse.json(
         { error: 'quantity must be a valid number.' },
@@ -165,13 +116,13 @@ export async function PUT(request: Request, context: RouteContext) {
       );
     }
 
-    const txType = txTypeRaw;
-    if (!isInAllowedList(txType, ALLOWED_TX_TYPES)) {
+    if (!isAllowedTxType(txTypeRaw)) {
       return NextResponse.json(
         { error: 'Invalid tx_type.' },
         { status: 400 },
       );
     }
+    const txType: (typeof ALLOWED_TX_TYPES)[number] = txTypeRaw;
 
     const externalReferenceRaw = body.external_reference ?? null;
     const externalReference =

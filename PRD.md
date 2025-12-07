@@ -100,7 +100,7 @@ ledger_transactions
 	•	account_id (FK → accounts.id)
 	•	asset_id (FK → assets.id)
 	•	quantity (decimal; **signed**; positive = asset quantity increases in the account, negative = decreases)
-	•	tx_type (enum): DEPOSIT, WITHDRAWAL, TRADE, YIELD, NFT_TRADE, OFFLINE_TRADE, OTHER
+	•	tx_type (enum): DEPOSIT, WITHDRAWAL, TRADE, YIELD, NFT_TRADE, OFFLINE_TRADE, HEDGE, OTHER
 	•	external_reference (string, nullable)
 	•	notes (text, nullable)
 	•	created_at, updated_at
@@ -110,7 +110,7 @@ Indexes:
 
 Behavior:
 	•	`quantity` is the only numeric field describing how holdings change; pricing and value are derived from separate price tables (e.g. prices_latest) when needed.
-	•	Trade-like events (TRADE, NFT_TRADE, OFFLINE_TRADE) are represented as two rows (double-entry) for a given account: one positive row for the asset received, one negative row for the asset spent.
+	•	Trade-like events (TRADE, NFT_TRADE, OFFLINE_TRADE, HEDGE) are represented as two rows (double-entry) for a given account: one positive row for the asset received, one negative row for the asset spent.
 
 prices_latest
 	•	id (PK)
@@ -216,13 +216,13 @@ List view:
 Manual entry form:
 	•	Required fields: date/time, account, tx_type, and appropriate asset + quantity inputs:
 	•	For non-trade types (DEPOSIT, WITHDRAWAL, YIELD, OTHER): a single asset and a positive quantity magnitude.
-	•	For trade types (TRADE, NFT_TRADE, OFFLINE_TRADE): two legs – "Asset In + Quantity In" (asset being acquired) and "Asset Out + Quantity Out" (asset being spent) – which the app converts into two ledger rows.
+	•	For trade types (TRADE, NFT_TRADE, OFFLINE_TRADE, HEDGE): two legs – "Asset In + Quantity In" (asset being acquired) and "Asset Out + Quantity Out" (asset being spent) – which the app converts into two ledger rows.
 	•	Optional: notes, external_reference.
 	•	On submit:
 	•	Create ledger_transactions row(s) according to tx_type semantics:
 	•	DEPOSIT/YIELD/OTHER → single row with positive quantity.
 	•	WITHDRAWAL → single row with negative quantity.
-	•	TRADE / NFT_TRADE / OFFLINE_TRADE → two rows (double-entry): one positive row for the acquired asset and one negative row for the spent asset, both tied to the same account and date_time.
+	•	TRADE / NFT_TRADE / OFFLINE_TRADE / HEDGE → two rows (double-entry): one positive row for the acquired asset and one negative row for the spent asset, both tied to the same account and date_time.
 	•	UI elements (filters, table, buttons) should be aligned with the current Ledger section styling in the authenticated shell.
 
 Notes on pricing:
@@ -266,7 +266,18 @@ Flow:
 
 No AI classification: user must map tx_type, or you require that CSV contains a tx_type column.
 
-4.2.6 Holdings (/holdings)
+Status: Complete – `/ledger/import` handles CSV upload, mapping, validation, inline account/asset creation, previewing flagged rows, and committing the valid entries via `/api/ledger/import/commit`.
+
+4.2.6 Hedges (/hedges)
+Page:
+	•	Net Exposure by Asset:
+	•	Sums signed ledger quantities grouped by asset so you see combined spot + hedge exposure.
+	•	Quantities show their sign (e.g., +10 / -5).
+	•	Active Hedges:
+	•	Table of rows where tx_type = HEDGE with columns: Date/Time, Account, Asset, Quantity, Notes.
+	•	Quantities show their sign; each hedge entry is represented as a double-entry pair under the hood (positive leg for acquired, negative leg for spent).
+
+4.2.7 Holdings (/holdings)
 Two modes:
 	•	By account (grouped).
 	•	Consolidated (single list).
@@ -312,7 +323,7 @@ Holdings logic:
 
 Unpriced assets: mark clearly; show quantity and cost basis, but blank or "Unpriced" for current price, market value, and PnL.
 
-4.2.7 Settings (/settings)
+4.2.8 Settings (/settings)
 Controls:
 	•	Base currency (drop-down or free text with validation).
 	•	Timezone selector.
@@ -555,18 +566,22 @@ Objective: Ability to record transactions manually and view/filter them.
 Scope:
 	•	Expose a /ledger page under the authenticated shell that lists ledger_transactions rows with filters (by date range, account, asset, tx_type) and simple pagination.
 	•	Manual transaction entry form on /ledger:
-	•	Required: date/time, account, tx_type, and either a single asset+quantity (for DEPOSIT/WITHDRAWAL/YIELD/OTHER) or Asset In/Quantity In and Asset Out/Quantity Out (for TRADE/NFT_TRADE/OFFLINE_TRADE).
+	•	Required: date/time, account, tx_type, and either a single asset+quantity (for DEPOSIT/WITHDRAWAL/YIELD/OTHER) or Asset In/Quantity In and Asset Out/Quantity Out (for TRADE/NFT_TRADE/OFFLINE_TRADE/HEDGE).
 	•	Optional: notes, external_reference.
 	•	On submit, create one or two ledger_transactions rows with signed quantities based on tx_type (positive for inflows, negative for outflows).
 	•	Table columns: Date/Time, Account, Asset, Tx Type, signed Quantity, Notes, Actions (Edit/Delete).
 	•	No base_price / base_value or fee fields are captured at this stage; any valuation logic happens later using cached prices.
 
 	•	Remove the prior Phase 2 bullet that said "Compute base_value when base_price present." – that logic is no longer applicable with the signed-quantity-only ledger.
+	•	Expose /hedges that summarizes net exposures per asset (sum of signed ledger quantities) and lists active HEDGE rows so you can see hedges + spots together.
 
 Deliverable: User can create transactions via UI and see them in list, filtered.
 
 Phase 2 – Verification: Ledger manual entry and filters
 
+	Verification steps:
+
+	Setup:
 	1.	Create at least one Asset and one Account via /assets and /accounts.
 	2.	Visit /ledger.
 	3.	Add a deposit:
@@ -575,28 +590,31 @@ Phase 2 – Verification: Ledger manual entry and filters
 		•	Asset: select an existing asset.
 		•	Quantity: 10.
 		•	tx_type: DEPOSIT.
-		•	Submit.
-	4.	Confirm the new row appears in the ledger table:
-		•	Quantity shows as +10 (signed quantity).
-		•	Account and asset names match the selections.
-	5.	Add a withdrawal:
+		•	Submit and confirm the new row appears with quantity shown as +10 for that asset/account.
+	4.	Add a withdrawal:
 		•	tx_type: WITHDRAWAL.
 		•	Same account and asset as above.
 		•	Quantity: 5.
-	6.	Confirm the ledger table shows a second row with:
-		•	Quantity = -5 for that asset/account.
-	7.	Add a trade:
+		•	Confirm the ledger table shows a second row with quantity = -5 for that asset/account.
+	5.	Add a trade:
 		•	tx_type: TRADE.
 		•	Asset In: BTC, Quantity In: 2.
 		•	Asset Out: USDT, Quantity Out: 200000.
-	8.	Confirm the ledger table shows two new rows for the same date/account:
+	6.	Confirm the ledger table shows two new rows for the same date/account:
 		•	One row with +2 BTC.
 		•	One row with -200000 USDT.
+	7.	Add a hedge (tx_type = HEDGE):
+		•	Asset In (e.g., BTC) with a positive quantity.
+		•	Asset Out (e.g., USDT) with a positive quantity for the spend leg.
+		•	Confirm two rows appear: positive for the acquired asset, negative for the spent asset.
+	8.	Visit /hedges and verify:
+		•	Net exposures table shows the combined signed quantity for the assets involved (spot + hedge).
+		•	Active hedges table lists the latest HEDGE rows you created.
 	9.	Use the filters:
 		•	Filter by account and verify only rows for that account remain.
 		•	Filter by asset (e.g., BTC) and verify only that asset’s rows remain.
-		•	Filter by tx_type = TRADE and verify only TRADE rows are shown (no legacy TRADE_BUY / TRADE_SELL types).
-	10.	Use the per-row Delete action to remove a row and verify it disappears from the table and is no longer returned by the ledger API.
+	10.	Filter by tx_type (e.g., TRADE) and verify only those rows remain (no legacy TRADE_BUY / TRADE_SELL types).
+	11.	Use the per-row Delete action to remove a row and verify it disappears from the table and is no longer returned by the ledger API.
 
 Phase 2 is complete when all these behaviors work consistently.
 

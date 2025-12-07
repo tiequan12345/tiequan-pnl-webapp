@@ -2,6 +2,7 @@
 
 import React, { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { ALLOWED_TX_TYPES, LedgerTxType } from '@/lib/ledger';
 
 type LedgerFormMode = 'create' | 'edit';
 
@@ -23,19 +24,20 @@ type LedgerFormProps = {
   assets: { id: number; symbol: string; name: string }[];
 };
 
-const TX_TYPES = [
-  'DEPOSIT',
-  'WITHDRAWAL',
-  'TRADE',
-  'YIELD',
-  'NFT_TRADE',
-  'OFFLINE_TRADE',
-  'OTHER',
-] as const;
+type TxType = LedgerTxType;
 
-type TxType = (typeof TX_TYPES)[number];
+const TRADE_TYPES: TxType[] = ['TRADE', 'NFT_TRADE', 'OFFLINE_TRADE', 'HEDGE'];
 
-const TRADE_TYPES: TxType[] = ['TRADE', 'NFT_TRADE', 'OFFLINE_TRADE'];
+const TX_TYPE_LABELS: Record<LedgerTxType, string> = {
+  DEPOSIT: 'Deposit',
+  WITHDRAWAL: 'Withdrawal',
+  TRADE: 'Trade',
+  YIELD: 'Yield',
+  NFT_TRADE: 'NFT Trade',
+  OFFLINE_TRADE: 'Offline Trade',
+  OTHER: 'Other',
+  HEDGE: 'Hedge',
+};
 
 function getDefaultDateTimeLocal(): string {
   const now = new Date();
@@ -87,9 +89,9 @@ export function LedgerForm({
 
   const [txType, setTxType] = useState<TxType>(() => {
     if (initialValues?.tx_type) {
-      return (initialValues.tx_type.toUpperCase() as TxType) || TX_TYPES[0];
+      return (initialValues.tx_type.toUpperCase() as TxType) || ALLOWED_TX_TYPES[0];
     }
-    return TX_TYPES[0];
+    return ALLOWED_TX_TYPES[0];
   });
 
   const [quantity, setQuantity] = useState<string>(initialValues?.quantity ?? '');
@@ -390,13 +392,11 @@ export function LedgerForm({
             className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
             disabled={isEditMode}
           >
-            <option value="DEPOSIT">Deposit</option>
-            <option value="WITHDRAWAL">Withdrawal</option>
-            <option value="TRADE">Trade</option>
-            <option value="YIELD">Yield</option>
-            <option value="NFT_TRADE">NFT Trade</option>
-            <option value="OFFLINE_TRADE">Offline Trade</option>
-            <option value="OTHER">Other</option>
+            {ALLOWED_TX_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {TX_TYPE_LABELS[type]}
+              </option>
+            ))}
           </select>
         </div>
 

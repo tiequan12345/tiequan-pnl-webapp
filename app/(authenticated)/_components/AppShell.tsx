@@ -10,6 +10,7 @@ import {
   ArrowRightLeft,
   Settings,
   Layers,
+  ShieldCheck,
 } from 'lucide-react';
 
 type NavItem = {
@@ -22,6 +23,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/holdings', label: 'Holdings', icon: PieChart },
   { href: '/ledger', label: 'Ledger', icon: ArrowRightLeft },
+  { href: '/hedges', label: 'Hedges', icon: ShieldCheck },
   { href: '/assets', label: 'Assets', icon: Wallet },
   { href: '/accounts', label: 'Accounts', icon: Wallet },
   { href: '/settings', label: 'Settings', icon: Settings },
