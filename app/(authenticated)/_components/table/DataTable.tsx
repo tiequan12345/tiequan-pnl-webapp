@@ -228,7 +228,7 @@ export function DataTable<T>({
                     {columns.map((column) => {
                       const alignment =
                         column.align === 'right' ? 'text-right' : 'text-left';
-                      const value = column.cell
+                      const cellContent = column.cell
                         ? column.cell(row)
                         : column.accessor
                           ? column.accessor(row)
@@ -238,9 +238,11 @@ export function DataTable<T>({
                           key={column.id}
                           className={`${padding} ${alignment} ${column.className ?? ''}`}
                         >
-                          {typeof value === 'string' || typeof value === 'number'
-                            ? String(value)
-                            : String(value ?? '')}
+                          {column.cell
+                            ? cellContent as ReactNode
+                            : typeof cellContent === 'string' || typeof cellContent === 'number'
+                              ? String(cellContent)
+                              : String(cellContent ?? '')}
                         </td>
                       );
                     })}
