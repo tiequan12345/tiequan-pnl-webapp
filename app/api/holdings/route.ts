@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
-import { getHoldings } from '@/lib/holdings';
+import {
+  consolidateHoldingsByAsset,
+  getHoldings,
+} from '@/lib/holdings';
 import { getAppSettings } from '@/lib/settings';
 
 export async function GET(request: Request) {
@@ -8,6 +11,7 @@ export async function GET(request: Request) {
 
     const accountIdsParam = searchParams.get('accountIds') || '';
     const assetTypesParam = searchParams.get('assetTypes') || '';
+    const viewParam = searchParams.get('view');
 
     const accountIds = accountIdsParam
       .split(',')
@@ -23,10 +27,14 @@ export async function GET(request: Request) {
 
     const settings = await getAppSettings();
 
-    const { rows, summary } = await getHoldings({
+    const { rows: fetchedRows, summary } = await getHoldings({
       accountIds: accountIds.length > 0 ? accountIds : undefined,
       assetTypes: assetTypes.length > 0 ? assetTypes : undefined,
     });
+    const useConsolidated = viewParam === 'consolidated';
+    const rows = useConsolidated
+      ? consolidateHoldingsByAsset(fetchedRows)
+      : fetchedRows;
 
     return NextResponse.json({
       rows,

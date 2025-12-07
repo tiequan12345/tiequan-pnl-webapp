@@ -469,7 +469,7 @@ export function LedgerForm({
 
             <div className="space-y-2">
               <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
-                Quantity In
+                Quantity Acquired
               </label>
               <input
                 type="number"
@@ -501,7 +501,7 @@ export function LedgerForm({
 
             <div className="space-y-2">
               <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
-                Quantity Out
+                Quantity Spent
               </label>
               <input
                 type="number"

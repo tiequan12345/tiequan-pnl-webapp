@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 import { Card } from '../_components/ui/Card';
 import { Badge } from '../_components/ui/Badge';
+import { HoldingsTable } from '../_components/holdings/HoldingsTable';
 import type { HoldingRow, HoldingsSummary } from '@/lib/holdings';
 import { isPriceStale } from '@/lib/pricing';
 
@@ -106,7 +107,7 @@ export function DashboardView() {
     setError(null);
 
     try {
-      const response = await fetch('/api/holdings', {
+      const response = await fetch('/api/holdings?view=consolidated', {
         cache: 'no-store',
       });
       if (!response.ok) {
@@ -410,66 +411,16 @@ export function DashboardView() {
           <div className="px-4 py-8 text-center text-sm text-zinc-500">
             Loading holdings…
           </div>
-        ) : state.rows.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-zinc-500">
-            No holdings found yet. Add ledger transactions to populate the dashboard.
-          </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-zinc-400">
-              <thead className="border-b border-zinc-800 text-xs uppercase tracking-wider">
-                <tr>
-                  <th className="pb-3 font-medium">Asset</th>
-                  <th className="pb-3 font-medium text-right">Price</th>
-                  <th className="pb-3 font-medium text-right">Value</th>
-                  <th className="pb-3 font-medium text-right">Allocation</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-800/50">
-                {state.rows.map((row) => {
-                  const allocationPct =
-                    totalValue > 0 && row.marketValue
-                      ? ((row.marketValue / totalValue) * 100).toFixed(1)
-                      : '0.0';
-                  const barWidth =
-                    totalValue > 0 && row.marketValue
-                      ? Math.min(100, Math.max(0, (row.marketValue / totalValue) * 100))
-                      : 0;
-                  return (
-                    <tr key={`${row.assetId}-${row.accountId}`} className="group">
-                      <td className="py-3 text-zinc-200 font-medium">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center text-[10px]">
-                            {row.assetSymbol?.[0] ?? ''}
-                          </div>
-                          {row.assetName}{' '}
-                          <span className="text-zinc-500">({row.assetSymbol})</span>
-                        </div>
-                      </td>
-                      <td className="py-3 text-right text-zinc-200">
-                        {formatCurrency(row.price, totalCurrency)}
-                      </td>
-                      <td className="py-3 text-right text-white font-medium">
-                        {formatCurrency(row.marketValue, totalCurrency)}
-                      </td>
-                      <td className="py-3 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <span className="text-xs">{allocationPct}%</span>
-                          <div className="w-16 h-1 bg-zinc-800 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-blue-500"
-                              style={{
-                                width: `${barWidth}%`,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <HoldingsTable
+              rows={state.rows}
+              baseCurrency={totalCurrency}
+              limit={5}
+              showPriceSourceBadges={false}
+              priceFormatter={formatCurrency}
+              emptyMessage="No holdings found yet. Add ledger transactions to populate the dashboard."
+            />
           </div>
         )}
       </Card>
