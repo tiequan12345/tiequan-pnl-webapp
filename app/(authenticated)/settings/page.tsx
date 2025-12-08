@@ -207,6 +207,31 @@ export default function SettingsPage() {
       </Card>
 
       <Card className="space-y-3">
+        <h2 className="text-lg font-semibold">System Health</h2>
+        <p className="text-sm text-zinc-400">
+          Monitor the health and status of the price refresh system.
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <a
+            className="text-sm px-3 py-2 rounded-lg border border-green-500/40 bg-green-600 hover:bg-green-500 text-white font-medium transition-colors"
+            href="/api/prices/health"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Check System Health
+          </a>
+          <a
+            className="text-sm px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 transition-colors"
+            href="/api/prices/rate-limit"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            View Rate Limit Status
+          </a>
+        </div>
+      </Card>
+
+      <Card className="space-y-3">
         <h2 className="text-lg font-semibold">Exports</h2>
         <p className="text-sm text-zinc-400">Download your data as CSV or the raw SQLite database.</p>
         <div className="flex flex-wrap gap-3">
