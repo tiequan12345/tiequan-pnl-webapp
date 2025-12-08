@@ -94,22 +94,6 @@ The system respects the following settings from the settings page:
 - `priceAutoRefreshIntervalMinutes`: Refresh interval (currently fixed at 60 minutes for cron)
 - `priceRefreshEndpoint`: Custom refresh endpoint (for testing)
 
-## Testing
-
-A test script is provided to verify the improvements:
-
-```bash
-# Ensure dependencies are installed (node-fetch should already be in package.json)
-npm install
-
-# Run the test script (requires the development server to be running)
-npm run dev
-
-# In a separate terminal, run:
-node test-refresh-mechanism.js
-
-# Or test against a deployed environment:
-TEST_BASE_URL=https://your-app.vercel.app node test-refresh-mechanism.js
 ```
 
 The test script verifies:
