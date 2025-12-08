@@ -37,6 +37,7 @@ export type HoldingsResult = {
 type HoldingFilters = {
   accountIds?: number[];
   assetTypes?: string[];
+  volatilityBuckets?: string[];
 };
 
 function decimalToNumber(value: Prisma.Decimal | number | bigint | string | null | undefined): number {
@@ -102,6 +103,9 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
       id: { in: assetIds },
       ...(filters?.assetTypes && filters.assetTypes.length > 0
         ? { type: { in: filters.assetTypes } }
+        : {}),
+      ...(filters?.volatilityBuckets && filters.volatilityBuckets.length > 0
+        ? { volatility_bucket: { in: filters.volatilityBuckets } }
         : {}),
     },
     include: {

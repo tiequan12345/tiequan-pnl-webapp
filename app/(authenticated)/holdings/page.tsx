@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { Card } from '../_components/ui/Card';
 import { Badge } from '../_components/ui/Badge';
 import { HoldingsList } from './HoldingsList';
+import { HoldingsFilters } from './HoldingsFilters';
 import {
   consolidateHoldingsByAsset,
   getHoldings,
@@ -15,6 +16,7 @@ type HoldingsPageProps = {
     view?: string;
     accountIds?: string;
     assetTypes?: string;
+    volatilityBuckets?: string;
   };
 };
 
@@ -51,12 +53,14 @@ export default async function HoldingsPage({ searchParams }: HoldingsPageProps) 
 
   const accountIds = parseNumberList(params.accountIds);
   const assetTypes = parseStringList(params.assetTypes);
+  const volatilityBuckets = parseStringList(params.volatilityBuckets);
 
   const [settings, holdings] = await Promise.all([
     getAppSettings(),
     getHoldings({
       accountIds: accountIds.length > 0 ? accountIds : undefined,
       assetTypes: assetTypes.length > 0 ? assetTypes : undefined,
+      volatilityBuckets: volatilityBuckets.length > 0 ? volatilityBuckets : undefined,
     }),
   ]);
 
@@ -73,29 +77,13 @@ export default async function HoldingsPage({ searchParams }: HoldingsPageProps) 
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-white">Holdings</h2>
-        <div className="inline-flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-lg p-1">
-          <Link
-            href={{ pathname: '/holdings', query: { view: 'per-account' } }}
-            className={`px-3 py-1.5 text-sm rounded-md transition ${
-              viewMode === 'per-account'
-                ? 'bg-blue-600 text-white'
-                : 'text-zinc-300 hover:text-white'
-            }`}
-          >
-            Per Account
-          </Link>
-          <Link
-            href={{ pathname: '/holdings', query: { view: 'consolidated' } }}
-            className={`px-3 py-1.5 text-sm rounded-md transition ${
-              viewMode === 'consolidated'
-                ? 'bg-blue-600 text-white'
-                : 'text-zinc-300 hover:text-white'
-            }`}
-          >
-            Consolidated
-          </Link>
-        </div>
       </div>
+
+      <HoldingsFilters
+        currentView={viewMode}
+        currentAssetTypes={assetTypes}
+        currentVolatilityBuckets={volatilityBuckets}
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>

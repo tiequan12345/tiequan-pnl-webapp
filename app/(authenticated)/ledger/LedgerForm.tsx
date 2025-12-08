@@ -186,6 +186,14 @@ export function LedgerForm({
           return;
         }
 
+        // Parse the quantity to ensure it's a valid number
+        const qtyNumber = Number(trimmedQuantity);
+        if (!Number.isFinite(qtyNumber)) {
+          setError('Quantity must be a valid number.');
+          setSubmitting(false);
+          return;
+        }
+
         const payload = buildCommonPayload({
           assetId: assetId ? Number(assetId) : NaN,
           quantity: trimmedQuantity,
@@ -317,15 +325,18 @@ export function LedgerForm({
       }
 
       const qtyNumber = Number(qtyRaw);
-      if (!Number.isFinite(qtyNumber) || qtyNumber <= 0) {
-        setError('Quantity must be a positive number.');
+      if (!Number.isFinite(qtyNumber)) {
+        setError('Quantity must be a valid number.');
         setSubmitting(false);
         return;
       }
 
-      let signedQtyNumber = Math.abs(qtyNumber);
+      // For non-trade types in create mode, apply sign based on transaction type
+      let signedQtyNumber: number;
       if (txType === 'WITHDRAWAL') {
         signedQtyNumber = -Math.abs(qtyNumber);
+      } else {
+        signedQtyNumber = Math.abs(qtyNumber);
       }
 
       const assetNumeric = assetId ? Number(assetId) : NaN;
@@ -460,13 +471,15 @@ export function LedgerForm({
               <input
                 type="number"
                 step="0.00000001"
-                min={0}
+                min={isEditMode ? undefined : 0}
                 value={quantity}
                 onChange={(event) => setQuantity(event.target.value)}
                 required
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 placeholder={
-                  txType === 'WITHDRAWAL'
+                  isEditMode
+                    ? 'Transaction amount'
+                    : txType === 'WITHDRAWAL'
                     ? 'Size of withdrawal (positive)'
                     : 'Size of deposit / yield'
                 }
