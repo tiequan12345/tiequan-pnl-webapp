@@ -67,7 +67,8 @@ const INITIAL_STATE: DashboardState = {
   ledgerItems: [],
 };
 
-const COLORS = ['#3b82f6', '#10b981', '#6366f1', '#f59e0b', '#ec4899'];
+const COLORS = ['#3b82f6', '#10b981', '#6366f1', '#f59e0b', '#ec4899', '#8b5cf6'];
+const VOLATILITY_COLORS = ['#dc2626', '#059669', '#7c3aed', '#ea580c', '#0891b2', '#be123c'];
 
 function formatCurrency(value: number | null | undefined, currency: string) {
   if (value === null || value === undefined || Number.isNaN(value)) {
@@ -485,7 +486,7 @@ export function DashboardView() {
                   {volatilityData.map((entry, index) => (
                     <Cell
                       key={`vol-cell-${entry.name}-${index}`}
-                      fill={COLORS[(index + 2) % COLORS.length]}
+                      fill={VOLATILITY_COLORS[index % VOLATILITY_COLORS.length]}
                     />
                   ))}
                 </Pie>
