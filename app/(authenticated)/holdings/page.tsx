@@ -81,6 +81,7 @@ export default async function HoldingsPage({ searchParams }: HoldingsPageProps) 
 
       <HoldingsFilters
         currentView={viewMode}
+        currentAccountIds={accountIds}
         currentAssetTypes={assetTypes}
         currentVolatilityBuckets={volatilityBuckets}
       />

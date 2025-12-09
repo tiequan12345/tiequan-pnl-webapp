@@ -45,7 +45,11 @@ function validateAccountEnums(payload: AccountPayload): string | null {
 
 export async function GET() {
   try {
+    // Get accounts with their most recent transaction date
     const accounts = await prisma.account.findMany({
+      where: {
+        status: 'ACTIVE'
+      },
       select: {
         id: true,
         name: true,
@@ -61,11 +65,45 @@ export async function GET() {
             ledger_transactions: true,
           },
         },
+        ledger_transactions: {
+          select: {
+            created_at: true,
+          },
+          orderBy: {
+            created_at: 'desc'
+          },
+          take: 1,
+        },
       },
-      orderBy: { name: 'asc' },
     });
 
-    return NextResponse.json(accounts);
+    // Sort accounts by most recent transaction date (accounts with no transactions go to the end)
+    const sortedAccounts = accounts.sort((a, b) => {
+      const aLastTransaction = a.ledger_transactions[0]?.created_at;
+      const bLastTransaction = b.ledger_transactions[0]?.created_at;
+      
+      // If both have transactions, sort by most recent
+      if (aLastTransaction && bLastTransaction) {
+        return new Date(bLastTransaction).getTime() - new Date(aLastTransaction).getTime();
+      }
+      
+      // If only one has transactions, prioritize the one with transactions
+      if (aLastTransaction && !bLastTransaction) {
+        return -1;
+      }
+      
+      if (!aLastTransaction && bLastTransaction) {
+        return 1;
+      }
+      
+      // If neither has transactions, sort by name
+      return a.name.localeCompare(b.name);
+    });
+
+    // Remove the ledger_transactions from the response since we only needed it for sorting
+    const responseAccounts = sortedAccounts.map(({ ledger_transactions, ...account }) => account);
+
+    return NextResponse.json(responseAccounts);
   } catch {
     return NextResponse.json(
       { error: 'Failed to fetch accounts.' },
