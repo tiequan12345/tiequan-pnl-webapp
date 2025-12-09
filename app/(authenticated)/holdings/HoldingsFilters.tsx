@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { ASSET_TYPES, VOLATILITY_BUCKETS } from '../assets/AssetForm';
+import { AccountMultiSelect } from './AccountMultiSelect';
 
 type HoldingsFiltersProps = {
   currentView?: string;
@@ -97,18 +98,6 @@ export function HoldingsFilters({
     router.push(search ? `${pathname}?${search}` : pathname);
   };
 
-  const handleAccountChange = (accountId: string, isChecked: boolean) => {
-    let newSelectedAccountIds: string[];
-    
-    if (isChecked) {
-      newSelectedAccountIds = [...selectedAccountIds, accountId];
-    } else {
-      newSelectedAccountIds = selectedAccountIds.filter(id => id !== accountId);
-    }
-    
-    setSelectedAccountIds(newSelectedAccountIds);
-    updateUrlWithAccountIds(newSelectedAccountIds.map(id => Number(id)));
-  };
 
   const toggleAssetType = (assetType: string) => {
     const newAssetTypes = currentAssetTypes.includes(assetType)
@@ -167,64 +156,16 @@ export function HoldingsFilters({
 
       {/* Account Filter - Only show in Per Account view */}
       {currentView === 'per-account' && (
-        <div className="flex items-start gap-4">
-          <span className="text-sm font-medium text-zinc-400 mt-1">Accounts:</span>
-          <div className="flex-1">
-            {isLoading ? (
-              <div className="text-sm text-zinc-500">Loading accounts...</div>
-            ) : (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="select-all-accounts"
-                    checked={selectedAccountIds.length === accounts.length}
-                    onChange={(e) => {
-                      const isChecked = e.target.checked;
-                      if (isChecked) {
-                        const allAccountIds = accounts.map(account => String(account.id));
-                        setSelectedAccountIds(allAccountIds);
-                        updateUrlWithAccountIds(accounts.map(account => account.id));
-                      } else {
-                        setSelectedAccountIds([]);
-                        updateUrlWithAccountIds([]);
-                      }
-                    }}
-                    className="rounded border-zinc-700 bg-zinc-900 text-blue-600 focus:ring-blue-500 focus:ring-offset-0"
-                  />
-                  <label htmlFor="select-all-accounts" className="text-sm text-zinc-300 cursor-pointer">
-                    Select All ({accounts.length})
-                  </label>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                  {accounts.map((account) => (
-                    <div key={account.id} className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        id={`account-${account.id}`}
-                        checked={selectedAccountIds.includes(String(account.id))}
-                        onChange={(e) => handleAccountChange(String(account.id), e.target.checked)}
-                        className="rounded border-zinc-700 bg-zinc-900 text-blue-600 focus:ring-blue-500 focus:ring-offset-0"
-                      />
-                      <label 
-                        htmlFor={`account-${account.id}`} 
-                        className="text-sm text-zinc-300 cursor-pointer truncate"
-                        title={account.name}
-                      >
-                        {account.name}
-                      </label>
-                    </div>
-                  ))}
-                </div>
-                {selectedAccountIds.length > 0 && (
-                  <div className="text-xs text-zinc-500 mt-2">
-                    {selectedAccountIds.length} of {accounts.length} accounts selected
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+        <AccountMultiSelect
+          accounts={accounts}
+          selectedIds={selectedAccountIds}
+          onChange={(ids) => {
+            setSelectedAccountIds(ids);
+            updateUrlWithAccountIds(ids.map(Number));
+          }}
+          isLoading={isLoading}
+          label="Accounts"
+        />
       )}
 
       {/* Asset Type Filter */}
