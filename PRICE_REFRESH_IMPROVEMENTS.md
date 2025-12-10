@@ -10,9 +10,10 @@ The price refresh system has been enhanced with automated scheduling, retry logi
 
 ### 1. Automated Hourly Refresh
 
-- **Vercel Cron Job**: Added `vercel.json` configuration to automatically trigger price refresh every hour
+- **GitHub Actions Workflow**: Added `.github/workflows/price-refresh.yml` to automatically trigger price refresh every hour
 - **Schedule**: Runs at the beginning of each hour (`0 * * * *`)
-- **Endpoint**: `/api/prices/refresh` is called automatically by Vercel's cron system
+- **Endpoint**: `/api/prices/refresh` is called automatically by GitHub Actions workflow
+- **Manual Trigger**: Workflow can also be manually triggered via GitHub Actions UI
 
 ### 2. Retry Logic with Exponential Backoff
 
@@ -81,6 +82,18 @@ The price refresh system has been enhanced with automated scheduling, retry logi
 
 ## Configuration
 
+### GitHub Actions Workflow
+
+The price refresh is scheduled via `.github/workflows/price-refresh.yml`:
+
+- **File Path**: `.github/workflows/price-refresh.yml`
+- **Schedule**: `0 * * * *` (hourly at the top of the hour)
+- **Trigger**: Automatic via schedule, manual via GitHub Actions UI
+- **Runner**: Uses `ubuntu-latest` hosted runner
+- **Endpoint**: Calls `/api/prices/refresh` with optional authentication
+- **Mode Header**: Includes `X-Refresh-Mode: auto` header to differentiate scheduled vs manual runs
+- **Settings Toggle**: Scheduled runs respect the `priceAutoRefresh` setting from the settings page
+
 ### Environment Variables
 
 - `COINGECKO_API_KEY`: Optional API key for higher rate limits
@@ -91,8 +104,15 @@ The price refresh system has been enhanced with automated scheduling, retry logi
 The system respects the following settings from the settings page:
 
 - `priceAutoRefresh`: Enable/disable automatic refresh
-- `priceAutoRefreshIntervalMinutes`: Refresh interval (currently fixed at 60 minutes for cron)
+- `priceAutoRefreshIntervalMinutes`: Refresh interval (GitHub Actions workflow runs hourly; cron frequency should align with this setting)
 - `priceRefreshEndpoint`: Custom refresh endpoint (for testing)
+
+### GitHub Actions Secrets
+
+Required secrets to be configured in GitHub repository settings:
+
+- `REFRESH_ENDPOINT_URL`: Full URL to `/api/prices/refresh` endpoint (e.g., `https://your-domain.com/api/prices/refresh`)
+- `REFRESH_AUTH_HEADER`: Optional authentication header (e.g., `Authorization: Bearer <token>`) if your middleware requires authentication
 
 ```
 
@@ -144,9 +164,10 @@ Common issues and solutions:
    - Check network connectivity to external APIs
 
 3. **Stale Price Data**
-   - Verify cron job is running (check Vercel logs)
+   - Verify GitHub Actions workflow is running (check Actions tab in GitHub)
    - Check health endpoint for update coverage
    - Review failed asset logs for patterns
+   - Ensure `REFRESH_ENDPOINT_URL` secret is correctly configured
 
 ## Future Enhancements
 

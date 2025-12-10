@@ -4,13 +4,33 @@ import { prisma } from '@/lib/db';
 import { fetchCryptoPrice, fetchEquityPrice, fetchBatchCryptoPrices, getCoinGeckoRateLimitStats, logPricingOperation } from '@/lib/pricing';
 import { getAppSettings } from '@/lib/settings';
 
-export async function POST() {
+export async function POST(request: Request) {
   const startTime = Date.now();
-  logPricingOperation('refresh_start', { timestamp: new Date().toISOString() });
+  const isScheduledRun = request.headers.get('X-Refresh-Mode') === 'auto';
+  
+  logPricingOperation('refresh_start', { 
+    timestamp: new Date().toISOString(),
+    mode: isScheduledRun ? 'scheduled' : 'manual'
+  });
   
   // Load settings so future refresh interval / provider config can be honored
   const settings = await getAppSettings();
   logPricingOperation('settings_loaded', { settings });
+  
+  // Check if auto refresh is disabled for scheduled runs
+  if (isScheduledRun && !settings.priceAutoRefresh) {
+    logPricingOperation('refresh_skipped', {
+      reason: 'Auto refresh disabled in settings',
+      priceAutoRefresh: settings.priceAutoRefresh
+    });
+    return NextResponse.json({
+      message: 'Auto refresh disabled in settings',
+      refreshed: [],
+      failed: [],
+      processed: { crypto: 0, equity: 0, total: 0 },
+      duration: `${Date.now() - startTime}ms`
+    });
+  }
 
   try {
     const assets = await prisma.asset.findMany({
