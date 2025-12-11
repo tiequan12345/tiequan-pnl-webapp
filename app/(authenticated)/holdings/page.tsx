@@ -4,6 +4,7 @@ import { Card } from '../_components/ui/Card';
 import { Badge } from '../_components/ui/Badge';
 import { HoldingsList } from './HoldingsList';
 import { HoldingsFilters } from './HoldingsFilters';
+import { HoldingsAllocationCharts } from '../_components/charts/HoldingsAllocationCharts';
 import {
   consolidateHoldingsByAsset,
   getHoldings,
@@ -112,6 +113,11 @@ export default async function HoldingsPage({ searchParams }: HoldingsPageProps) 
           </div>
         </Card>
       </div>
+
+      <HoldingsAllocationCharts
+        summary={holdings.summary}
+        baseCurrency={baseCurrency}
+      />
 
       <Card className="p-0">
         <HoldingsList
