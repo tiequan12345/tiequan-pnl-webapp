@@ -41,6 +41,7 @@ export function HoldingsList({
       globalSearch={globalSearch}
       toolbar={toolbar}
       emptyMessage={emptyMessage}
+      showPriceSourceBadges={false}
     />
   );
 }
