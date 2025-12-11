@@ -9,7 +9,6 @@ import {
   PieChart,
   ArrowRightLeft,
   Settings,
-  Layers,
   ShieldCheck,
 } from 'lucide-react';
 
@@ -42,10 +41,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <aside className="w-64 border-r border-zinc-800 bg-zinc-950 hidden md:flex flex-col">
           <div className="p-6">
             <div className="flex items-center gap-2 text-xl font-bold tracking-tight">
-              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                <Layers className="text-white w-5 h-5" />
-              </div>
-              Portfolio
+              <img 
+                src="/tiequan-logo.png" 
+                alt="Tiequan" 
+                className="w-8 h-8 rounded-lg object-contain"
+              />
+              Tiequan Portfolio
             </div>
           </div>
 
