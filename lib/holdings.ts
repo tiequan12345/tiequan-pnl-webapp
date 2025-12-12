@@ -40,7 +40,7 @@ type HoldingFilters = {
   volatilityBuckets?: string[];
 };
 
-function decimalToNumber(value: Prisma.Decimal | number | bigint | string | null | undefined): number {
+export function decimalToNumber(value: Prisma.Decimal | number | bigint | string | null | undefined): number {
   if (value === null || value === undefined) {
     return 0;
   }

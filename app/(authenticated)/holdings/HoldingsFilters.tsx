@@ -11,6 +11,7 @@ type HoldingsFiltersProps = {
   currentAccountIds?: number[];
   currentAssetTypes?: string[];
   currentVolatilityBuckets?: string[];
+  hideViewToggle?: boolean;
 };
 
 type Account = {
@@ -23,6 +24,7 @@ export function HoldingsFilters({
   currentAccountIds = [],
   currentAssetTypes = [],
   currentVolatilityBuckets = [],
+  hideViewToggle = false,
 }: HoldingsFiltersProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -82,7 +84,8 @@ export function HoldingsFilters({
     }
     
     const queryString = params.toString();
-    return queryString ? `/holdings?${queryString}` : '/holdings';
+    const targetPath = pathname ?? '/holdings';
+    return queryString ? `${targetPath}?${queryString}` : targetPath;
   };
 
   const updateUrlWithAccountIds = (newAccountIds: number[]) => {
@@ -127,32 +130,36 @@ export function HoldingsFilters({
 
   return (
     <div className="space-y-4">
-      {/* View Toggle */}
-      <div className="flex items-center gap-4">
-        <span className="text-sm font-medium text-zinc-400">View:</span>
-        <div className="inline-flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-lg p-1">
-          <Link
-            href={buildUrl({ view: 'per-account', accountIds: currentAccountIds, assetTypes: currentAssetTypes, volatilityBuckets: currentVolatilityBuckets })}
-            className={`px-3 py-1.5 text-sm rounded-md transition ${
-              currentView === 'per-account'
-                ? 'bg-blue-600 text-white'
-                : 'text-zinc-300 hover:text-white'
-            }`}
-          >
-            Per Account
-          </Link>
-          <Link
-            href={buildUrl({ view: 'consolidated', accountIds: currentAccountIds, assetTypes: currentAssetTypes, volatilityBuckets: currentVolatilityBuckets })}
-            className={`px-3 py-1.5 text-sm rounded-md transition ${
-              currentView === 'consolidated'
-                ? 'bg-blue-600 text-white'
-                : 'text-zinc-300 hover:text-white'
-            }`}
-          >
-            Consolidated
-          </Link>
-        </div>
-      </div>
+      {!hideViewToggle && (
+        <>
+          {/* View Toggle */}
+          <div className="flex items-center gap-4">
+            <span className="text-sm font-medium text-zinc-400">View:</span>
+            <div className="inline-flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-lg p-1">
+              <Link
+                href={buildUrl({ view: 'per-account', accountIds: currentAccountIds, assetTypes: currentAssetTypes, volatilityBuckets: currentVolatilityBuckets })}
+                className={`px-3 py-1.5 text-sm rounded-md transition ${
+                  currentView === 'per-account'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-zinc-300 hover:text-white'
+                }`}
+              >
+                Per Account
+              </Link>
+              <Link
+                href={buildUrl({ view: 'consolidated', accountIds: currentAccountIds, assetTypes: currentAssetTypes, volatilityBuckets: currentVolatilityBuckets })}
+                className={`px-3 py-1.5 text-sm rounded-md transition ${
+                  currentView === 'consolidated'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-zinc-300 hover:text-white'
+                }`}
+              >
+                Consolidated
+              </Link>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Account Filter - Only show in Per Account view */}
       {currentView === 'per-account' && (

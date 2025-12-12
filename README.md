@@ -6,6 +6,7 @@ A Next.js-based portfolio and P&L tracking application with automated price fetc
 
 This webapp provides a comprehensive solution for tracking investment portfolios, including:
 - Portfolio holdings and P&L calculations
+- Historical P&L snapshots with filtered charts and a dedicated `/pnl` view
 - Automated price fetching for crypto (CoinGecko) and equities (Finnhub)
 - Rate-limited API calls with monitoring
 - SQLite database with Prisma ORM
@@ -104,6 +105,7 @@ The application uses SQLite with Prisma ORM. The database schema includes:
 - **LedgerTransaction**: Transaction history
 - **PriceLatest**: Latest price cache for assets
 - **Setting**: Application configuration
+- **PortfolioSnapshot**: History of tensile snapshots (timestamp, base currency, total value) plus denormalized components for asset/account breakdowns (see `PortfolioSnapshotComponent`).
 
 ### Initial Setup
 
@@ -233,6 +235,34 @@ Basic health check for pricing system.
 }
 ```
 
+#### PNL History: `GET /api/pnl`
+
+Returns a time-series of portfolio snapshots recorded after each successful price refresh. Filters mirror the holdings view and support:
+- `from` / `to` (ISO dates)
+- `limit` (number of points, default ~60)
+- `accountIds`, `assetTypes`, `volatilityBuckets` (comma-separated)
+
+**Response:**
+```json
+{
+  "baseCurrency": "USD",
+  "timezone": "America/New_York",
+  "points": [
+    {
+      "snapshotAt": "2025-08-20T14:00:00.000Z",
+      "totalValue": 125000.5,
+      "byType": { "CRYPTO": 100000, "EQUITY": 25000 },
+      "byVolatility": { "VOLATILE": 90000, "CASH_LIKE": 35000 },
+      "byAccount": {
+        "1": { "name": "Binance", "value": 90000 },
+        "2": { "name": "Interactive Brokers", "value": 35000 }
+      }
+    }
+    // More snapshots...
+  ]
+}
+```
+
 ## CoinGecko Refresh Lifecycle
 
 The application implements a robust price refresh system with rate limiting and error handling.
@@ -346,6 +376,7 @@ app/
 │   ├── accounts/            # Account management
 │   ├── assets/              # Asset management
 │   ├── holdings/            # Portfolio holdings
+│   ├── pnl/                 # PNL time-series view with filters
 │   ├── ledger/              # Transaction ledger
 │   └── settings/            # Application settings
 ├── api/                     # API routes
@@ -358,6 +389,7 @@ app/
 
 lib/
 ├── db.ts                    # Prisma client setup
+├── pnlSnapshots.ts          # Portfolio snapshot persistence helpers
 ├── pricing.ts               # Price fetching logic
 ├── rateLimiter.ts           # Rate limiting implementation
 └── settings.ts              # Settings management

@@ -77,3 +77,38 @@ model Setting {
   key   String @id
   value String
 }
+
+model PortfolioSnapshot {
+  id            Int      @id @default(autoincrement())
+  snapshot_at   DateTime
+  base_currency String   @default("USD")
+  total_value   Decimal
+  created_at    DateTime @default(now())
+
+  components PortfolioSnapshotComponent[]
+
+  @@index([snapshot_at])
+  @@unique([snapshot_at])
+}
+
+model PortfolioSnapshotComponent {
+  id               Int      @id @default(autoincrement())
+  snapshot_id      Int
+  asset_id         Int
+  asset_symbol     String
+  asset_name       String
+  asset_type       String
+  volatility_bucket String
+  account_id       Int
+  account_name     String
+  quantity         Decimal
+  price_in_base    Decimal?
+  market_value     Decimal?
+
+  snapshot PortfolioSnapshot @relation(fields: [snapshot_id], references: [id], onDelete: Cascade)
+
+  @@index([snapshot_id])
+  @@index([snapshot_id, asset_type])
+  @@index([snapshot_id, volatility_bucket])
+  @@index([snapshot_id, account_id])
+}

@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { fetchCryptoPrice, fetchEquityPrice, fetchBatchCryptoPrices, getCoinGeckoRateLimitStats, logPricingOperation } from '@/lib/pricing';
 import { getAppSettings } from '@/lib/settings';
+import { createPortfolioSnapshot } from '@/lib/pnlSnapshots';
 
 export async function POST(request: Request) {
   const startTime = Date.now();
@@ -242,6 +243,25 @@ export async function POST(request: Request) {
       ...result.summary,
       rateLimitRemaining: rateLimitStats.remainingCalls
     });
+
+    try {
+      const snapshot = await createPortfolioSnapshot();
+      if (snapshot) {
+        logPricingOperation('snapshot_recorded', {
+          snapshotId: snapshot.snapshotId,
+          snapshotAt: snapshot.snapshotAt.toISOString(),
+          totalValue: snapshot.totalValue,
+        });
+      }
+    } catch (snapshotError) {
+      logPricingOperation(
+        'snapshot_failed',
+        {
+          error: snapshotError instanceof Error ? snapshotError.message : 'Unknown error',
+        },
+        'warn',
+      );
+    }
     
     // Return success even if some assets failed, as long as we didn't have a complete failure
     const status = refreshed.length > 0 ? 200 : 207; // 207 Multi-Status for partial success

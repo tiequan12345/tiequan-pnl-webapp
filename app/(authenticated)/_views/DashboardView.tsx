@@ -7,6 +7,7 @@ import { Badge } from '../_components/ui/Badge';
 import { DataTable, type DataTableColumn } from '../_components/table/DataTable';
 import { HoldingsTable } from '../_components/holdings/HoldingsTable';
 import { HoldingsAllocationCharts } from '../_components/charts/HoldingsAllocationCharts';
+import { PnlTimeSeriesChart, type PnlTimeSeriesPoint } from '../_components/charts/PnlTimeSeriesChart';
 import type { HoldingRow, HoldingsSummary } from '@/lib/holdings';
 import { isPriceStale } from '@/lib/pricing';
 
@@ -97,6 +98,10 @@ export function DashboardView() {
   const [error, setError] = useState<string | null>(null);
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [ledgerError, setLedgerError] = useState<string | null>(null);
+  const [pnlPoints, setPnlPoints] = useState<PnlTimeSeriesPoint[]>([]);
+  const [pnlTimezone, setPnlTimezone] = useState('UTC');
+  const [pnlLoading, setPnlLoading] = useState(false);
+  const [pnlError, setPnlError] = useState<string | null>(null);
 
   const fetchHoldings = useCallback(async () => {
     setLoading(true);
@@ -171,6 +176,34 @@ export function DashboardView() {
     }
   }, []);
 
+  const fetchPnlHistory = useCallback(async () => {
+    setPnlLoading(true);
+    setPnlError(null);
+
+    try {
+      const response = await fetch('/api/pnl?limit=60', {
+        cache: 'no-store',
+      });
+      if (!response.ok) {
+        throw new Error('Failed to load portfolio history');
+      }
+
+      const payload = (await response.json()) as {
+        baseCurrency: string;
+        timezone?: string;
+        points: PnlTimeSeriesPoint[];
+      };
+
+      setPnlPoints(payload.points ?? []);
+      setPnlTimezone(payload.timezone ?? 'UTC');
+    } catch (pnlError) {
+      console.error(pnlError);
+      setPnlError('Unable to load PNL history.');
+    } finally {
+      setPnlLoading(false);
+    }
+  }, []);
+
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     setError(null);
@@ -181,19 +214,20 @@ export function DashboardView() {
       if (!response.ok) {
         throw new Error('Failed to refresh prices');
       }
-      await fetchHoldings();
+      await Promise.all([fetchHoldings(), fetchPnlHistory()]);
     } catch (refreshError) {
       console.error(refreshError);
       setError('Price refresh failed.');
     } finally {
       setRefreshing(false);
     }
-  }, [fetchHoldings]);
+  }, [fetchHoldings, fetchPnlHistory]);
 
   useEffect(() => {
     fetchHoldings();
     fetchRecentLedger();
-  }, [fetchHoldings, fetchRecentLedger]);
+    fetchPnlHistory();
+  }, [fetchHoldings, fetchRecentLedger, fetchPnlHistory]);
 
   const totalValue = state.summary?.totalValue ?? 0;
   const totalCurrency = state.baseCurrency;
@@ -202,6 +236,15 @@ export function DashboardView() {
     !lastUpdated || isPriceStale(lastUpdated, state.refreshIntervalMinutes);
   const staleBadge = pricesStale ? <Badge type="red">Stale prices</Badge> : null;
   const refreshLabel = refreshing ? 'Refreshing…' : 'Refresh Prices';
+
+  const latestSnapshot = pnlPoints[pnlPoints.length - 1];
+  const previousSnapshot = pnlPoints[pnlPoints.length - 2];
+  const pnlLatestValue = latestSnapshot?.totalValue ?? 0;
+  const pnlPreviousValue = pnlPoints.length > 1 ? previousSnapshot?.totalValue ?? 0 : 0;
+  const pnlChangeValue = pnlLatestValue - pnlPreviousValue;
+  const pnlChangePercent =
+    pnlPreviousValue !== 0 ? (pnlChangeValue / pnlPreviousValue) * 100 : undefined;
+  const pnlChangeClass = pnlChangeValue > 0 ? 'text-emerald-400' : pnlChangeValue < 0 ? 'text-rose-400' : 'text-zinc-500';
 
   const handleAddTrade = useCallback(() => {
     router.push('/ledger');
@@ -344,6 +387,46 @@ export function DashboardView() {
         summary={state.summary}
         baseCurrency={totalCurrency}
       />
+
+      <Card>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-xs uppercase tracking-wider text-zinc-500">
+              PNL over time
+            </p>
+            <div className="mt-1 text-3xl font-bold text-white">
+              {formatCurrency(pnlLatestValue, totalCurrency)}
+            </div>
+            <div className="flex items-center gap-3 text-sm">
+              <span className={pnlChangeClass}>
+                {pnlChangePercent !== undefined
+                  ? `${pnlChangePercent >= 0 ? '+' : ''}${pnlChangePercent.toFixed(2)}%`
+                  : '—'}
+              </span>
+              <span className="text-zinc-500">vs previous snapshot</span>
+            </div>
+          </div>
+          <div className="text-xs text-zinc-500">
+            {pnlTimezone} · {pnlPoints.length} snapshots
+          </div>
+        </div>
+        {pnlLoading ? (
+          <div className="px-4 py-10 text-center text-sm text-zinc-500">
+            Loading PNL history…
+          </div>
+        ) : pnlError ? (
+          <div className="px-4 py-10 text-center text-sm text-rose-300">
+            {pnlError}
+          </div>
+        ) : (
+          <PnlTimeSeriesChart
+            data={pnlPoints}
+            baseCurrency={totalCurrency}
+            timezone={pnlTimezone}
+            height={220}
+          />
+        )}
+      </Card>
 
       <Card>
         <div className="flex justify-between items-center mb-4">

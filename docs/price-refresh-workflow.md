@@ -32,6 +32,7 @@ The price refresh system has been migrated from Vercel Cron to a GitHub Actions 
 1. **Settings Check**: The endpoint checks if auto-refresh is enabled in settings
 2. **Trigger Price Refresh**: Makes POST request to the refresh endpoint with `X-Refresh-Mode: auto` header
 3. **Log Success/Failure**: Reports status and timestamp
+4. **Persist Snapshot**: After prices refresh, the backend records a `PortfolioSnapshot` row (and related components) capturing the base-currency total and breakdowns for historical PNL charts.
 
 ### Settings Toggle Handling
 - **Scheduled runs** (with `X-Refresh-Mode: auto` header): Check `priceAutoRefresh` setting
@@ -112,6 +113,11 @@ Use these endpoints to monitor system health:
   - Remaining calls
   - Usage recommendations
 
+- **PNL History**: `GET /api/pnl`
+  - Confirms that each price refresh creates a new snapshot
+  - Returns snapshot breakdowns for type, volatility, and account
+  - Useful to cross-check raw database data with the `/pnl` UI for correctness
+
 ### Manual Refresh
 Two ways to manually trigger a refresh:
 1. **Via Settings Page**: Click "Refresh Prices Now" button
@@ -129,6 +135,12 @@ Two ways to manually trigger a refresh:
 2. Verify the endpoint is accessible from GitHub's servers
 3. Check application logs for detailed error messages
 4. Ensure API keys are valid and have sufficient rate limits
+
+### Snapshots Not Created
+1. Confirm the `PortfolioSnapshot` migration has been applied (`pnpm prisma migrate dev`)
+2. Verify the refresh run logged `snapshot_recorded` and no snapshot-related errors
+3. Query `/api/pnl` (or the database) to ensure new rows exist after a refresh
+4. If the table is empty despite successful refreshes, investigate connection permissions or transaction rollback logs
 
 ### Authentication Issues
 1. Verify `REFRESH_AUTH_HEADER` format matches your middleware expectations
@@ -171,6 +183,7 @@ Common cron expressions:
 ### What Changed
 - **Removed**: Vercel cron configuration from `vercel.json`
 - **Added**: GitHub Actions workflow at `.github/workflows/price-refresh.yml`
+- **Added**: `PortfolioSnapshot`/`PortfolioSnapshotComponent` tables via Prisma migration so price refresh runs persist historical snapshots
 - **Updated**: Documentation to reflect GitHub Actions scheduling
 
 ### Backward Compatibility

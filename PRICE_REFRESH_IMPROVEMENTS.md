@@ -54,6 +54,12 @@ The price refresh system has been enhanced with automated scheduling, retry logi
 - **Call History**: Track recent API calls for debugging
 - **Recommendations**: Dynamic recommendations based on current usage
 
+### 7. PNL Snapshot Persistence
+
+- **Snapshot Hook**: Each successful `/api/prices/refresh` also records a `PortfolioSnapshot` and related `PortfolioSnapshotComponent` rows containing the base-currency total and filtered breakdowns
+- **Data Consumer**: `lib/pnlSnapshots.ts` exposes helpers for creating and querying snapshots, powering the `/api/pnl` endpoint and `/pnl` UI
+- **Failure Handling**: Snapshot errors are logged (`snapshot_failed`) but do not block the price refresh response
+
 ## API Endpoints
 
 ### Refresh Endpoints
@@ -79,6 +85,13 @@ The price refresh system has been enhanced with automated scheduling, retry logi
    - Current rate limit usage
    - Call history
    - Usage recommendations
+
+### PNL Snapshot API
+
+1. **History**: `GET /api/pnl`
+   - Returns the time-series of `PortfolioSnapshot` rows, filtered by timestamp and optional account/asset/volatility parameters
+   - Payload includes `baseCurrency`, `timezone`, and breakdown maps for type, volatility, and account
+   - Used by the `/pnl` UI and any analytical tooling that consumes historical P&L data
 
 ## Configuration
 
@@ -113,6 +126,12 @@ Required secrets to be configured in GitHub repository settings:
 
 - `REFRESH_ENDPOINT_URL`: Full URL to `/api/prices/refresh` endpoint (e.g., `https://your-domain.com/api/prices/refresh`)
 - `REFRESH_AUTH_HEADER`: Optional authentication header (e.g., `Authorization: Bearer <token>`) if your middleware requires authentication
+
+## Snapshot Persistence
+
+- **Tables**: Migration adds `PortfolioSnapshot` and `PortfolioSnapshotComponent` to persist total value snapshots plus component breakdowns (account, asset type, volatility).
+- **Hook**: After each successful `/api/prices/refresh`, the system calls `createPortfolioSnapshot()` from `lib/pnlSnapshots.ts`. Snapshot writes log `snapshot_recorded` on success or `snapshot_failed` on error.
+- **Migration Reminder**: Run `pnpm prisma migrate dev` (or the equivalent) before relying on `/pnl` or `/api/pnl`; the new tables are required for filtering and charting history.
 
 ```
 
