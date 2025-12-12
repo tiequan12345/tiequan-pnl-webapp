@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Card } from '../_components/ui/Card';
 import { HoldingsFilters } from '../holdings/HoldingsFilters';
 import { PnlTimeSeriesChart } from '../_components/charts/PnlTimeSeriesChart';
+import { formatCurrencyFinance } from '@/lib/formatters';
 
 type PnlApiPoint = {
   snapshotId: number;
@@ -39,7 +40,7 @@ const formatCurrency = (value: number, currency: string) =>
   new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency,
-    maximumFractionDigits: 0,
+    maximumFractionDigits: 2,
   }).format(value);
 
 const formatSnapshotLabel = (value: string, timezone: string) => {

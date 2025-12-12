@@ -10,6 +10,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { formatNumberFinance } from '@/lib/formatters';
 
 export type PnlTimeSeriesPoint = {
   snapshotAt: string;
@@ -27,7 +28,7 @@ const formatCurrency = (value: number, currency: string) => {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency,
-    maximumFractionDigits: 0,
+    maximumFractionDigits: 2,
   }).format(value);
 };
 
@@ -94,7 +95,7 @@ export function PnlTimeSeriesChart({
           />
           <YAxis
             stroke="#4b5563"
-            tickFormatter={(value) => formatCurrency(Number(value), baseCurrency)}
+            tickFormatter={(value) => formatNumberFinance(Number(value), 0, 2)}
             axisLine={{ stroke: '#1f2937' }}
             tickLine={false}
           />
@@ -105,7 +106,7 @@ export function PnlTimeSeriesChart({
               borderRadius: 8,
             }}
             labelFormatter={(value) => formatDate(Number(value), timezone)}
-            formatter={(value: number) => formatCurrency(value, baseCurrency)}
+            formatter={(value: number) => [formatCurrency(value, baseCurrency), 'Total Value']}
           />
           <Area
             type="monotone"
