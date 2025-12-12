@@ -8,7 +8,7 @@ import {
 } from '@/lib/holdings';
 
 const DEFAULT_LIMIT = 90;
-const MAX_LIMIT = 720;
+const MAX_LIMIT = 5000;
 
 export type PnlFilters = {
   accountIds?: number[];
@@ -131,7 +131,16 @@ export async function fetchSnapshots(
   filters: PnlFilters = {},
 ): Promise<PnlSnapshotsResult> {
   const settings = await getAppSettings();
-  const limit = sanitizeLimit(filters.limit);
+  
+  // If date filters are active and no limit is specified, we default to MAX_LIMIT
+  // to ensure we capture the requested timeframe.
+  // Otherwise (no date filters, no limit), we use DEFAULT_LIMIT for initial view.
+  const hasDateFilters = !!(filters.from || filters.to);
+  const effectiveLimit = filters.limit
+    ? sanitizeLimit(filters.limit)
+    : hasDateFilters
+      ? MAX_LIMIT
+      : DEFAULT_LIMIT;
 
   const snapshotWhere: any = {};
   
@@ -148,7 +157,7 @@ export async function fetchSnapshots(
   const snapshots = await prisma.portfolioSnapshot.findMany({
     where: snapshotWhere,
     orderBy: { snapshot_at: 'desc' },
-    take: limit,
+    take: effectiveLimit,
   });
 
   if (snapshots.length === 0) {

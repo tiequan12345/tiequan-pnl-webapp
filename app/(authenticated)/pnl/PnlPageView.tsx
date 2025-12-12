@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Card } from '../_components/ui/Card';
+import { DateRangePicker, type DateRange } from '../_components/ui/DateRangePicker';
 import { HoldingsFilters } from '../holdings/HoldingsFilters';
 import { PnlTimeSeriesChart } from '../_components/charts/PnlTimeSeriesChart';
 import { formatCurrencyFinance } from '@/lib/formatters';
@@ -75,11 +76,22 @@ export default function PnlPageView() {
       accountIds: parseNumberList(params.get('accountIds')),
       assetTypes: parseStringList(params.get('assetTypes')),
       volatilityBuckets: parseStringList(params.get('volatilityBuckets')),
-      from: params.get('from') ?? '',
-      to: params.get('to') ?? '',
-      limit: params.get('limit') ?? '60',
+      from: params.get('from'),
+      to: params.get('to'),
     };
   }, [searchKey]);
+
+  // Handle default "Last 24 Hours" on mount if no dates specified
+  useEffect(() => {
+    const params = new URLSearchParams(searchKey);
+    if (!params.has('from') && !params.has('to')) {
+      const now = new Date();
+      const from = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+      const to = now.toISOString();
+      handleParamUpdate('from', from);
+      handleParamUpdate('to', to);
+    }
+  }, []);
 
   const handleParamUpdate = (key: string, value: string) => {
     const params = new URLSearchParams(searchKey);
@@ -93,11 +105,35 @@ export default function PnlPageView() {
     router.push(query ? `${target}?${query}` : target);
   };
 
+  const handleDateRangeChange = (range: DateRange) => {
+    const params = new URLSearchParams(searchKey);
+    if (range.from) {
+      params.set('from', range.from.toISOString());
+    } else {
+      params.delete('from');
+    }
+    
+    if (range.to) {
+      params.set('to', range.to.toISOString());
+    } else {
+      params.delete('to');
+    }
+    
+    // Remove limit to show all points in range
+    params.delete('limit');
+    
+    const target = pathname ?? '/pnl';
+    const query = params.toString();
+    router.push(query ? `${target}?${query}` : target);
+  };
+
   useEffect(() => {
     const abortController = new AbortController();
     const params = new URLSearchParams(searchKey);
-    if (!params.has('limit') || !params.get('limit')) {
-      params.set('limit', '60');
+    
+    // Skip fetch if we are just about to redirect to default 24h view
+    if (!params.has('from') && !params.has('to')) {
+        return;
     }
 
     const query = params.toString();
@@ -181,43 +217,11 @@ export default function PnlPageView() {
           hideViewToggle
         />
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div className="space-y-1 text-sm text-zinc-400">
-            <label className="flex flex-col gap-1">
-              <span>From</span>
-              <input
-                type="date"
-                value={parsedFilters.from}
-                onChange={(event) => handleParamUpdate('from', event.target.value)}
-                className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
-              />
-            </label>
-          </div>
-          <div className="space-y-1 text-sm text-zinc-400">
-            <label className="flex flex-col gap-1">
-              <span>To</span>
-              <input
-                type="date"
-                value={parsedFilters.to}
-                onChange={(event) => handleParamUpdate('to', event.target.value)}
-                className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
-              />
-            </label>
-          </div>
-          <div className="space-y-1 text-sm text-zinc-400">
-            <label className="flex flex-col gap-1">
-              <span>Points</span>
-              <input
-                type="number"
-                min={10}
-                max={200}
-                value={parsedFilters.limit}
-                onChange={(event) => handleParamUpdate('limit', event.target.value)}
-                className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
-              />
-            </label>
-          </div>
-        </div>
+        <DateRangePicker
+          from={parsedFilters.from ? new Date(parsedFilters.from) : undefined}
+          to={parsedFilters.to ? new Date(parsedFilters.to) : undefined}
+          onChange={handleDateRangeChange}
+        />
       </div>
 
       <Card>
