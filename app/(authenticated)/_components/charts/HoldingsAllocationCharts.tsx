@@ -230,12 +230,18 @@ export function HoldingsAllocationCharts({
 
   const volatilityData = useMemo(() => {
     if (!summary?.byVolatility) return [];
+
+    const VOLATILITY_COLOR_MAP: Record<string, string> = {
+      'VOLATILE': '#ef4444',   // Red
+      'CASH_LIKE': '#10b981',  // Emerald Green
+    };
+
     return Object.entries(summary.byVolatility)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
       .map((item, index) => ({
         ...item,
-        color: VOLATILITY_COLORS[index % VOLATILITY_COLORS.length],
+        color: VOLATILITY_COLOR_MAP[item.name] ?? VOLATILITY_COLORS[index % VOLATILITY_COLORS.length],
       }));
   }, [summary]);
 
