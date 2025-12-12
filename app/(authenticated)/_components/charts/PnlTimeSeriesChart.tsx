@@ -22,6 +22,7 @@ type PnlTimeSeriesChartProps = {
   baseCurrency: string;
   timezone?: string;
   height?: number;
+  isPrivacyMode?: boolean;
 };
 
 const formatCurrency = (value: number, currency: string) => {
@@ -50,6 +51,7 @@ export function PnlTimeSeriesChart({
   baseCurrency,
   timezone,
   height = 260,
+  isPrivacyMode,
 }: PnlTimeSeriesChartProps) {
   const chartData = useMemo(() => {
     return data
@@ -95,7 +97,9 @@ export function PnlTimeSeriesChart({
           />
           <YAxis
             stroke="#4b5563"
-            tickFormatter={(value) => formatNumberFinance(Number(value), 0, 2)}
+            tickFormatter={(value) =>
+              isPrivacyMode ? '****' : formatNumberFinance(Number(value), 0, 2)
+            }
             axisLine={{ stroke: '#1f2937' }}
             tickLine={false}
           />
@@ -106,7 +110,10 @@ export function PnlTimeSeriesChart({
               borderRadius: 8,
             }}
             labelFormatter={(value) => formatDate(Number(value), timezone)}
-            formatter={(value: number) => [formatCurrency(value, baseCurrency), 'Total Value']}
+            formatter={(value: number) => [
+              isPrivacyMode ? '****' : formatCurrency(value, baseCurrency),
+              'Total Value',
+            ]}
           />
           <Area
             type="monotone"

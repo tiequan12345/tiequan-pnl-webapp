@@ -36,6 +36,7 @@ const VOLATILITY_COLORS = [
 export type HoldingsAllocationChartsProps = {
   summary: HoldingsSummary | null | undefined;
   baseCurrency: string;
+  isPrivacyMode?: boolean;
 };
 
 type ChartData = {
@@ -62,7 +63,7 @@ function formatPercentage(value: number, total: number) {
 // Custom active shape with neon glow effect
 const renderActiveShape = (props: any) => {
   const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
-  
+
   return (
     <g>
       <Sector
@@ -94,13 +95,15 @@ function DonutChart({
   title,
   data,
   currency,
+  isPrivacyMode,
 }: {
   title: string;
   data: ChartData[];
   currency: string;
+  isPrivacyMode?: boolean;
 }) {
   const [activeIndex, setActiveIndex] = useState<number | undefined>();
-  
+
   const total = useMemo(() => data.reduce((sum, item) => sum + item.value, 0), [data]);
   const activeItem = activeIndex !== undefined ? data[activeIndex] : null;
 
@@ -117,7 +120,7 @@ function DonutChart({
       <h3 className="text-zinc-400 text-xs font-semibold uppercase tracking-wider mb-6">
         {title}
       </h3>
-      
+
       <div className="flex flex-col xl:flex-row items-center gap-8 flex-1">
         {/* Chart Container */}
         <div className="relative w-64 h-64 shrink-0">
@@ -150,21 +153,18 @@ function DonutChart({
               </Pie>
             </PieChart>
           </ResponsiveContainer>
-          
-          {/* Center Info */}
-          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none">
-            <div className="text-[10px] text-zinc-500 font-semibold uppercase tracking-wider">
+          {/* Center Text */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <span className="text-[10px] text-zinc-500 font-semibold uppercase tracking-wider">
               {activeItem ? activeItem.name : 'Total Value'}
-            </div>
-            <div className="text-2xl font-bold text-white tracking-tight mt-0.5">
-              {activeItem
-                ? formatCurrency(activeItem.value, currency)
-                : formatCurrency(total, currency)}
-            </div>
+            </span>
+            <span className="text-2xl font-bold text-white tracking-tight mt-0.5">
+              {isPrivacyMode ? '****' : formatCurrency(activeItem ? activeItem.value : total, currency)}
+            </span>
             {activeItem && (
-               <div className="text-xs text-zinc-400 font-medium bg-zinc-800/50 px-2 py-0.5 rounded-full mt-1">
-                 {formatPercentage(activeItem.value, total)}
-               </div>
+              <div className="text-xs text-zinc-400 font-medium bg-zinc-800/50 px-2 py-0.5 rounded-full mt-1">
+                {isPrivacyMode ? '**' : formatPercentage(activeItem.value, total)}
+              </div>
             )}
           </div>
         </div>
@@ -180,11 +180,10 @@ function DonutChart({
                   type="button"
                   onMouseEnter={() => setActiveIndex(index)}
                   onMouseLeave={() => setActiveIndex(undefined)}
-                  className={`group flex items-center justify-between w-full p-2.5 rounded-lg transition-all duration-200 border border-transparent ${
-                    isActive
+                  className={`group flex items-center justify-between w-full p-2.5 rounded-lg transition-all duration-200 border border-transparent ${isActive
                       ? 'bg-zinc-800/80 border-zinc-700/50 shadow-sm'
                       : 'hover:bg-zinc-800/40 hover:border-zinc-800'
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <div
@@ -197,10 +196,10 @@ function DonutChart({
                   </div>
                   <div className="flex flex-col items-end gap-0.5 ml-4">
                     <span className={`text-sm font-semibold transition-colors ${isActive ? 'text-white' : 'text-zinc-300'}`}>
-                      {formatCurrency(item.value, currency)}
+                      {isPrivacyMode ? '****' : formatCurrency(item.value, currency)}
                     </span>
                     <span className="text-[10px] text-zinc-500 font-medium">
-                      {formatPercentage(item.value, total)}
+                      {isPrivacyMode ? '**' : formatPercentage(item.value, total)}
                     </span>
                   </div>
                 </button>
@@ -216,6 +215,7 @@ function DonutChart({
 export function HoldingsAllocationCharts({
   summary,
   baseCurrency,
+  isPrivacyMode,
 }: HoldingsAllocationChartsProps) {
   const allocationData = useMemo(() => {
     if (!summary?.byType) return [];
@@ -255,11 +255,13 @@ export function HoldingsAllocationCharts({
         title="Allocation by Asset Type"
         data={allocationData}
         currency={baseCurrency}
+        isPrivacyMode={isPrivacyMode}
       />
       <DonutChart
         title="Risk Profile (Volatility)"
         data={volatilityData}
         currency={baseCurrency}
+        isPrivacyMode={isPrivacyMode}
       />
     </div>
   );

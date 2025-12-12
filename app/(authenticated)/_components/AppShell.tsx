@@ -11,7 +11,10 @@ import {
   Settings,
   ShieldCheck,
   LineChart,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
+import { usePrivacy } from '../_contexts/PrivacyContext';
 
 type NavItem = {
   href: string;
@@ -32,6 +35,7 @@ const NAV_ITEMS: NavItem[] = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { isPrivacyMode, togglePrivacyMode } = usePrivacy();
 
   const activeItem = NAV_ITEMS.find((item) => item.href === pathname);
   const activeLabel = activeItem?.label ?? 'Dashboard';
@@ -43,9 +47,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <aside className="w-64 border-r border-zinc-800 bg-zinc-950 hidden md:flex flex-col">
           <div className="p-6">
             <div className="flex items-center gap-2 text-xl font-bold tracking-tight">
-              <img 
-                src="/tiequan-logo.png" 
-                alt="Tiequan" 
+              <img
+                src="/tiequan-logo.png"
+                alt="Tiequan"
                 className="w-8 h-8 rounded-lg object-contain"
               />
               Tiequan Portfolio
@@ -61,11 +65,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
-                    isActive
+                  className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${isActive
                       ? 'bg-zinc-800 text-white'
                       : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
-                  }`}
+                    }`}
                 >
                   <Icon className="w-4 h-4" />
                   {item.label}
@@ -97,6 +100,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </span>
             </div>
             <div className="flex items-center gap-4">
+              <button
+                onClick={togglePrivacyMode}
+                className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
+                title={isPrivacyMode ? 'Disable Privacy Mode' : 'Enable Privacy Mode'}
+              >
+                {isPrivacyMode ? (
+                  <EyeOff className="w-4 h-4" />
+                ) : (
+                  <Eye className="w-4 h-4" />
+                )}
+              </button>
+
               <div className="hidden md:flex items-center gap-2 text-xs text-zinc-500 bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800">
                 <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
                 System Operational

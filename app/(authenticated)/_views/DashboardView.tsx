@@ -10,6 +10,7 @@ import { HoldingsAllocationCharts } from '../_components/charts/HoldingsAllocati
 import { PnlTimeSeriesChart, type PnlTimeSeriesPoint } from '../_components/charts/PnlTimeSeriesChart';
 import type { HoldingRow, HoldingsSummary } from '@/lib/holdings';
 import { isPriceStale } from '@/lib/pricing';
+import { usePrivacy } from '../_contexts/PrivacyContext';
 
 type LedgerItem = {
   id: number;
@@ -63,7 +64,7 @@ const INITIAL_STATE: DashboardState = {
 
 
 
-function formatCurrency(value: number | null | undefined, currency: string) {
+function baseFormatCurrency(value: number | null | undefined, currency: string) {
   if (value === null || value === undefined || Number.isNaN(value)) {
     return 'Unpriced';
   }
@@ -92,6 +93,7 @@ function formatDateTime(value: Date | null, timezone: string) {
 
 export function DashboardView() {
   const router = useRouter();
+  const { isPrivacyMode } = usePrivacy();
   const [state, setState] = useState<DashboardState>(INITIAL_STATE);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -102,6 +104,16 @@ export function DashboardView() {
   const [pnlTimezone, setPnlTimezone] = useState('UTC');
   const [pnlLoading, setPnlLoading] = useState(false);
   const [pnlError, setPnlError] = useState<string | null>(null);
+
+  const formatCurrency = useCallback(
+    (value: number | null | undefined, currency: string) => {
+      if (isPrivacyMode) {
+        return '****';
+      }
+      return baseFormatCurrency(value, currency);
+    },
+    [isPrivacyMode]
+  );
 
   const fetchHoldings = useCallback(async () => {
     setLoading(true);
@@ -286,7 +298,9 @@ export function DashboardView() {
         header: 'Quantity',
         accessor: (row) => row.quantity,
         cell: (row) => (
-          <span className="text-zinc-200">{row.quantity.toLocaleString()}</span>
+          <span className="text-zinc-200">
+            {isPrivacyMode ? '****' : row.quantity.toLocaleString()}
+          </span>
         ),
         sortable: true,
         align: 'right',
@@ -309,7 +323,7 @@ export function DashboardView() {
         sortable: true,
       },
     ],
-    [state.timezone],
+    [state.timezone, isPrivacyMode]
   );
 
   return (
@@ -386,6 +400,7 @@ export function DashboardView() {
       <HoldingsAllocationCharts
         summary={state.summary}
         baseCurrency={totalCurrency}
+        isPrivacyMode={isPrivacyMode}
       />
 
       <Card>
@@ -399,9 +414,11 @@ export function DashboardView() {
             </div>
             <div className="flex items-center gap-3 text-sm">
               <span className={pnlChangeClass}>
-                {pnlChangePercent !== undefined
-                  ? `${pnlChangePercent >= 0 ? '+' : ''}${pnlChangePercent.toFixed(2)}%`
-                  : '—'}
+                {isPrivacyMode
+                  ? '****'
+                  : pnlChangePercent !== undefined
+                    ? `${pnlChangePercent >= 0 ? '+' : ''}${pnlChangePercent.toFixed(2)}%`
+                    : '—'}
               </span>
               <span className="text-zinc-500">vs previous snapshot</span>
             </div>
@@ -424,6 +441,7 @@ export function DashboardView() {
             baseCurrency={totalCurrency}
             timezone={pnlTimezone}
             height={220}
+            isPrivacyMode={isPrivacyMode}
           />
         )}
       </Card>
