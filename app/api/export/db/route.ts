@@ -25,7 +25,23 @@ export async function GET() {
   }
 
   const decodedPath = decodeURIComponent(parsed.pathname);
-  const dbPath = path.resolve(decodedPath);
+  let dbPath = path.resolve(decodedPath);
+  
+  // If the path is relative and doesn't exist, try resolving from prisma folder
+  if (!path.isAbsolute(decodedPath)) {
+    try {
+      await fs.promises.stat(dbPath);
+    } catch {
+      // Path doesn't exist, try prisma folder
+      const prismaDbPath = path.resolve('prisma', decodedPath);
+      try {
+        await fs.promises.stat(prismaDbPath);
+        dbPath = prismaDbPath;
+      } catch {
+        // Neither path works, keep original dbPath for error reporting
+      }
+    }
+  }
 
   try {
     const stats = await fs.promises.stat(dbPath);
