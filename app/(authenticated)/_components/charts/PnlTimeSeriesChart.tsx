@@ -68,6 +68,24 @@ export function PnlTimeSeriesChart({
       .filter((point): point is { timestamp: number; totalValue: number } => Boolean(point));
   }, [data]);
 
+  const yDomain = useMemo(() => {
+    if (chartData.length === 0) return ['auto', 'auto'];
+
+    const values = chartData.map((d) => d.totalValue);
+    const minVal = Math.min(...values);
+    const maxVal = Math.max(...values);
+    const range = maxVal - minVal;
+
+    if (range === 0) {
+      if (minVal === 0) return [-100, 100];
+      const buffer = Math.abs(minVal) * 0.05;
+      return [minVal - buffer, maxVal + buffer];
+    }
+
+    const buffer = range * 0.05;
+    return [minVal - buffer, maxVal + buffer];
+  }, [chartData]);
+
   if (chartData.length === 0) {
     return (
       <div className="flex items-center justify-center h-64 bg-zinc-900 rounded-xl border border-zinc-800 text-sm text-zinc-500">
@@ -96,6 +114,8 @@ export function PnlTimeSeriesChart({
             minTickGap={20}
           />
           <YAxis
+            width={80}
+            domain={yDomain}
             stroke="#4b5563"
             tickFormatter={(value) =>
               isPrivacyMode ? '****' : formatNumberFinance(Number(value), 0, 2)
