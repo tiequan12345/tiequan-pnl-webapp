@@ -9,6 +9,8 @@ import {
 import { getAppSettings } from '@/lib/settings';
 import { resolveAssetPrice } from '@/lib/pricing';
 
+export const dynamic = 'force-dynamic';
+
 function decimalToNumber(value: any): number {
   if (value === null || value === undefined) {
     return 0;
