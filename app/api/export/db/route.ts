@@ -27,16 +27,23 @@ export async function GET() {
   const decodedPath = decodeURIComponent(parsed.pathname);
   let dbPath = path.resolve(decodedPath);
   
-  // If the path is relative and doesn't exist, try resolving from prisma folder
-  if (!path.isAbsolute(decodedPath)) {
+  // Check if the database file exists at the resolved path
+  try {
+    await fs.promises.stat(dbPath);
+  } catch {
+    // If the original path doesn't exist, try the prisma directory
+    // The URL parser might treat relative paths as absolute, so we need to handle this
+    const cleanPath = decodedPath.replace(/^\//, ''); // Remove leading slash if present
+    const prismaDbPath = path.resolve('prisma', cleanPath);
     try {
-      await fs.promises.stat(dbPath);
+      await fs.promises.stat(prismaDbPath);
+      dbPath = prismaDbPath;
     } catch {
-      // Path doesn't exist, try prisma folder
-      const prismaDbPath = path.resolve('prisma', decodedPath);
+      // If that doesn't work either, try the original relative path
+      const relativePath = path.resolve(cleanPath);
       try {
-        await fs.promises.stat(prismaDbPath);
-        dbPath = prismaDbPath;
+        await fs.promises.stat(relativePath);
+        dbPath = relativePath;
       } catch {
         // Neither path works, keep original dbPath for error reporting
       }

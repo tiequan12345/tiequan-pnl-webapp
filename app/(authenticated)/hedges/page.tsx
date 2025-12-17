@@ -5,6 +5,8 @@ import {
   type HedgeTableRow,
   NetExposureTable,
   type NetExposureRow,
+  AggregatedHedgesTable,
+  type AggregatedHedgeRow,
 } from './HedgesTables';
 import { getAppSettings } from '@/lib/settings';
 import { resolveAssetPrice } from '@/lib/pricing';
@@ -37,6 +39,7 @@ export default async function HedgesPage() {
         account: { select: { name: true } },
         asset: {
           select: {
+            id: true,
             symbol: true,
             name: true,
             volatility_bucket: true,
@@ -145,6 +148,62 @@ export default async function HedgesPage() {
   // Filter out CASH_LIKE assets from hedge transactions
   const volatileActiveHedges = activeHedges.filter(tx => tx.asset.volatility_bucket !== 'CASH_LIKE');
   
+  // Aggregate hedge transactions by asset
+  const aggregatedHedgesByAsset = new Map<number, {
+    assetId: number;
+    assetSymbol: string;
+    assetName: string;
+    totalQuantity: number;
+    asset: any; // Asset data for price resolution
+  }>();
+  
+  volatileActiveHedges.forEach((tx) => {
+    const assetId = tx.asset.id;
+    const existing = aggregatedHedgesByAsset.get(assetId);
+    
+    if (existing) {
+      existing.totalQuantity += Number(tx.quantity.toString());
+    } else {
+      aggregatedHedgesByAsset.set(assetId, {
+        assetId,
+        assetSymbol: tx.asset.symbol,
+        assetName: tx.asset.name,
+        totalQuantity: Number(tx.quantity.toString()),
+        asset: tx.asset,
+      });
+    }
+  });
+  
+  // Create aggregated hedge rows with price resolution
+  const aggregatedHedgeRows: AggregatedHedgeRow[] = Array.from(aggregatedHedgesByAsset.values()).map((hedge) => {
+    // Calculate price for this asset
+    const latestPriceRecord = hedge.asset.price_latest ? {
+      priceInBase: decimalToNumber(hedge.asset.price_latest.price_in_base),
+      lastUpdated: hedge.asset.price_latest.last_updated,
+    } : null;
+    
+    const priceResolution = resolveAssetPrice({
+      pricingMode: hedge.asset.pricing_mode as 'AUTO' | 'MANUAL',
+      manualPrice: hedge.asset.manual_price ? decimalToNumber(hedge.asset.manual_price) : null,
+      latestPrice: latestPriceRecord,
+      refreshIntervalMinutes,
+    });
+    
+    const price = priceResolution.price && priceResolution.price > 0 ? priceResolution.price : null;
+    const totalMarketValue = price ? hedge.totalQuantity * price : null;
+    
+    return {
+      assetId: hedge.assetId,
+      assetSymbol: hedge.assetSymbol,
+      assetName: hedge.assetName,
+      totalQuantity: hedge.totalQuantity.toString(),
+      totalQuantityValue: hedge.totalQuantity,
+      price,
+      totalMarketValue,
+    };
+  }).sort((a, b) => a.assetSymbol.localeCompare(b.assetSymbol));
+  
+  // Keep the original hedge rows for reference (not used in the new UI)
   const hedgeRows: HedgeTableRow[] = volatileActiveHedges.map((tx) => {
     // Calculate price for this transaction
     const latestPriceRecord = tx.asset.price_latest ? {
@@ -200,10 +259,10 @@ export default async function HedgesPage() {
         <div className="border-b border-zinc-800 px-4 py-3">
           <h3 className="text-sm font-semibold text-zinc-100">Active Hedges</h3>
           <p className="text-xs text-zinc-500 mt-1">
-            Latest hedge transactions with account and notes. CASH_LIKE assets excluded.
+            Aggregated hedge positions by asset, showing total quantity and market value across all accounts. CASH_LIKE assets excluded.
           </p>
         </div>
-        <HedgeTransactionsTable rows={hedgeRows} />
+        <AggregatedHedgesTable rows={aggregatedHedgeRows} />
       </Card>
     </div>
   );
