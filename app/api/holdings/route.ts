@@ -11,6 +11,7 @@ export async function GET(request: Request) {
 
     const accountIdsParam = searchParams.get('accountIds') || '';
     const assetTypesParam = searchParams.get('assetTypes') || '';
+    const volatilityBucketsParam = searchParams.get('volatilityBuckets') || '';
     const viewParam = searchParams.get('view');
 
     const accountIds = accountIdsParam
@@ -25,11 +26,17 @@ export async function GET(request: Request) {
       .map((value) => value.trim())
       .filter((value) => value.length > 0);
 
+    const volatilityBuckets = volatilityBucketsParam
+      .split(',')
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+
     const settings = await getAppSettings();
 
     const { rows: fetchedRows, summary } = await getHoldings({
       accountIds: accountIds.length > 0 ? accountIds : undefined,
       assetTypes: assetTypes.length > 0 ? assetTypes : undefined,
+      volatilityBuckets: volatilityBuckets.length > 0 ? volatilityBuckets : undefined,
     });
     const useConsolidated = viewParam === 'consolidated';
     const rows = useConsolidated

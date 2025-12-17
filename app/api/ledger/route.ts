@@ -15,6 +15,12 @@ type LedgerPayload = {
   tx_type?: string;
   external_reference?: string | null;
   notes?: string | null;
+  legs?: LedgerLeg[];
+};
+
+type LedgerLeg = {
+  asset_id: number | string;
+  quantity: string | number;
 };
 
 type LedgerListItem = {
@@ -225,21 +231,13 @@ export async function POST(request: Request) {
 
     const dateTimeStr = (body.date_time ?? '').trim();
     const accountIdRaw = body.account_id;
-    const assetIdRaw = body.asset_id;
-    const quantityInput = body.quantity ?? null;
     const txTypeRaw = (body.tx_type ?? '').trim().toUpperCase();
 
-    if (
-      !dateTimeStr ||
-      accountIdRaw === undefined ||
-      assetIdRaw === undefined ||
-      quantityInput === null ||
-      !txTypeRaw
-    ) {
+    if (!dateTimeStr || accountIdRaw === undefined || !txTypeRaw) {
       return NextResponse.json(
         {
           error:
-            'date_time, account_id, asset_id, quantity, and tx_type are required.',
+            'date_time, account_id, and tx_type are required.',
         },
         { status: 400 },
       );
@@ -257,28 +255,6 @@ export async function POST(request: Request) {
     if (!Number.isFinite(accountId)) {
       return NextResponse.json(
         { error: 'Invalid account_id.' },
-        { status: 400 },
-      );
-    }
-
-    const assetId = Number(assetIdRaw);
-    if (!Number.isFinite(assetId)) {
-      return NextResponse.json(
-        { error: 'Invalid asset_id.' },
-        { status: 400 },
-      );
-    }
-
-    const quantityParsed = parseLedgerDecimal(quantityInput);
-    if (quantityParsed === null) {
-      return NextResponse.json(
-        { error: 'quantity must be a valid number.' },
-        { status: 400 },
-      );
-    }
-    if (quantityParsed === undefined) {
-      return NextResponse.json(
-        { error: 'quantity is required.' },
         { status: 400 },
       );
     }
@@ -307,6 +283,140 @@ export async function POST(request: Request) {
     if (!account) {
       return NextResponse.json(
         { error: 'Account not found.' },
+        { status: 400 },
+      );
+    }
+
+    // Check if this is a multi-leg trade
+    const legs = body.legs;
+    if (legs && Array.isArray(legs)) {
+      // Multi-leg trade support
+      const TRADE_TYPES: (typeof ALLOWED_TX_TYPES)[number][] = ['TRADE', 'NFT_TRADE', 'OFFLINE_TRADE', 'HEDGE'];
+      if (!TRADE_TYPES.includes(txType)) {
+        return NextResponse.json(
+          { error: 'legs can only be used with trade transaction types.' },
+          { status: 400 },
+        );
+      }
+
+      if (legs.length < 2) {
+        return NextResponse.json(
+          { error: 'At least 2 legs are required for trades.' },
+          { status: 400 },
+        );
+      }
+
+      const assetIdsToCheck = new Set<number>();
+      const validLegs: {
+        assetId: number;
+        quantityParsed: string;
+      }[] = [];
+
+      // Validate all legs
+      for (let i = 0; i < legs.length; i++) {
+        const leg = legs[i];
+        const assetIdRaw = leg.asset_id;
+        const quantityInput = leg.quantity;
+
+        if (assetIdRaw === undefined || quantityInput === null || quantityInput === undefined) {
+          return NextResponse.json(
+            { error: `Leg ${i + 1}: asset_id and quantity are required.` },
+            { status: 400 },
+          );
+        }
+
+        const assetId = Number(assetIdRaw);
+        if (!Number.isFinite(assetId)) {
+          return NextResponse.json(
+            { error: `Leg ${i + 1}: Invalid asset_id.` },
+            { status: 400 },
+          );
+        }
+
+        const quantityParsed = parseLedgerDecimal(quantityInput);
+        if (quantityParsed === null || quantityParsed === undefined) {
+          return NextResponse.json(
+            { error: `Leg ${i + 1}: quantity must be a valid number.` },
+            { status: 400 },
+          );
+        }
+
+        assetIdsToCheck.add(assetId);
+        validLegs.push({ assetId, quantityParsed });
+      }
+
+      // Verify all assets exist
+      const assets = await prisma.asset.findMany({
+        where: { id: { in: Array.from(assetIdsToCheck) } },
+        select: { id: true },
+      });
+
+      const assetExists = new Set(assets.map((a) => a.id));
+      for (let i = 0; i < validLegs.length; i++) {
+        const leg = validLegs[i];
+        if (!assetExists.has(leg.assetId)) {
+          return NextResponse.json(
+            { error: `Leg ${i + 1}: Asset ${leg.assetId} does not exist.` },
+            { status: 400 },
+          );
+        }
+      }
+
+      // Create all legs atomically using a transaction
+      const createdTransactions = await prisma.$transaction(
+        validLegs.map((leg) =>
+          prisma.ledgerTransaction.create({
+            data: {
+              date_time: dateTime,
+              account_id: accountId,
+              asset_id: leg.assetId,
+              quantity: leg.quantityParsed,
+              tx_type: txType,
+              external_reference: externalReference,
+              notes,
+            },
+          }),
+        ),
+      );
+
+      return NextResponse.json({
+        ids: createdTransactions.map((t) => t.id),
+        date_time: createdTransactions[0].date_time.toISOString(),
+        legs: createdTransactions.length,
+      });
+    }
+
+    // Legacy single-transaction support
+    const assetIdRaw = body.asset_id;
+    const quantityInput = body.quantity ?? null;
+
+    if (assetIdRaw === undefined || quantityInput === null) {
+      return NextResponse.json(
+        {
+          error: 'asset_id and quantity are required for single transactions.',
+        },
+        { status: 400 },
+      );
+    }
+
+    const assetId = Number(assetIdRaw);
+    if (!Number.isFinite(assetId)) {
+      return NextResponse.json(
+        { error: 'Invalid asset_id.' },
+        { status: 400 },
+      );
+    }
+
+    const quantityParsed = parseLedgerDecimal(quantityInput);
+    if (quantityParsed === null) {
+      return NextResponse.json(
+        { error: 'quantity must be a valid number.' },
+        { status: 400 },
+      );
+    }
+    if (quantityParsed === undefined) {
+      return NextResponse.json(
+        { error: 'quantity is required.' },
         { status: 400 },
       );
     }

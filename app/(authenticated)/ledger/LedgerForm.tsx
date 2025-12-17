@@ -264,7 +264,7 @@ export function LedgerForm({
           return;
         }
 
-        const payloadIn = buildCommonPayload({
+        const payload = buildCommonPayload({
           assetId: assetInNumeric,
           quantity: Math.abs(inQtyNumber).toString(),
         });
@@ -274,36 +274,37 @@ export function LedgerForm({
           quantity: (-Math.abs(outQtyNumber)).toString(),
         });
 
-        const firstResponse = await fetch('/api/ledger', {
+        // Use the new multi-leg API
+        const tradePayload = {
+          ...buildCommonPayload({
+            assetId: assetInNumeric, // This will be ignored for multi-leg trades
+            quantity: '0', // This will be ignored for multi-leg trades
+          }),
+          legs: [
+            {
+              asset_id: assetInNumeric,
+              quantity: Math.abs(inQtyNumber).toString(),
+            },
+            {
+              asset_id: assetOutNumeric,
+              quantity: (-Math.abs(outQtyNumber)).toString(),
+            },
+          ],
+        };
+
+        const response = await fetch('/api/ledger', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(payloadIn),
+          body: JSON.stringify(tradePayload),
         });
 
-        if (!firstResponse.ok) {
-          const data = (await firstResponse.json().catch(() => null)) as
+        if (!response.ok) {
+          const data = (await response.json().catch(() => null)) as
             | { error?: string }
             | null;
-          setError(data?.error || 'Failed to create trade (asset in).');
-          setSubmitting(false);
-          return;
-        }
-
-        const secondResponse = await fetch('/api/ledger', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(payloadOut),
-        });
-
-        if (!secondResponse.ok) {
-          const data = (await secondResponse.json().catch(() => null)) as
-            | { error?: string }
-            | null;
-          setError(data?.error || 'Failed to create trade (asset out).');
+          setError(data?.error || 'Failed to create trade.');
           setSubmitting(false);
           return;
         }
