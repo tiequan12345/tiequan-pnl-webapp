@@ -5,7 +5,8 @@ const PUBLIC_PATHS = [
   '/login', 
   '/api/login',
   '/api/prices/rate-limit',
-  '/api/prices/refresh'
+  '/api/prices/refresh',
+  '/api/prices/health'
 ];
 
 export function middleware(request: NextRequest) {

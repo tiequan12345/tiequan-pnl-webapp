@@ -310,22 +310,15 @@ const COINGECKO_OVERRIDES: Record<string, string> = {
 
 The application supports automated price refresh through:
 
-### Vercel Cron Jobs
+### GitHub Actions Workflow
 
-The [`vercel.json`](vercel.json) configuration includes:
+The application uses GitHub Actions to automate price refresh via the workflow file `.github/workflows/price-refresh.yml`:
 
-```json
-{
-  "crons": [
-    {
-      "path": "/api/prices/refresh",
-      "schedule": "0 * * * *"
-    }
-  ]
-}
-```
-
-This triggers the batch refresh endpoint every hour.
+- **Schedule**: Runs every hour at the beginning of each hour (`0 * * * *`)
+- **Endpoint**: Calls `/api/prices/refresh` automatically
+- **Manual Trigger**: Workflow can also be manually triggered via GitHub Actions UI
+- **Mode Detection**: Includes `X-Refresh-Mode: auto` header to differentiate scheduled vs manual runs
+- **Settings Respect**: Scheduled runs honor the `priceAutoRefresh` setting from the settings page
 
 ### Manual Refresh
 
@@ -340,8 +333,10 @@ Users can trigger manual refresh through:
 Monitor the refresh system through:
 
 - **Rate Limit Endpoint**: `/api/prices/rate-limit`
-- **Application Logs**: Check Vercel function logs
+- **GitHub Actions**: Check the Actions tab in your repository for workflow execution history
+- **Application Logs**: Check your hosting platform's function logs
 - **Database**: Query `PriceLatest` table for freshness
+- **Health Endpoint**: `/api/prices/health` (publicly accessible)
 
 ## Settings Management
 
@@ -421,21 +416,29 @@ npm run prisma:migrate   # Run database migrations
 
 ## Deployment
 
-### Vercel Deployment
+### GitHub Actions Deployment
 
-1. **Connect Repository**: Link your GitHub repository to Vercel
+1. **Connect Repository**: Link your GitHub repository to your hosting platform
 2. **Environment Variables**: Add all required environment variables
-3. **Deploy**: Vercel will automatically build and deploy
-4. **Cron Jobs**: The `vercel.json` configuration will set up hourly refresh
+3. **Deploy**: Your platform will automatically build and deploy
+4. **Price Refresh**: The included GitHub Actions workflow will handle hourly price refresh automatically
+5. **Secrets Setup**: Configure the required secrets in your GitHub repository for the workflow
 
 ### Environment Variables for Production
 
-Ensure all variables from `.env.example` are set in your Vercel dashboard:
+Ensure all variables from `.env.example` are set in your hosting platform:
 
 - `APP_PASSWORD`
-- `DATABASE_URL` (Vercel provides this automatically)
+- `DATABASE_URL` (hosting platform provides this automatically)
 - `FINNHUB_API_KEY`
 - `COINGECKO_API_KEY`
+
+### GitHub Actions Secrets
+
+For the price refresh workflow to function, configure these secrets in your GitHub repository:
+
+- `REFRESH_ENDPOINT_URL`: Full URL to your deployed `/api/prices/refresh` endpoint
+- `REFRESH_AUTH_HEADER`: Optional authentication header if your middleware requires auth
 
 ### Database Considerations
 

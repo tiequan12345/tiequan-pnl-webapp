@@ -243,10 +243,17 @@ export function DashboardView() {
 
   const totalValue = state.summary?.totalValue ?? 0;
   const totalCurrency = state.baseCurrency;
-  const lastUpdated = state.lastUpdated;
-  const pricesStale =
-    !lastUpdated || isPriceStale(lastUpdated, state.refreshIntervalMinutes);
+  const lastUpdated = state.summary?.autoUpdatedAt ?? null;
+  const hasAutoAssets = state.summary?.hasAutoAssets ?? false;
+  
+  // Only show stale badge if there are AUTO assets and their prices are stale
+  const pricesStale = hasAutoAssets && (!lastUpdated || isPriceStale(lastUpdated, state.refreshIntervalMinutes));
   const staleBadge = pricesStale ? <Badge type="red">Stale prices</Badge> : null;
+  
+  // Show different messaging for manual-only portfolios
+  const priceStatusMessage = hasAutoAssets 
+    ? (pricesStale ? "Stale prices" : null)
+    : "Manual pricing only";
   const refreshLabel = refreshing ? 'Refreshing…' : 'Refresh Prices';
 
   const latestSnapshot = pnlPoints[pnlPoints.length - 1];
@@ -342,18 +349,21 @@ export function DashboardView() {
                 {lastUpdated ? (
                   <div className="text-xs text-zinc-500 mt-1">
                     Updated {formatDateTime(lastUpdated, state.timezone)}
-                    {state.refreshIntervalMinutes
-                      ? ` · Refresh every ${state.refreshIntervalMinutes} min`
-                      : ''}
+                    {hasAutoAssets && state.refreshIntervalMinutes
+                      ? ` · Refresh every ${state.refreshIntervalMinutes} min (scheduled hourly)`
+                      : hasAutoAssets
+                      ? " · Scheduled hourly"
+                      : " · Manual pricing only"}
                   </div>
                 ) : (
                   <div className="text-xs text-zinc-500 mt-1">
-                    Awaiting price data…
+                    {hasAutoAssets ? "Awaiting price data…" : "Manual pricing only"}
                   </div>
                 )}
               </div>
               <div className="flex items-center gap-2 text-xs">
-                {staleBadge}
+                {pricesStale ? <Badge type="red">Stale prices</Badge> : null}
+                {!hasAutoAssets && <Badge type="blue">Manual pricing</Badge>}
                 <button
                   onClick={handleRefresh}
                   disabled={refreshing}

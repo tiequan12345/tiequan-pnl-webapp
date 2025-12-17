@@ -27,6 +27,8 @@ export type HoldingsSummary = {
   byType: Record<string, number>;
   byVolatility: Record<string, number>;
   updatedAt: Date | null;
+  autoUpdatedAt: Date | null;
+  hasAutoAssets: boolean;
 };
 
 export type HoldingsResult = {
@@ -183,6 +185,8 @@ export function summarizeHoldings(rows: HoldingRow[]): HoldingsSummary {
     byType: {},
     byVolatility: {},
     updatedAt: null,
+    autoUpdatedAt: null,
+    hasAutoAssets: false,
   };
 
   for (const row of rows) {
@@ -195,6 +199,14 @@ export function summarizeHoldings(rows: HoldingRow[]): HoldingsSummary {
 
       if (!summary.updatedAt || (row.lastUpdated && row.lastUpdated > summary.updatedAt)) {
         summary.updatedAt = row.lastUpdated;
+      }
+
+      // Track AUTO assets separately for staleness calculation
+      if (row.pricingMode === 'AUTO') {
+        summary.hasAutoAssets = true;
+        if (!summary.autoUpdatedAt || (row.lastUpdated && row.lastUpdated > summary.autoUpdatedAt)) {
+          summary.autoUpdatedAt = row.lastUpdated;
+        }
       }
     }
   }

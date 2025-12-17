@@ -117,7 +117,7 @@ The price refresh is scheduled via `.github/workflows/price-refresh.yml`:
 The system respects the following settings from the settings page:
 
 - `priceAutoRefresh`: Enable/disable automatic refresh
-- `priceAutoRefreshIntervalMinutes`: Refresh interval (GitHub Actions workflow runs hourly; cron frequency should align with this setting)
+- `priceAutoRefreshIntervalMinutes`: Refresh interval (GitHub Actions workflow runs hourly; the actual interval enforcement is limited by the hourly schedule)
 - `priceRefreshEndpoint`: Custom refresh endpoint (for testing)
 
 ### GitHub Actions Secrets
@@ -200,7 +200,10 @@ Potential improvements for future consideration:
 
 ## Security Considerations
 
+- **Security Considerations**
+
 - All pricing endpoints are publicly accessible (as configured in middleware)
+- The health endpoint `/api/prices/health` is specifically included in the public allow-list
 - API keys are stored securely in environment variables
 - Request timeouts prevent hanging connections
 - Rate limiting prevents API abuse
