@@ -57,11 +57,9 @@ export async function POST(req: Request) {
     const updates: Partial<AppSettings> = {};
 
     if ('baseCurrency' in body) {
-      const normalized = normalizeString(body.baseCurrency);
-      if (!normalized) {
-        return NextResponse.json({ error: 'baseCurrency must be a non-empty string' }, { status: 400 });
-      }
-      updates.baseCurrency = normalized;
+      // Silently ignore baseCurrency changes - it's locked to USD
+      // We don't return an error to avoid breaking existing clients
+      // The value will be forced to 'USD' by getAppSettings()
     }
 
     if ('timezone' in body) {

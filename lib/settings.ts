@@ -64,10 +64,8 @@ function buildSettingsFromRows(rows: Setting[]): AppSettings {
   );
 
   return {
-    baseCurrency: parseStringSetting(
-      rowMap[SETTING_KEY_MAP.baseCurrency],
-      DEFAULT_SETTINGS.baseCurrency,
-    ),
+    // Force baseCurrency to always be USD, regardless of stored value
+    baseCurrency: 'USD',
     timezone: parseStringSetting(
       rowMap[SETTING_KEY_MAP.timezone],
       DEFAULT_SETTINGS.timezone,

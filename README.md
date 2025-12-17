@@ -349,7 +349,9 @@ The application includes a settings system for configuration:
 
 ### Available Settings
 
-- **baseCurrency**: Base currency for portfolio (default: "USD")
+- **baseCurrency**: Base currency for portfolio (fixed to "USD")
+  - Note: Base currency is locked to USD as all pricing providers (CoinGecko and Finnhub) return USD values
+  - This setting is read-only in the UI to prevent incorrect currency formatting
 - **timezone**: User timezone for date display
 - **priceAutoRefresh**: Enable/disable automatic price refresh
 - **priceAutoRefreshIntervalMinutes**: Interval for auto-refresh

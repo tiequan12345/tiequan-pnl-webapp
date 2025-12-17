@@ -54,12 +54,11 @@ export default function SettingsPage() {
     }));
   };
 
-  const isValidBaseCurrency = settings.baseCurrency.trim().length > 0;
   const isValidTimezone = settings.timezone.trim().length > 0;
   const isValidInterval =
     Number.isFinite(settings.priceAutoRefreshIntervalMinutes) &&
     settings.priceAutoRefreshIntervalMinutes > 0;
-  const canSave = !loading && isValidBaseCurrency && isValidTimezone && isValidInterval;
+  const canSave = !loading && isValidTimezone && isValidInterval;
 
   const handleSave = async () => {
     setSaveStatus(null);
@@ -121,14 +120,12 @@ export default function SettingsPage() {
         <div className="grid gap-4 md:grid-cols-2">
           <label className="space-y-2">
             <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Base Currency</span>
-            <input
-              type="text"
-              value={settings.baseCurrency}
-              onChange={(e) => handleChange('baseCurrency', e.target.value.toUpperCase())}
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-              placeholder="USD"
-              disabled={loading}
-            />
+            <div className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-300">
+              USD (fixed)
+            </div>
+            <p className="text-xs text-zinc-500">
+              Base currency is fixed to USD as all pricing providers return USD values.
+            </p>
           </label>
           <label className="space-y-2">
             <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Timezone</span>
