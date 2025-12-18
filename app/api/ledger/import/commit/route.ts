@@ -2,7 +2,9 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import {
   ALLOWED_TX_TYPES,
+  decimalValueToNumber,
   isAllowedTxType,
+  isLedgerValuationConsistent,
   parseLedgerDateTime,
   parseLedgerDecimal,
 } from '@/lib/ledger';
@@ -15,6 +17,9 @@ type NormalizedLedgerRow = {
   tx_type?: string;
   external_reference?: string | null;
   notes?: string | null;
+  unit_price_in_base?: string | number | null;
+  total_value_in_base?: string | number | null;
+  fee_in_base?: string | number | null;
 };
 
 type RowError = {
@@ -63,6 +68,9 @@ export async function POST(request: Request) {
       txType: (typeof ALLOWED_TX_TYPES)[number];
       externalReference: string | null;
       notes: string | null;
+      unitPriceInBase?: string | null;
+      totalValueInBase?: string | null;
+      feeInBase?: string | null;
     }[] = [];
 
     const accountIdsToCheck = new Set<number>();
@@ -106,13 +114,63 @@ export async function POST(request: Request) {
       const notesRaw = row.notes ?? null;
       const notes = notesRaw === null ? null : notesRaw.toString();
 
+      const unitPriceParsed = parseLedgerDecimal(row.unit_price_in_base);
+      if (unitPriceParsed === null) {
+        errors.push({
+          index,
+          message: 'unit_price_in_base must be a valid number.',
+        });
+      }
+
+      const totalValueParsed = parseLedgerDecimal(row.total_value_in_base);
+      if (totalValueParsed === null) {
+        errors.push({
+          index,
+          message: 'total_value_in_base must be a valid number.',
+        });
+      }
+
+      const feeParsed = parseLedgerDecimal(row.fee_in_base);
+      if (feeParsed === null) {
+        errors.push({
+          index,
+          message: 'fee_in_base must be a valid number.',
+        });
+      }
+
+      if (
+        quantityParsed &&
+        unitPriceParsed &&
+        totalValueParsed &&
+        !isLedgerValuationConsistent(
+          decimalValueToNumber(quantityParsed)!,
+          unitPriceParsed,
+          totalValueParsed,
+        )
+      ) {
+        errors.push({
+          index,
+          message:
+            'Valuation mismatch: Quantity * Unit Price must match Total Value (within 0.25%).',
+        });
+      }
+
       if (
         dateTime &&
         accountId !== null &&
         assetId !== null &&
         quantityParsed !== null &&
         quantityParsed !== undefined &&
-        isAllowedTxType(txTypeRaw)
+        isAllowedTxType(txTypeRaw) &&
+        unitPriceParsed !== null &&
+        totalValueParsed !== null &&
+        feeParsed !== null &&
+        // If all validations passed (consistency checked above if applicable)
+        (unitPriceParsed === undefined || unitPriceParsed === null || totalValueParsed === undefined || totalValueParsed === null || isLedgerValuationConsistent(
+          decimalValueToNumber(quantityParsed)!,
+          unitPriceParsed,
+          totalValueParsed
+        ))
       ) {
         candidateRows.push({
           index,
@@ -123,6 +181,9 @@ export async function POST(request: Request) {
           txType: txTypeRaw as (typeof ALLOWED_TX_TYPES)[number],
           externalReference,
           notes,
+          unitPriceInBase: unitPriceParsed,
+          totalValueInBase: totalValueParsed,
+          feeInBase: feeParsed,
         });
         accountIdsToCheck.add(accountId);
         assetIdsToCheck.add(assetId);
@@ -189,6 +250,9 @@ export async function POST(request: Request) {
         tx_type: row.txType,
         external_reference: row.externalReference,
         notes: row.notes,
+        unit_price_in_base: row.unitPriceInBase,
+        total_value_in_base: row.totalValueInBase,
+        fee_in_base: row.feeInBase,
       })),
     });
 

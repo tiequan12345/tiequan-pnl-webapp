@@ -238,22 +238,22 @@ This document extends the original PRD with a phased implementation plan that ma
   - All downstream responses (`/api/holdings`, `/api/pnl`, price endpoints, snapshots) hardcode USD in their responses.
 
 - **UI**
-  - Settings page renders “Base Currency: USD (fixed)” as read-only text.
+  - Settings page renders "Base Currency: USD (fixed)" as read-only text.
   - Any currency labels (dashboard totals, holdings table, PnL page) derive from a shared USD constant rather than user input.
   - Add a callout explaining the fixed USD assumption so users understand why the control is disabled.
 
 - **Validation**
   - Manually edit the settings table (if needed) to a non-USD value and confirm GET `/api/settings` still returns USD and UI still shows USD.
   - Settings save button should not break now that base currency isn’t editable.
-  - Dashboard, holdings table, PnL page should still render and display USD symbols even if the stored row had “EUR”.
+  - Dashboard, holdings table, PnL page should still render and display USD symbols even if the stored row had "EUR".
 
 ### Phase 1 – Pricing Freshness & Health Transparency
 **Objective:** Fix stale indicators, expose health publicly, and align docs.
 
 - **Stale badge**
   - Compute auto-price freshness using the latest `priceLatest.last_updated` across AUTO assets.
-  - If there are no AUTO assets, show “Manual pricing only” instead of “stale”.
-  - Dashboard wording should say “Scheduled hourly (configurable staleness only)” or similar to avoid implying interval enforcement.
+  - If there are no AUTO assets, show "Manual pricing only" instead of "stale".
+  - Dashboard wording should say "Scheduled hourly (configurable staleness only)" or similar to avoid implying interval enforcement.
 
 - **Health endpoint**
   - Add `/api/prices/health` to `PUBLIC_PATHS` so it is reachable without auth.
@@ -262,7 +262,7 @@ This document extends the original PRD with a phased implementation plan that ma
 
 - **Validation**
   - Visit `/api/prices/health` without a session cookie and confirm it returns 200.
-  - Use a manual portfolio with only MANUAL assets and ensure the dashboard no longer shows “Prices stale.”
+  - Use a manual portfolio with only MANUAL assets and ensure the dashboard no longer shows "Prices stale."
 
 ### Phase 2 – Holdings Filter & Ledger Semantics
 **Objective:** Close the gap between backend filters and UI expectations, and enforce ledger trade contracts server-side.
@@ -284,27 +284,32 @@ This document extends the original PRD with a phased implementation plan that ma
 ### Phase 3 – Holdings Valuation & Cost Basis Wiring
 **Objective:** Capture valuation inputs and expose cost basis + PnL metrics.
 
+**Status: Fully implemented**
+- **Schema**: `unit_price_in_base`, `total_value_in_base`, `fee_in_base` now exist on `LedgerTransaction` and are tracked via `20251218004753_add_ledger_valuation`.
+- **API**: `/api/ledger` POST/PUT (single-leg and trade legs) plus the CSV import commit flow accept the valuation trio, validate consistency, persist them, and return them when requested.
+- **Engine**: `lib/holdings` consumes the new columns to compute average cost, total cost basis, and unrealized PnL/percent; summaries now show “Unknown cost basis” whenever valuations are incomplete.
+- **UI**: Ledger create/edit forms expose the valuation inputs (per leg for trades), the holdings table renders Avg Cost/Cost Basis/Unrealized PnL/PnL %, and the dashboard hero card surfaces the valuation summary with explicit missing-data messaging.
+
 - **Schema & migrations**
-  - Add nullable `unit_price_in_base`, `total_value_in_base`, `fee_in_base` (or similar) columns to `LedgerTransaction`.
-  - Update Prisma migrations accordingly.
+  - Added nullable valuation columns via the `20251218004753_add_ledger_valuation` migration.
+  - Migration history is kept consistent so new dev environments apply the schema in order.
 
 - **API contracts**
-  - `/api/ledger` POST/PUT: accept valuation fields, validate them (total vs unit*qty), and persist.
-  - `/api/ledger/import/commit`: allow optional columns for valuation; default to null when absent.
+  - `/api/ledger` POST/PUT: accept `unit_price_in_base`, `total_value_in_base`, `fee_in_base`, validate them against quantity, and persist or clear the fields per request.
+  - `/api/ledger/import/commit`: allows those columns and defaults them to `null` when absent so older CSVs keep working.
 
 - **Cost basis engine**
-  - Compute average cost per account/asset (either on-the-fly or via new positions table).
-  - Holdings results now include `averageCost`, `totalCostBasis`, `unrealizedPnl`, `unrealizedPnlPct`.
-  - Summary rows should mark “Unknown” if valuation inputs are missing rather than guessing.
+  - Holdings rows now include `averageCost`, `totalCostBasis`, `unrealizedPnl`, `unrealizedPnlPct` computed from valuation-aware ledger history.
+  - Summary logic tags the overall valuation as “Unknown cost basis” when any required data is missing rather than displaying inaccurate PnL.
 
 - **UI**
-  - Holdings table adds columns for Average Cost, Cost Basis, Unrealized PnL, and PnL %.
-  - Dashboard top holdings card and allocation components display PnL-aware totals when data exists.
-  - Clearly label when valuation inputs are missing to avoid misleading numbers.
+  - Ledger forms show dedicated valuation inputs for single entries and each leg of a trade, prefilling values during edits.
+  - Holdings table now surfaces the new Avg Cost/Cost Basis/Unrealized PnL/PnL % columns with fallback placeholders when data is missing.
+  - Dashboard hero card renders the total Unrealized PnL + Cost Basis block and clearly labels the “Unknown cost basis” state, even during privacy mode or missing valuations.
 
 - **Validation**
-  - Create a sequence of ledger entries (buys/sells) with valuation data and check holdings response includes accurate average cost + PnL.
-  - Without valuation data, verify UI displays “Unknown cost basis”.
+  - Verified that ledger entries created/edited with valuations propagate through `/api/holdings`, the holdings page, and the dashboard (avg cost / cost basis / PnL columns display correctly).
+  - Confirmed the UI shows “Unknown cost basis” when valuations are absent, matching the original requirement.
 
 ### Phase 4 – Scheduling Guarantees & Monitoring
 **Objective:** (Optional) Align actual refresh scheduler with configured interval and harden concurrent runs.

@@ -73,6 +73,21 @@ export default async function HoldingsPage({ searchParams }: HoldingsPageProps) 
   const baseCurrency = settings.baseCurrency;
   const totalValue = holdings.summary.totalValue;
   const lastUpdated = holdings.summary.updatedAt;
+  const totalCostBasis = holdings.summary.totalCostBasis;
+  const totalUnrealizedPnl = holdings.summary.totalUnrealizedPnl;
+  const valuationReady =
+    totalCostBasis !== null && totalUnrealizedPnl !== null;
+  const pnlPercent =
+    valuationReady && totalCostBasis !== 0
+      ? (totalUnrealizedPnl / totalCostBasis) * 100
+      : null;
+  const pnlClass = valuationReady
+    ? totalUnrealizedPnl > 0
+      ? 'text-emerald-400'
+      : totalUnrealizedPnl < 0
+        ? 'text-rose-400'
+        : 'text-zinc-200'
+    : 'text-zinc-500';
 
   return (
     <div className="space-y-6">
@@ -111,6 +126,35 @@ export default async function HoldingsPage({ searchParams }: HoldingsPageProps) 
           <div className="mt-1 text-xs text-zinc-500">
             Refresh Interval: {settings.priceAutoRefreshIntervalMinutes} min
           </div>
+        </Card>
+
+        <Card>
+          <div className="text-sm text-zinc-400">Valuation</div>
+          {valuationReady ? (
+            <>
+              <div className={`mt-2 text-2xl font-bold ${pnlClass}`}>
+                {totalUnrealizedPnl > 0 ? '+' : ''}
+                {formatCurrency(totalUnrealizedPnl, baseCurrency)}
+                {pnlPercent !== null ? (
+                  <span className="text-xs ml-2 text-zinc-400">
+                    ({pnlPercent > 0 ? '+' : ''}{pnlPercent.toFixed(2)}%)
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-1 text-xs text-zinc-500">
+                Cost basis: {formatCurrency(totalCostBasis!, baseCurrency)}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="mt-2 text-lg text-zinc-500 font-medium">
+                Valuation data pending
+              </div>
+              <div className="mt-1 text-xs text-zinc-500">
+                Unknown cost basis
+              </div>
+            </>
+          )}
         </Card>
       </div>
 

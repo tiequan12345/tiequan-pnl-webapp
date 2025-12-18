@@ -246,6 +246,22 @@ export function DashboardView() {
   const lastUpdated = state.summary?.autoUpdatedAt ?? null;
   const hasAutoAssets = state.summary?.hasAutoAssets ?? false;
   
+  const totalUnrealizedPnl = state.summary?.totalUnrealizedPnl ?? null;
+  const totalCostBasis = state.summary?.totalCostBasis ?? null;
+  const valuationReady =
+    totalCostBasis !== null && totalUnrealizedPnl !== null;
+  const pnlPercent =
+    valuationReady && totalCostBasis !== 0
+      ? (totalUnrealizedPnl / totalCostBasis) * 100
+      : null;
+  const pnlClass = valuationReady
+    ? totalUnrealizedPnl > 0
+      ? 'text-emerald-400'
+      : totalUnrealizedPnl < 0
+        ? 'text-rose-400'
+        : 'text-zinc-200'
+    : 'text-zinc-500';
+  
   // Only show stale badge if there are AUTO assets and their prices are stale
   const pricesStale = hasAutoAssets && (!lastUpdated || isPriceStale(lastUpdated, state.refreshIntervalMinutes));
   const staleBadge = pricesStale ? <Badge type="red">Stale prices</Badge> : null;
@@ -372,6 +388,29 @@ export function DashboardView() {
                   {refreshLabel}
                 </button>
               </div>
+            </div>
+            <div className="mt-4 flex flex-col gap-1">
+              <span className="text-xs uppercase tracking-wide text-zinc-500">
+                Valuation
+              </span>
+              {valuationReady ? (
+                <div className={`text-xl font-semibold ${pnlClass}`}>
+                  {totalUnrealizedPnl > 0 ? '+' : ''}
+                  {formatCurrency(totalUnrealizedPnl, totalCurrency)}
+                  {pnlPercent !== null ? (
+                    <span className="text-xs ml-2 text-zinc-400">
+                      ({pnlPercent > 0 ? '+' : ''}{pnlPercent.toFixed(2)}%)
+                    </span>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="text-sm text-zinc-500">Unknown cost basis</div>
+              )}
+              {valuationReady && (
+                <div className="text-xs text-zinc-500">
+                  Cost basis: {formatCurrency(totalCostBasis!, totalCurrency)}
+                </div>
+              )}
             </div>
             {error && (
               <div className="mt-4 text-xs text-rose-300">{error}</div>

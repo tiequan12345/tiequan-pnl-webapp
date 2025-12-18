@@ -62,6 +62,9 @@ export default async function EditLedgerPage({ params }: EditLedgerPageProps) {
     tx_type: transaction.tx_type,
     external_reference: transaction.external_reference ?? null,
     notes: transaction.notes ?? null,
+    unit_price_in_base: transaction.unit_price_in_base?.toString() ?? null,
+    total_value_in_base: transaction.total_value_in_base?.toString() ?? null,
+    fee_in_base: transaction.fee_in_base?.toString() ?? null,
   };
 
   const accountsForSelect = accounts.map((account) => ({

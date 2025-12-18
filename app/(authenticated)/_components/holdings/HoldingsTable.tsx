@@ -9,6 +9,7 @@ import { DataTable, type DataTableColumn, type GlobalSearch } from '../table/Dat
 type CurrencyFormatOptions = {
   minimumFractionDigits?: number;
   maximumFractionDigits?: number;
+  fallback?: string;
 };
 
 type HoldingsTableProps = {
@@ -29,7 +30,7 @@ function formatCurrencyValue(
   options?: CurrencyFormatOptions,
 ): string {
   if (value === null || value === undefined || Number.isNaN(value)) {
-    return 'Unpriced';
+    return options?.fallback ?? 'Unpriced';
   }
 
   const { minimumFractionDigits = 2, maximumFractionDigits = 2 } = options ?? {};
@@ -46,6 +47,25 @@ function formatQuantity(value: number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+function formatPnlClass(value: number | null | undefined) {
+  if (value === null || value === undefined) {
+    return 'text-zinc-500';
+  }
+  return value > 0 ? 'text-emerald-400' : value < 0 ? 'text-rose-400' : 'text-zinc-200';
+}
+
+function formatPnlValue(
+  value: number | null | undefined,
+  currency: string,
+  options?: CurrencyFormatOptions,
+): string {
+  const formatted = formatCurrencyValue(value, currency, options);
+  if (value && value > 0 && formatted !== (options?.fallback ?? 'Unpriced')) {
+    return `+${formatted}`;
+  }
+  return formatted;
 }
 
 const defaultPriceFormatter = (value: number) =>
@@ -220,6 +240,69 @@ export function HoldingsTable({
       sortable: true,
       sortFn: (a, b) =>
         (a.marketValue ?? -Infinity) - (b.marketValue ?? -Infinity),
+      align: 'right',
+      className: 'text-right',
+    },
+    {
+      id: 'averageCost',
+      header: 'Avg Cost',
+      accessor: (row) => row.averageCost ?? -Infinity,
+      cell: (row) => (
+        <span className="text-zinc-200">
+          {formatCurrencyValue(row.averageCost, baseCurrency, { fallback: '—' })}
+        </span>
+      ),
+      sortable: true,
+      sortFn: (a, b) => (a.averageCost ?? -Infinity) - (b.averageCost ?? -Infinity),
+      align: 'right',
+      className: 'text-right',
+    },
+    {
+      id: 'totalCostBasis',
+      header: 'Cost Basis',
+      accessor: (row) => row.totalCostBasis ?? -Infinity,
+      cell: (row) => (
+        <span className="text-zinc-200">
+          {formatCurrencyValue(row.totalCostBasis, baseCurrency, { fallback: '—' })}
+        </span>
+      ),
+      sortable: true,
+      sortFn: (a, b) => (a.totalCostBasis ?? -Infinity) - (b.totalCostBasis ?? -Infinity),
+      align: 'right',
+      className: 'text-right',
+    },
+    {
+      id: 'unrealizedPnl',
+      header: 'Unrealized PnL',
+      accessor: (row) => row.unrealizedPnl ?? -Infinity,
+      cell: (row) => (
+        <span className={formatPnlClass(row.unrealizedPnl)}>
+          {formatPnlValue(row.unrealizedPnl, baseCurrency, { fallback: '—' })}
+        </span>
+      ),
+      sortable: true,
+      sortFn: (a, b) =>
+        (a.unrealizedPnl ?? -Infinity) - (b.unrealizedPnl ?? -Infinity),
+      align: 'right',
+      className: 'text-right',
+    },
+    {
+      id: 'unrealizedPnlPct',
+      header: '%',
+      accessor: (row) => row.unrealizedPnlPct ?? -Infinity,
+      cell: (row) => {
+        const val = row.unrealizedPnlPct;
+        const prefix = val && val > 0 ? '+' : '';
+        return (
+          <span className={formatPnlClass(val)}>
+            {prefix}
+            {val !== null && val !== undefined ? `${val.toFixed(2)}%` : '—'}
+          </span>
+        );
+      },
+      sortable: true,
+      sortFn: (a, b) =>
+        (a.unrealizedPnlPct ?? -Infinity) - (b.unrealizedPnlPct ?? -Infinity),
       align: 'right',
       className: 'text-right',
     },

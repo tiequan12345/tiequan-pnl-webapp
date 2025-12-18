@@ -5,6 +5,8 @@ import {
   isAllowedTxType,
   parseLedgerDateTime,
   parseLedgerDecimal,
+  decimalValueToNumber,
+  isLedgerValuationConsistent,
 } from '@/lib/ledger';
 
 type LedgerPayload = {
@@ -15,12 +17,18 @@ type LedgerPayload = {
   tx_type?: string;
   external_reference?: string | null;
   notes?: string | null;
+  unit_price_in_base?: string | number | null;
+  total_value_in_base?: string | number | null;
+  fee_in_base?: string | number | null;
   legs?: LedgerLeg[];
 };
 
 type LedgerLeg = {
   asset_id: number | string;
   quantity: string | number;
+  unit_price_in_base?: string | number | null;
+  total_value_in_base?: string | number | null;
+  fee_in_base?: string | number | null;
 };
 
 type LedgerListItem = {
@@ -32,6 +40,9 @@ type LedgerListItem = {
   tx_type: string;
   external_reference: string | null;
   notes: string | null;
+  unit_price_in_base: string | null;
+  total_value_in_base: string | null;
+  fee_in_base: string | null;
   account: {
     id: number;
     name: string;
@@ -183,6 +194,9 @@ export async function GET(request: Request) {
       tx_type: tx.tx_type,
       external_reference: tx.external_reference ?? null,
       notes: tx.notes ?? null,
+      unit_price_in_base: tx.unit_price_in_base?.toString() ?? null,
+      total_value_in_base: tx.total_value_in_base?.toString() ?? null,
+      fee_in_base: tx.fee_in_base?.toString() ?? null,
       account: {
         id: tx.account.id,
         name: tx.account.name,
@@ -310,6 +324,9 @@ export async function POST(request: Request) {
       const validLegs: {
         assetId: number;
         quantityParsed: string;
+        unitPriceParsed: string | null | undefined;
+        totalValueParsed: string | null | undefined;
+        feeParsed: string | null | undefined;
       }[] = [];
 
       // Validate all legs
@@ -341,8 +358,42 @@ export async function POST(request: Request) {
           );
         }
 
+        const unitPriceParsed = parseLedgerDecimal(leg.unit_price_in_base);
+        const totalValueParsed = parseLedgerDecimal(leg.total_value_in_base);
+        const feeParsed = parseLedgerDecimal(leg.fee_in_base);
+
+        if (unitPriceParsed === null) {
+          return NextResponse.json(
+            { error: `Leg ${i + 1}: unit_price_in_base must be a valid number.` },
+            { status: 400 },
+          );
+        }
+        if (totalValueParsed === null) {
+          return NextResponse.json(
+            { error: `Leg ${i + 1}: total_value_in_base must be a valid number.` },
+            { status: 400 },
+          );
+        }
+        if (feeParsed === null) {
+          return NextResponse.json(
+            { error: `Leg ${i + 1}: fee_in_base must be a valid number.` },
+            { status: 400 },
+          );
+        }
+
+        if (!isLedgerValuationConsistent(
+          decimalValueToNumber(quantityParsed)!,
+          unitPriceParsed,
+          totalValueParsed
+        )) {
+          return NextResponse.json(
+            { error: `Leg ${i + 1}: Valuation mismatch (Quantity * Unit Price != Total Value).` },
+            { status: 400 },
+          );
+        }
+
         assetIdsToCheck.add(assetId);
-        validLegs.push({ assetId, quantityParsed });
+        validLegs.push({ assetId, quantityParsed, unitPriceParsed, totalValueParsed, feeParsed });
       }
 
       // Verify all assets exist
@@ -374,6 +425,9 @@ export async function POST(request: Request) {
               tx_type: txType,
               external_reference: externalReference,
               notes,
+              unit_price_in_base: leg.unitPriceParsed,
+              total_value_in_base: leg.totalValueParsed,
+              fee_in_base: leg.feeParsed,
             },
           }),
         ),
@@ -421,6 +475,40 @@ export async function POST(request: Request) {
       );
     }
 
+    const unitPriceParsed = parseLedgerDecimal(body.unit_price_in_base);
+    const totalValueParsed = parseLedgerDecimal(body.total_value_in_base);
+    const feeParsed = parseLedgerDecimal(body.fee_in_base);
+
+    if (unitPriceParsed === null) {
+      return NextResponse.json(
+        { error: 'unit_price_in_base must be a valid number.' },
+        { status: 400 },
+      );
+    }
+    if (totalValueParsed === null) {
+      return NextResponse.json(
+        { error: 'total_value_in_base must be a valid number.' },
+        { status: 400 },
+      );
+    }
+    if (feeParsed === null) {
+      return NextResponse.json(
+        { error: 'fee_in_base must be a valid number.' },
+        { status: 400 },
+      );
+    }
+
+    if (!isLedgerValuationConsistent(
+      decimalValueToNumber(quantityParsed)!,
+      unitPriceParsed,
+      totalValueParsed
+    )) {
+      return NextResponse.json(
+        { error: 'Valuation mismatch: Quantity * Unit Price must match Total Value (within 0.25%).' },
+        { status: 400 },
+      );
+    }
+
     const asset = await prisma.asset.findUnique({
       where: { id: assetId },
     });
@@ -441,12 +529,18 @@ export async function POST(request: Request) {
         tx_type: txType,
         external_reference: externalReference,
         notes,
+        unit_price_in_base: unitPriceParsed,
+        total_value_in_base: totalValueParsed,
+        fee_in_base: feeParsed,
       },
     });
 
     return NextResponse.json({
       id: created.id,
       date_time: created.date_time.toISOString(),
+      unit_price_in_base: created.unit_price_in_base?.toString() ?? null,
+      total_value_in_base: created.total_value_in_base?.toString() ?? null,
+      fee_in_base: created.fee_in_base?.toString() ?? null,
     });
   } catch {
     return NextResponse.json(

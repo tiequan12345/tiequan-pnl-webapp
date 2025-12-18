@@ -51,6 +51,9 @@ model LedgerTransaction {
   tx_type            String
   external_reference String?
   notes              String?
+  unit_price_in_base Decimal?
+  total_value_in_base Decimal?
+  fee_in_base        Decimal?
   created_at         DateTime @default(now())
   updated_at         DateTime @updatedAt
 

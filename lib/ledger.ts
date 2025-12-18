@@ -142,3 +142,49 @@ export function parseLedgerDateTime(input: string | undefined): Date | null {
   }
   return date;
 }
+
+/**
+ * Converts a validated decimal string (or number/null) into a JS number.
+ * Returns null if the input is null, undefined, or invalid.
+ */
+export function decimalValueToNumber(
+  value: string | number | null | undefined,
+): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Checks consistency between quantity, unit price, and total value.
+ * Returns true if one or both valuation fields are missing, or if they match within a tolerance.
+ */
+export function isLedgerValuationConsistent(
+  quantity: number,
+  unitPrice: string | number | null | undefined,
+  totalValue: string | number | null | undefined,
+): boolean {
+  const p = decimalValueToNumber(unitPrice);
+  const v = decimalValueToNumber(totalValue);
+
+  if (p === null || v === null) {
+    return true;
+  }
+
+  const expected = quantity * p;
+
+  // If the total value is effectively zero, just check that expected is also close to zero
+  if (Math.abs(v) < 0.0000001) {
+    return Math.abs(expected) < 0.0000001;
+  }
+
+  const diff = Math.abs(expected - v);
+  const tolerance = 0.0025 * Math.abs(v); // 0.25% tolerance
+
+  return diff <= tolerance;
+}

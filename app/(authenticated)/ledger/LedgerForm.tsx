@@ -14,6 +14,9 @@ export type LedgerFormInitialValues = {
   tx_type: string;
   external_reference: string | null;
   notes: string | null;
+  unit_price_in_base?: string | null;
+  total_value_in_base?: string | null;
+  fee_in_base?: string | null;
 };
 
 type LedgerFormProps = {
@@ -27,6 +30,43 @@ type LedgerFormProps = {
 type TxType = LedgerTxType;
 
 const TRADE_TYPES: TxType[] = ['TRADE', 'NFT_TRADE', 'OFFLINE_TRADE', 'HEDGE'];
+
+type ValuationFieldKey =
+  | 'unit_price_in_base'
+  | 'total_value_in_base'
+  | 'fee_in_base';
+
+type ValuationInputs = {
+  unitPrice: string;
+  totalValue: string;
+  fee: string;
+};
+
+type ValuationPayload = Partial<Record<ValuationFieldKey, string | null>>;
+
+function buildValuationPayload(
+  values: ValuationInputs,
+  options?: { allowNull?: boolean },
+): ValuationPayload {
+  const payload: ValuationPayload = {};
+
+  const setField = (field: ValuationFieldKey, value: string) => {
+    const trimmed = value?.trim() ?? '';
+    if (trimmed) {
+      payload[field] = trimmed;
+      return;
+    }
+    if (options?.allowNull) {
+      payload[field] = null;
+    }
+  };
+
+  setField('unit_price_in_base', values.unitPrice);
+  setField('total_value_in_base', values.totalValue);
+  setField('fee_in_base', values.fee);
+
+  return payload;
+}
 
 const TX_TYPE_LABELS: Record<LedgerTxType, string> = {
   DEPOSIT: 'Deposit',
@@ -114,6 +154,14 @@ export function LedgerForm({
   );
   const [notes, setNotes] = useState<string>(initialValues?.notes ?? '');
 
+  const [unitPrice, setUnitPrice] = useState<string>(
+    initialValues?.unit_price_in_base ?? '',
+  );
+  const [totalValue, setTotalValue] = useState<string>(
+    initialValues?.total_value_in_base ?? '',
+  );
+  const [fee, setFee] = useState<string>(initialValues?.fee_in_base ?? '');
+
   const [assetInId, setAssetInId] = useState<string>(() => {
     if (assets.length > 0) {
       // Find the asset with the highest usage count for trade form
@@ -136,6 +184,13 @@ export function LedgerForm({
     return '';
   });
   const [quantityOut, setQuantityOut] = useState<string>('');
+
+  const [assetInUnitPrice, setAssetInUnitPrice] = useState<string>('');
+  const [assetInTotalValue, setAssetInTotalValue] = useState<string>('');
+  const [assetInFee, setAssetInFee] = useState<string>('');
+  const [assetOutUnitPrice, setAssetOutUnitPrice] = useState<string>('');
+  const [assetOutTotalValue, setAssetOutTotalValue] = useState<string>('');
+  const [assetOutFee, setAssetOutFee] = useState<string>('');
 
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -172,6 +227,11 @@ export function LedgerForm({
     }
 
     try {
+      const valuationPayload = buildValuationPayload(
+        { unitPrice, totalValue, fee },
+        { allowNull: isEditMode },
+      );
+
       if (isEditMode) {
         if (!transactionId) {
           setError('Missing transaction id for edit.');
@@ -194,16 +254,21 @@ export function LedgerForm({
           return;
         }
 
-        const payload = buildCommonPayload({
+        const basePayload = buildCommonPayload({
           assetId: assetId ? Number(assetId) : NaN,
           quantity: trimmedQuantity,
         });
 
-        if (!Number.isFinite(payload.asset_id as number)) {
+        if (!Number.isFinite(basePayload.asset_id as number)) {
           setError('Asset is required.');
           setSubmitting(false);
           return;
         }
+
+        const payload = {
+          ...basePayload,
+          ...valuationPayload,
+        };
 
         const response = await fetch(`/api/ledger/${transactionId}`, {
           method: 'PUT',
@@ -275,6 +340,17 @@ export function LedgerForm({
         });
 
         // Use the new multi-leg API
+        const assetInValuations = buildValuationPayload({
+          unitPrice: assetInUnitPrice,
+          totalValue: assetInTotalValue,
+          fee: assetInFee,
+        });
+        const assetOutValuations = buildValuationPayload({
+          unitPrice: assetOutUnitPrice,
+          totalValue: assetOutTotalValue,
+          fee: assetOutFee,
+        });
+
         const tradePayload = {
           ...buildCommonPayload({
             assetId: assetInNumeric, // This will be ignored for multi-leg trades
@@ -284,10 +360,12 @@ export function LedgerForm({
             {
               asset_id: assetInNumeric,
               quantity: Math.abs(inQtyNumber).toString(),
+              ...assetInValuations,
             },
             {
               asset_id: assetOutNumeric,
               quantity: (-Math.abs(outQtyNumber)).toString(),
+              ...assetOutValuations,
             },
           ],
         };
@@ -347,10 +425,14 @@ export function LedgerForm({
         return;
       }
 
-      const payload = buildCommonPayload({
+      const basePayload = buildCommonPayload({
         assetId: assetNumeric,
         quantity: signedQtyNumber.toString(),
       });
+      const payload = {
+        ...basePayload,
+        ...valuationPayload,
+      };
 
       const response = await fetch('/api/ledger', {
         method: 'POST',
@@ -486,6 +568,56 @@ export function LedgerForm({
                 }
               />
             </div>
+  
+            <div className="space-y-2 md:col-span-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+                  Valuation (base currency)
+                </label>
+                <span className="text-xs text-zinc-500">Optional</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-wide text-zinc-500">
+                    Unit price
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={unitPrice}
+                    onChange={(event) => setUnitPrice(event.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    placeholder="Optional"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-wide text-zinc-500">
+                    Total value
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={totalValue}
+                    onChange={(event) => setTotalValue(event.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    placeholder="Optional"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-wide text-zinc-500">
+                    Fee
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={fee}
+                    onChange={(event) => setFee(event.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    placeholder="Optional"
+                  />
+                </div>
+              </div>
+            </div>
           </>
         )}
 
@@ -554,6 +686,106 @@ export function LedgerForm({
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 placeholder="e.g. 200000 (for -200000 USDT)"
               />
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+                  Asset In valuation
+                </label>
+                <span className="text-xs text-zinc-500">Optional</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-wide text-zinc-500">
+                    Unit price
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={assetInUnitPrice}
+                    onChange={(event) => setAssetInUnitPrice(event.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    placeholder="Optional"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-wide text-zinc-500">
+                    Total value
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={assetInTotalValue}
+                    onChange={(event) => setAssetInTotalValue(event.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    placeholder="Optional"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-wide text-zinc-500">
+                    Fee
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={assetInFee}
+                    onChange={(event) => setAssetInFee(event.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    placeholder="Optional"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+                  Asset Out valuation
+                </label>
+                <span className="text-xs text-zinc-500">Optional</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-wide text-zinc-500">
+                    Unit price
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={assetOutUnitPrice}
+                    onChange={(event) => setAssetOutUnitPrice(event.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    placeholder="Optional"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-wide text-zinc-500">
+                    Total value
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={assetOutTotalValue}
+                    onChange={(event) => setAssetOutTotalValue(event.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    placeholder="Optional"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-wide text-zinc-500">
+                    Fee
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={assetOutFee}
+                    onChange={(event) => setAssetOutFee(event.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    placeholder="Optional"
+                  />
+                </div>
+              </div>
             </div>
           </>
         )}

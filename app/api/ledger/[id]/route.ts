@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import type { Prisma } from '@prisma/client';
 import {
   ALLOWED_TX_TYPES,
   isAllowedTxType,
@@ -21,7 +22,15 @@ type LedgerPayload = {
   tx_type?: string;
   external_reference?: string | null;
   notes?: string | null;
+  unit_price_in_base?: string | number | null;
+  total_value_in_base?: string | number | null;
+  fee_in_base?: string | number | null;
 };
+
+type ValuationFieldKey =
+  | 'unit_price_in_base'
+  | 'total_value_in_base'
+  | 'fee_in_base';
 
 export async function PUT(request: Request, context: RouteContext) {
   const id = Number(context.params.id);
@@ -155,17 +164,50 @@ export async function PUT(request: Request, context: RouteContext) {
       );
     }
 
+    const valuationFieldKeys: ValuationFieldKey[] = [
+      'unit_price_in_base',
+      'total_value_in_base',
+      'fee_in_base',
+    ];
+
+    const parsedValuations: Partial<Record<ValuationFieldKey, string | null>> = {};
+
+    for (const key of valuationFieldKeys) {
+      if (Object.prototype.hasOwnProperty.call(body, key)) {
+        const parsed = parseLedgerDecimal(body[key]);
+        if (parsed === null) {
+          return NextResponse.json(
+            { error: `${key} must be a valid number.` },
+            { status: 400 },
+          );
+        }
+        parsedValuations[key] = parsed === undefined ? null : parsed;
+      }
+    }
+
+    const updateData: Prisma.LedgerTransactionUpdateInput = {
+      date_time: dateTime,
+      account_id: accountId,
+      asset_id: assetId,
+      quantity: quantityParsed,
+      tx_type: txType,
+      external_reference: externalReference,
+      notes,
+    };
+
+    if (parsedValuations.unit_price_in_base !== undefined) {
+      updateData.unit_price_in_base = parsedValuations.unit_price_in_base;
+    }
+    if (parsedValuations.total_value_in_base !== undefined) {
+      updateData.total_value_in_base = parsedValuations.total_value_in_base;
+    }
+    if (parsedValuations.fee_in_base !== undefined) {
+      updateData.fee_in_base = parsedValuations.fee_in_base;
+    }
+
     const updated = await prisma.ledgerTransaction.update({
       where: { id },
-      data: {
-        date_time: dateTime,
-        account_id: accountId,
-        asset_id: assetId,
-        quantity: quantityParsed,
-        tx_type: txType,
-        external_reference: externalReference,
-        notes,
-      },
+      data: updateData,
     });
 
     return NextResponse.json({

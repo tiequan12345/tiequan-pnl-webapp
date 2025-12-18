@@ -20,10 +20,16 @@ export type HoldingRow = {
   isManual: boolean;
   isStale: boolean;
   marketValue: number | null;
+  averageCost: number | null;
+  totalCostBasis: number | null;
+  unrealizedPnl: number | null;
+  unrealizedPnlPct: number | null;
 };
 
 export type HoldingsSummary = {
   totalValue: number;
+  totalCostBasis: number | null;
+  totalUnrealizedPnl: number | null;
   byType: Record<string, number>;
   byVolatility: Record<string, number>;
   updatedAt: Date | null;
@@ -42,7 +48,9 @@ type HoldingFilters = {
   volatilityBuckets?: string[];
 };
 
-export function decimalToNumber(value: Prisma.Decimal | number | bigint | string | null | undefined): number {
+export function decimalToNumber(
+  value: Prisma.Decimal | number | bigint | string | null | undefined,
+): number {
   if (value === null || value === undefined) {
     return 0;
   }
@@ -62,7 +70,19 @@ export function decimalToNumber(value: Prisma.Decimal | number | bigint | string
   return 0;
 }
 
-function buildLatestPriceRecord(record: { price_in_base: Prisma.Decimal; last_updated: Date } | null | undefined): LatestPriceRecord | null {
+function decimalToNullableNumber(
+  value: Prisma.Decimal | number | bigint | string | null | undefined,
+): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const converted = decimalToNumber(value);
+  return Number.isFinite(converted) ? converted : null;
+}
+
+function buildLatestPriceRecord(
+  record: { price_in_base: Prisma.Decimal; last_updated: Date } | null | undefined,
+): LatestPriceRecord | null {
   if (!record) {
     return null;
   }
@@ -76,6 +96,40 @@ function isValidPrice(price: number | null | undefined): price is number {
   return typeof price === 'number' && Number.isFinite(price) && price > 0;
 }
 
+function getTransactionValue(
+  quantity: Prisma.Decimal | number | bigint | string | null | undefined,
+  totalValue: Prisma.Decimal | number | bigint | string | null | undefined,
+  unitPrice: Prisma.Decimal | number | bigint | string | null | undefined,
+): number | null {
+  const totalValueNumber = decimalToNullableNumber(totalValue);
+  if (totalValueNumber !== null) {
+    return Math.abs(totalValueNumber);
+  }
+
+  const unitPriceNumber = decimalToNullableNumber(unitPrice);
+  const quantityNumber = decimalToNullableNumber(quantity);
+  if (
+    unitPriceNumber !== null &&
+    quantityNumber !== null &&
+    Math.abs(quantityNumber) > 0
+  ) {
+    return Math.abs(unitPriceNumber * quantityNumber);
+  }
+
+  return null;
+}
+
+type LedgerTransactionWithRelations = Prisma.LedgerTransactionGetPayload<{
+  include: {
+    asset: {
+      include: {
+        price_latest: true;
+      };
+    };
+    account: true;
+  };
+}>;
+
 export async function fetchHoldingRows(filters?: HoldingFilters): Promise<HoldingRow[]> {
   const settings = await getAppSettings();
   const refreshIntervalMinutes = settings.priceAutoRefreshIntervalMinutes;
@@ -85,66 +139,97 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
     where.account_id = { in: filters.accountIds };
   }
 
-  const grouped = await prisma.ledgerTransaction.groupBy({
-    by: ['asset_id', 'account_id'],
-    _sum: {
-      quantity: true,
-    },
-    where,
-  });
+  const assetWhere: Prisma.AssetWhereInput = {};
+  if (filters?.assetTypes && filters.assetTypes.length > 0) {
+    assetWhere.type = { in: filters.assetTypes };
+  }
+  if (filters?.volatilityBuckets && filters.volatilityBuckets.length > 0) {
+    assetWhere.volatility_bucket = { in: filters.volatilityBuckets };
+  }
+  if (Object.keys(assetWhere).length > 0) {
+    where.asset = { is: assetWhere };
+  }
 
-  if (grouped.length === 0) {
+  const transactions = await prisma.ledgerTransaction.findMany({
+    where,
+    orderBy: { date_time: 'asc' },
+    include: {
+      asset: {
+        include: {
+          price_latest: true,
+        },
+      },
+      account: true,
+    },
+  }) as LedgerTransactionWithRelations[];
+
+  if (transactions.length === 0) {
     return [];
   }
 
-  const assetIds = Array.from(new Set(grouped.map((row) => row.asset_id)));
-  const accountIds = Array.from(new Set(grouped.map((row) => row.account_id)));
+  const positions = new Map<
+    string,
+    {
+      asset: LedgerTransactionWithRelations['asset'];
+      account: LedgerTransactionWithRelations['account'];
+      quantity: number;
+      costBasis: number;
+      costBasisKnown: boolean;
+    }
+  >();
 
-  const assets = await prisma.asset.findMany({
-    where: {
-      id: { in: assetIds },
-      ...(filters?.assetTypes && filters.assetTypes.length > 0
-        ? { type: { in: filters.assetTypes } }
-        : {}),
-      ...(filters?.volatilityBuckets && filters.volatilityBuckets.length > 0
-        ? { volatility_bucket: { in: filters.volatilityBuckets } }
-        : {}),
-    },
-    include: {
-      price_latest: true,
-    },
-  });
+  for (const tx of transactions) {
+    const key = `${tx.asset_id}-${tx.account_id}`;
+    const quantity = decimalToNumber(tx.quantity);
+    const existing = positions.get(key);
 
-  const assetMap = assets.reduce<Record<number, (typeof assets)[number]>>((acc, asset) => {
-    acc[asset.id] = asset;
-    return acc;
-  }, {});
+    const position =
+      existing ?? {
+        asset: tx.asset,
+        account: tx.account,
+        quantity: 0,
+        costBasis: 0,
+        costBasisKnown: true,
+      };
 
-  const accounts = await prisma.account.findMany({
-    where: { id: { in: accountIds } },
-  });
+    const txValue = getTransactionValue(
+      tx.quantity,
+      tx.total_value_in_base,
+      tx.unit_price_in_base,
+    );
 
-  const accountMap = accounts.reduce<Record<number, (typeof accounts)[number]>>((acc, account) => {
-    acc[account.id] = account;
-    return acc;
-  }, {});
+    if (quantity > 0) {
+      if (txValue === null) {
+        position.costBasisKnown = false;
+      } else {
+        position.costBasis += txValue;
+      }
+      position.quantity += quantity;
+    } else if (quantity < 0) {
+      const sellQuantity = Math.abs(quantity);
+      if (position.costBasisKnown && position.quantity > 0) {
+        const averageCost = position.quantity === 0 ? 0 : position.costBasis / position.quantity;
+        position.costBasis -= averageCost * sellQuantity;
+        if (position.costBasis < 0) {
+          position.costBasis = 0;
+        }
+      } else {
+        position.costBasisKnown = false;
+      }
+      position.quantity += quantity;
+    }
+
+    positions.set(key, position);
+  }
 
   const rows: HoldingRow[] = [];
 
-  for (const group of grouped) {
-    const asset = assetMap[group.asset_id];
-    if (!asset) {
-      continue;
-    }
+  for (const position of positions.values()) {
+    const asset = position.asset;
+    const account = position.account;
+    const quantity = position.quantity;
 
-    const account = accountMap[group.account_id];
-    if (!account) {
-      continue;
-    }
-
-    const quantity = decimalToNumber(group._sum.quantity);
     const latestPriceRecord = buildLatestPriceRecord(asset.price_latest ?? null);
-
     const priceResolution = resolveAssetPrice({
       pricingMode: asset.pricing_mode as 'AUTO' | 'MANUAL',
       manualPrice: asset.manual_price ? decimalToNumber(asset.manual_price) : null,
@@ -153,7 +238,21 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
     });
 
     const price = isValidPrice(priceResolution.price) ? priceResolution.price : null;
-    const marketValue = price ? quantity * price : null;
+    const marketValue = price !== null ? quantity * price : null;
+
+    const totalCostBasis = position.costBasisKnown ? Math.max(position.costBasis, 0) : null;
+    const averageCost =
+      totalCostBasis !== null && Math.abs(quantity) > 0
+        ? totalCostBasis / Math.abs(quantity)
+        : null;
+    const unrealizedPnl =
+      marketValue !== null && totalCostBasis !== null
+        ? marketValue - totalCostBasis
+        : null;
+    const unrealizedPnlPct =
+      totalCostBasis && totalCostBasis !== 0 && unrealizedPnl !== null
+        ? (unrealizedPnl / totalCostBasis) * 100
+        : null;
 
     rows.push({
       assetId: asset.id,
@@ -172,6 +271,10 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
       isManual: priceResolution.isManual,
       isStale: priceResolution.isStale,
       marketValue,
+      averageCost,
+      totalCostBasis,
+      unrealizedPnl,
+      unrealizedPnlPct,
     });
   }
 
@@ -182,12 +285,19 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
 export function summarizeHoldings(rows: HoldingRow[]): HoldingsSummary {
   const summary: HoldingsSummary = {
     totalValue: 0,
+    totalCostBasis: null,
+    totalUnrealizedPnl: null,
     byType: {},
     byVolatility: {},
     updatedAt: null,
     autoUpdatedAt: null,
     hasAutoAssets: false,
   };
+
+  let costBasisSum = 0;
+  let costBasisCount = 0;
+  let unrealizedSum = 0;
+  let unrealizedCount = 0;
 
   for (const row of rows) {
     if (isValidPrice(row.price) && row.marketValue !== null) {
@@ -201,7 +311,6 @@ export function summarizeHoldings(rows: HoldingRow[]): HoldingsSummary {
         summary.updatedAt = row.lastUpdated;
       }
 
-      // Track AUTO assets separately for staleness calculation
       if (row.pricingMode === 'AUTO') {
         summary.hasAutoAssets = true;
         if (!summary.autoUpdatedAt || (row.lastUpdated && row.lastUpdated > summary.autoUpdatedAt)) {
@@ -209,6 +318,23 @@ export function summarizeHoldings(rows: HoldingRow[]): HoldingsSummary {
         }
       }
     }
+
+    if (row.totalCostBasis !== null) {
+      costBasisSum += row.totalCostBasis;
+      costBasisCount += 1;
+    }
+
+    if (row.unrealizedPnl !== null) {
+      unrealizedSum += row.unrealizedPnl;
+      unrealizedCount += 1;
+    }
+  }
+
+  if (costBasisCount > 0) {
+    summary.totalCostBasis = costBasisSum;
+  }
+  if (unrealizedCount > 0) {
+    summary.totalUnrealizedPnl = unrealizedSum;
   }
 
   return summary;
@@ -240,6 +366,28 @@ export function consolidateHoldingsByAsset(rows: HoldingRow[]): HoldingRow[] {
       return latest;
     }, null);
 
+    const allCostBasisKnown = assetRows.every((row) => row.totalCostBasis !== null);
+    const aggregatedCostBasis = allCostBasisKnown
+      ? assetRows.reduce((sum, row) => sum + (row.totalCostBasis ?? 0), 0)
+      : null;
+
+    const allUnrealizedKnown = assetRows.every((row) => row.unrealizedPnl !== null);
+    const aggregatedUnrealizedPnl = allUnrealizedKnown
+      ? assetRows.reduce((sum, row) => sum + (row.unrealizedPnl ?? 0), 0)
+      : null;
+
+    const consolidatedAverageCost =
+      aggregatedCostBasis !== null && Math.abs(totalQuantity) > 0
+        ? aggregatedCostBasis / Math.abs(totalQuantity)
+        : null;
+
+    const consolidatedUnrealizedPct =
+      aggregatedCostBasis !== null &&
+      aggregatedCostBasis !== 0 &&
+      aggregatedUnrealizedPnl !== null
+        ? (aggregatedUnrealizedPnl / aggregatedCostBasis) * 100
+        : null;
+
     consolidated.push({
       ...reference,
       accountId: 0,
@@ -251,6 +399,10 @@ export function consolidateHoldingsByAsset(rows: HoldingRow[]): HoldingRow[] {
       isStale: assetRows.every((row) => row.isStale),
       lastUpdated: latestUpdated,
       marketValue: hasPricedRow ? totalMarketValue : null,
+      averageCost: consolidatedAverageCost,
+      totalCostBasis: aggregatedCostBasis,
+      unrealizedPnl: aggregatedUnrealizedPnl,
+      unrealizedPnlPct: consolidatedUnrealizedPct,
     });
   });
 
