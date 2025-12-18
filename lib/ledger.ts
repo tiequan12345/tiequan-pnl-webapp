@@ -188,3 +188,52 @@ export function isLedgerValuationConsistent(
 
   return diff <= tolerance;
 }
+
+type LedgerValuationDeriveInput = {
+  quantity: string | number | null | undefined;
+  unitPriceInBase: string | number | null | undefined;
+  totalValueInBase: string | number | null | undefined;
+};
+
+type LedgerValuationDeriveOutput = {
+  unit_price_in_base?: string | null;
+  total_value_in_base?: string | null;
+};
+
+/**
+ * Derives missing valuation fields when possible:
+ * - If only total value is provided, derives unit price = total / quantity.
+ * - If only unit price is provided, derives total value = quantity * unit price.
+ *
+ * This preserves sign conventions (e.g. negative quantity produces negative total value).
+ * Returns empty object if nothing can be derived.
+ */
+export function deriveLedgerValuationFields(
+  input: LedgerValuationDeriveInput,
+): LedgerValuationDeriveOutput {
+  const quantityNumber = decimalValueToNumber(input.quantity);
+  if (quantityNumber === null || !Number.isFinite(quantityNumber) || quantityNumber === 0) {
+    return {};
+  }
+
+  const unitPriceNumber = decimalValueToNumber(input.unitPriceInBase);
+  const totalValueNumber = decimalValueToNumber(input.totalValueInBase);
+
+  if (unitPriceNumber === null && totalValueNumber !== null) {
+    const derivedUnitPrice = totalValueNumber / quantityNumber;
+    if (!Number.isFinite(derivedUnitPrice)) {
+      return {};
+    }
+    return { unit_price_in_base: derivedUnitPrice.toString() };
+  }
+
+  if (totalValueNumber === null && unitPriceNumber !== null) {
+    const derivedTotalValue = quantityNumber * unitPriceNumber;
+    if (!Number.isFinite(derivedTotalValue)) {
+      return {};
+    }
+    return { total_value_in_base: derivedTotalValue.toString() };
+  }
+
+  return {};
+}

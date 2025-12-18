@@ -7,6 +7,7 @@ import {
   parseLedgerDecimal,
   decimalValueToNumber,
   isLedgerValuationConsistent,
+  deriveLedgerValuationFields,
 } from '@/lib/ledger';
 
 type LedgerPayload = {
@@ -381,10 +382,25 @@ export async function POST(request: Request) {
           );
         }
 
+        const derived = deriveLedgerValuationFields({
+          quantity: quantityParsed,
+          unitPriceInBase: unitPriceParsed,
+          totalValueInBase: totalValueParsed,
+        });
+
+        const unitPriceFinal =
+          derived.unit_price_in_base !== undefined
+            ? derived.unit_price_in_base
+            : unitPriceParsed;
+        const totalValueFinal =
+          derived.total_value_in_base !== undefined
+            ? derived.total_value_in_base
+            : totalValueParsed;
+
         if (!isLedgerValuationConsistent(
           decimalValueToNumber(quantityParsed)!,
-          unitPriceParsed,
-          totalValueParsed
+          unitPriceFinal,
+          totalValueFinal
         )) {
           return NextResponse.json(
             { error: `Leg ${i + 1}: Valuation mismatch (Quantity * Unit Price != Total Value).` },
@@ -393,13 +409,19 @@ export async function POST(request: Request) {
         }
 
         assetIdsToCheck.add(assetId);
-        validLegs.push({ assetId, quantityParsed, unitPriceParsed, totalValueParsed, feeParsed });
+        validLegs.push({
+          assetId,
+          quantityParsed,
+          unitPriceParsed: unitPriceFinal,
+          totalValueParsed: totalValueFinal,
+          feeParsed,
+        });
       }
 
       // Verify all assets exist
       const assets = await prisma.asset.findMany({
         where: { id: { in: Array.from(assetIdsToCheck) } },
-        select: { id: true },
+        select: { id: true, type: true, symbol: true, volatility_bucket: true },
       });
 
       const assetExists = new Set(assets.map((a) => a.id));
@@ -408,6 +430,107 @@ export async function POST(request: Request) {
         if (!assetExists.has(leg.assetId)) {
           return NextResponse.json(
             { error: `Leg ${i + 1}: Asset ${leg.assetId} does not exist.` },
+            { status: 400 },
+          );
+        }
+      }
+
+      // If the user didn't provide valuations, infer them from a CASH leg (base currency)
+      // Example: +2 BTC and -200000 USD => BTC total_value_in_base=200000, unit_price_in_base=100000
+      if (validLegs.length === 2) {
+        const assetById = new Map(assets.map((asset) => [asset.id, asset]));
+        const leg0Asset = assetById.get(validLegs[0].assetId);
+        const leg1Asset = assetById.get(validLegs[1].assetId);
+
+        const isCashLike = (asset: (typeof assets)[number] | undefined) => {
+          const type = asset?.type?.toUpperCase?.() ?? '';
+          const symbol = asset?.symbol?.toUpperCase?.() ?? '';
+          const bucket = asset?.volatility_bucket?.toUpperCase?.() ?? '';
+
+          if (type === 'CASH' || type === 'STABLE') {
+            return true;
+          }
+          if (bucket === 'CASH_LIKE') {
+            return true;
+          }
+          if (symbol === 'USD' || symbol === 'USDT' || symbol === 'USDC') {
+            return true;
+          }
+          return false;
+        };
+
+        const isCash0 = isCashLike(leg0Asset);
+        const isCash1 = isCashLike(leg1Asset);
+
+        if (isCash0 !== isCash1) {
+          const cashLegIndex = isCash0 ? 0 : 1;
+          const otherLegIndex = cashLegIndex === 0 ? 1 : 0;
+
+          const cashLeg = validLegs[cashLegIndex];
+          const otherLeg = validLegs[otherLegIndex];
+
+          const cashQty = decimalValueToNumber(cashLeg.quantityParsed);
+          const otherQty = decimalValueToNumber(otherLeg.quantityParsed);
+
+          if (
+            cashQty !== null &&
+            otherQty !== null &&
+            Number.isFinite(cashQty) &&
+            Number.isFinite(otherQty) &&
+            cashQty !== 0 &&
+            otherQty !== 0
+          ) {
+            const cashHasValuation =
+              cashLeg.unitPriceParsed !== undefined || cashLeg.totalValueParsed !== undefined;
+            if (!cashHasValuation) {
+              cashLeg.unitPriceParsed = '1';
+              cashLeg.totalValueParsed = cashQty.toString();
+            } else {
+              if (cashLeg.unitPriceParsed === undefined) {
+                cashLeg.unitPriceParsed = '1';
+              }
+              if (cashLeg.totalValueParsed === undefined) {
+                cashLeg.totalValueParsed = cashQty.toString();
+              }
+            }
+
+            const inferredOtherTotal = (-cashQty).toString();
+            const otherHasValuation =
+              otherLeg.unitPriceParsed !== undefined || otherLeg.totalValueParsed !== undefined;
+
+            if (!otherHasValuation) {
+              otherLeg.totalValueParsed = inferredOtherTotal;
+              otherLeg.unitPriceParsed = (-cashQty / otherQty).toString();
+            } else {
+              if (otherLeg.totalValueParsed === undefined) {
+                otherLeg.totalValueParsed = inferredOtherTotal;
+              }
+              if (otherLeg.unitPriceParsed === undefined) {
+                const totalNumber = decimalValueToNumber(otherLeg.totalValueParsed);
+                if (
+                  totalNumber !== null &&
+                  Number.isFinite(totalNumber) &&
+                  otherQty !== 0
+                ) {
+                  otherLeg.unitPriceParsed = (totalNumber / otherQty).toString();
+                }
+              }
+            }
+          }
+        }
+      }
+
+      for (let i = 0; i < validLegs.length; i++) {
+        const leg = validLegs[i];
+        if (
+          !isLedgerValuationConsistent(
+            decimalValueToNumber(leg.quantityParsed)!,
+            leg.unitPriceParsed,
+            leg.totalValueParsed,
+          )
+        ) {
+          return NextResponse.json(
+            { error: `Leg ${i + 1}: Valuation mismatch (Quantity * Unit Price != Total Value).` },
             { status: 400 },
           );
         }
@@ -498,10 +621,25 @@ export async function POST(request: Request) {
       );
     }
 
+    const derived = deriveLedgerValuationFields({
+      quantity: quantityParsed,
+      unitPriceInBase: unitPriceParsed,
+      totalValueInBase: totalValueParsed,
+    });
+
+    const unitPriceFinal =
+      derived.unit_price_in_base !== undefined
+        ? derived.unit_price_in_base
+        : unitPriceParsed;
+    const totalValueFinal =
+      derived.total_value_in_base !== undefined
+        ? derived.total_value_in_base
+        : totalValueParsed;
+
     if (!isLedgerValuationConsistent(
       decimalValueToNumber(quantityParsed)!,
-      unitPriceParsed,
-      totalValueParsed
+      unitPriceFinal,
+      totalValueFinal
     )) {
       return NextResponse.json(
         { error: 'Valuation mismatch: Quantity * Unit Price must match Total Value (within 0.25%).' },
@@ -529,8 +667,8 @@ export async function POST(request: Request) {
         tx_type: txType,
         external_reference: externalReference,
         notes,
-        unit_price_in_base: unitPriceParsed,
-        total_value_in_base: totalValueParsed,
+        unit_price_in_base: unitPriceFinal,
+        total_value_in_base: totalValueFinal,
         fee_in_base: feeParsed,
       },
     });

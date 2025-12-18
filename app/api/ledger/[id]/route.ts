@@ -6,6 +6,9 @@ import {
   isAllowedTxType,
   parseLedgerDateTime,
   parseLedgerDecimal,
+  decimalValueToNumber,
+  isLedgerValuationConsistent,
+  deriveLedgerValuationFields,
 } from '@/lib/ledger';
 
 type RouteContext = {
@@ -185,7 +188,19 @@ export async function PUT(request: Request, context: RouteContext) {
       }
     }
 
-    const updateData: Prisma.LedgerTransactionUpdateInput = {
+    const derivedValuations = deriveLedgerValuationFields({
+      quantity: quantityParsed,
+      unitPriceInBase:
+        parsedValuations.unit_price_in_base !== undefined
+          ? parsedValuations.unit_price_in_base
+          : existing.unit_price_in_base?.toString() ?? null,
+      totalValueInBase:
+        parsedValuations.total_value_in_base !== undefined
+          ? parsedValuations.total_value_in_base
+          : existing.total_value_in_base?.toString() ?? null,
+    });
+
+    const updateData: Prisma.LedgerTransactionUncheckedUpdateInput = {
       date_time: dateTime,
       account_id: accountId,
       asset_id: assetId,
@@ -195,14 +210,43 @@ export async function PUT(request: Request, context: RouteContext) {
       notes,
     };
 
-    if (parsedValuations.unit_price_in_base !== undefined) {
-      updateData.unit_price_in_base = parsedValuations.unit_price_in_base;
+    const unitPriceFinal =
+      derivedValuations.unit_price_in_base !== undefined
+        ? derivedValuations.unit_price_in_base
+        : parsedValuations.unit_price_in_base;
+    const totalValueFinal =
+      derivedValuations.total_value_in_base !== undefined
+        ? derivedValuations.total_value_in_base
+        : parsedValuations.total_value_in_base;
+
+    if (unitPriceFinal !== undefined) {
+      updateData.unit_price_in_base = unitPriceFinal;
     }
-    if (parsedValuations.total_value_in_base !== undefined) {
-      updateData.total_value_in_base = parsedValuations.total_value_in_base;
+    if (totalValueFinal !== undefined) {
+      updateData.total_value_in_base = totalValueFinal;
     }
     if (parsedValuations.fee_in_base !== undefined) {
       updateData.fee_in_base = parsedValuations.fee_in_base;
+    }
+
+    if (
+      !isLedgerValuationConsistent(
+        decimalValueToNumber(quantityParsed)!,
+        unitPriceFinal !== undefined
+          ? unitPriceFinal
+          : existing.unit_price_in_base?.toString() ?? null,
+        totalValueFinal !== undefined
+          ? totalValueFinal
+          : existing.total_value_in_base?.toString() ?? null,
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            'Valuation mismatch: Quantity * Unit Price must match Total Value (within 0.25%).',
+        },
+        { status: 400 },
+      );
     }
 
     const updated = await prisma.ledgerTransaction.update({

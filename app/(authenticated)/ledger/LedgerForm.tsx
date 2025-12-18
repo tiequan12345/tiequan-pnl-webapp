@@ -1,6 +1,6 @@
 'use client';
 
-import React, { FormEvent, useState } from 'react';
+import React, { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ALLOWED_TX_TYPES, LedgerTxType } from '@/lib/ledger';
 
@@ -96,6 +96,15 @@ function toLocalDateTimeInput(value: string): string {
   return local.toISOString().slice(0, 16);
 }
 
+function parseFiniteNumber(input: string): number | null {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export function LedgerForm({
   mode,
   transactionId,
@@ -162,6 +171,9 @@ export function LedgerForm({
   );
   const [fee, setFee] = useState<string>(initialValues?.fee_in_base ?? '');
 
+  const [unitPriceTouched, setUnitPriceTouched] = useState<boolean>(false);
+  const [totalValueTouched, setTotalValueTouched] = useState<boolean>(false);
+
   const [assetInId, setAssetInId] = useState<string>(() => {
     if (assets.length > 0) {
       // Find the asset with the highest usage count for trade form
@@ -192,10 +204,111 @@ export function LedgerForm({
   const [assetOutTotalValue, setAssetOutTotalValue] = useState<string>('');
   const [assetOutFee, setAssetOutFee] = useState<string>('');
 
+  const [assetInUnitPriceTouched, setAssetInUnitPriceTouched] = useState<boolean>(false);
+  const [assetInTotalValueTouched, setAssetInTotalValueTouched] = useState<boolean>(false);
+  const [assetOutUnitPriceTouched, setAssetOutUnitPriceTouched] = useState<boolean>(false);
+  const [assetOutTotalValueTouched, setAssetOutTotalValueTouched] = useState<boolean>(false);
+
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   const isTradeType = !isEditMode && TRADE_TYPES.includes(txType);
+
+  useEffect(() => {
+    const qty = parseFiniteNumber(quantity);
+    if (qty === null || qty === 0) {
+      return;
+    }
+
+    const unit = parseFiniteNumber(unitPrice);
+    const total = parseFiniteNumber(totalValue);
+
+    if (!unitPriceTouched && (unitPrice.trim() === '' || unit === null) && total !== null) {
+      const derivedUnit = total / qty;
+      if (Number.isFinite(derivedUnit)) {
+        setUnitPrice(derivedUnit.toString());
+      }
+      return;
+    }
+
+    if (!totalValueTouched && (totalValue.trim() === '' || total === null) && unit !== null) {
+      const derivedTotal = qty * unit;
+      if (Number.isFinite(derivedTotal)) {
+        setTotalValue(derivedTotal.toString());
+      }
+    }
+  }, [quantity, unitPrice, totalValue, unitPriceTouched, totalValueTouched]);
+
+  useEffect(() => {
+    if (!isTradeType) {
+      return;
+    }
+
+    const qtyIn = parseFiniteNumber(quantityIn);
+    if (qtyIn !== null && qtyIn !== 0) {
+      const unitIn = parseFiniteNumber(assetInUnitPrice);
+      const totalIn = parseFiniteNumber(assetInTotalValue);
+
+      if (
+        !assetInUnitPriceTouched &&
+        (assetInUnitPrice.trim() === '' || unitIn === null) &&
+        totalIn !== null
+      ) {
+        const derived = totalIn / qtyIn;
+        if (Number.isFinite(derived)) {
+          setAssetInUnitPrice(derived.toString());
+        }
+      } else if (
+        !assetInTotalValueTouched &&
+        (assetInTotalValue.trim() === '' || totalIn === null) &&
+        unitIn !== null
+      ) {
+        const derived = qtyIn * unitIn;
+        if (Number.isFinite(derived)) {
+          setAssetInTotalValue(derived.toString());
+        }
+      }
+    }
+
+    const qtyOutRaw = parseFiniteNumber(quantityOut);
+    const qtyOut = qtyOutRaw === null ? null : -Math.abs(qtyOutRaw);
+    if (qtyOut !== null && qtyOut !== 0) {
+      const unitOut = parseFiniteNumber(assetOutUnitPrice);
+      const totalOut = parseFiniteNumber(assetOutTotalValue);
+
+      if (
+        !assetOutUnitPriceTouched &&
+        (assetOutUnitPrice.trim() === '' || unitOut === null) &&
+        totalOut !== null
+      ) {
+        const derived = totalOut / qtyOut;
+        if (Number.isFinite(derived)) {
+          setAssetOutUnitPrice(derived.toString());
+        }
+      } else if (
+        !assetOutTotalValueTouched &&
+        (assetOutTotalValue.trim() === '' || totalOut === null) &&
+        unitOut !== null
+      ) {
+        const derived = qtyOut * unitOut;
+        if (Number.isFinite(derived)) {
+          setAssetOutTotalValue(derived.toString());
+        }
+      }
+    }
+  }, [
+    isTradeType,
+    quantityIn,
+    assetInUnitPrice,
+    assetInTotalValue,
+    assetInUnitPriceTouched,
+    assetInTotalValueTouched,
+    quantityOut,
+    assetOutUnitPrice,
+    assetOutTotalValue,
+    assetOutUnitPriceTouched,
+    assetOutTotalValueTouched,
+  ]);
 
   const buildCommonPayload = (overrides: {
     assetId: number;
@@ -585,7 +698,10 @@ export function LedgerForm({
                     type="text"
                     inputMode="decimal"
                     value={unitPrice}
-                    onChange={(event) => setUnitPrice(event.target.value)}
+                    onChange={(event) => {
+                      setUnitPriceTouched(true);
+                      setUnitPrice(event.target.value);
+                    }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     placeholder="Optional"
                   />
@@ -598,7 +714,10 @@ export function LedgerForm({
                     type="text"
                     inputMode="decimal"
                     value={totalValue}
-                    onChange={(event) => setTotalValue(event.target.value)}
+                    onChange={(event) => {
+                      setTotalValueTouched(true);
+                      setTotalValue(event.target.value);
+                    }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     placeholder="Optional"
                   />
@@ -704,7 +823,10 @@ export function LedgerForm({
                     type="text"
                     inputMode="decimal"
                     value={assetInUnitPrice}
-                    onChange={(event) => setAssetInUnitPrice(event.target.value)}
+                    onChange={(event) => {
+                      setAssetInUnitPriceTouched(true);
+                      setAssetInUnitPrice(event.target.value);
+                    }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     placeholder="Optional"
                   />
@@ -717,7 +839,10 @@ export function LedgerForm({
                     type="text"
                     inputMode="decimal"
                     value={assetInTotalValue}
-                    onChange={(event) => setAssetInTotalValue(event.target.value)}
+                    onChange={(event) => {
+                      setAssetInTotalValueTouched(true);
+                      setAssetInTotalValue(event.target.value);
+                    }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     placeholder="Optional"
                   />
@@ -754,7 +879,10 @@ export function LedgerForm({
                     type="text"
                     inputMode="decimal"
                     value={assetOutUnitPrice}
-                    onChange={(event) => setAssetOutUnitPrice(event.target.value)}
+                    onChange={(event) => {
+                      setAssetOutUnitPriceTouched(true);
+                      setAssetOutUnitPrice(event.target.value);
+                    }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     placeholder="Optional"
                   />
@@ -767,7 +895,10 @@ export function LedgerForm({
                     type="text"
                     inputMode="decimal"
                     value={assetOutTotalValue}
-                    onChange={(event) => setAssetOutTotalValue(event.target.value)}
+                    onChange={(event) => {
+                      setAssetOutTotalValueTouched(true);
+                      setAssetOutTotalValue(event.target.value);
+                    }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     placeholder="Optional"
                   />
