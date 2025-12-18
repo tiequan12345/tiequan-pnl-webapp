@@ -54,8 +54,13 @@ The price refresh system has been enhanced with automated scheduling, retry logi
 - **Call History**: Track recent API calls for debugging
 - **Recommendations**: Dynamic recommendations based on current usage
 
-### 7. PNL Snapshot Persistence
+### 7. Execution Tracking & Concurrency
+- **PriceRefreshRun Model**: All execution attempts are tracked in the `PriceRefreshRun` table, including start/end times, status (`RUNNING`, `SUCCESS`, `PARTIAL`, `FAILED`), and JSON metadata for performance metrics.
+- **Concurrency Guard**: A built-in mutex prevents multiple refreshes from running simultaneously. Active runs block new attempts with a `409 Conflict` status.
+- **Interval Enforcement**: For scheduled runs (via GitHub Actions), the system enforces the `priceAutoRefreshIntervalMinutes` setting. Requests are skipped if the configured interval has not elapsed since the last successful/partial run.
+- **Manual Override**: Manual refreshes (triggered via UI or direct API call) always bypass the interval check but still respect the concurrency guard.
 
+### 8. PNL Snapshot Persistence
 - **Snapshot Hook**: Each successful `/api/prices/refresh` also records a `PortfolioSnapshot` and related `PortfolioSnapshotComponent` rows containing the base-currency total and filtered breakdowns
 - **Data Consumer**: `lib/pnlSnapshots.ts` exposes helpers for creating and querying snapshots, powering the `/api/pnl` endpoint and `/pnl` UI
 - **Failure Handling**: Snapshot errors are logged (`snapshot_failed`) but do not block the price refresh response

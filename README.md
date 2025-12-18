@@ -318,7 +318,10 @@ The application uses GitHub Actions to automate price refresh via the workflow f
 - **Endpoint**: Calls `/api/prices/refresh` automatically
 - **Manual Trigger**: Workflow can also be manually triggered via GitHub Actions UI
 - **Mode Detection**: Includes `X-Refresh-Mode: auto` header to differentiate scheduled vs manual runs
-- **Settings Respect**: Scheduled runs honor the `priceAutoRefresh` setting from the settings page
+- **Interval Enforcement**: Scheduled runs honor the `priceAutoRefreshIntervalMinutes` setting; the system skips the run if the configured interval has not passed since the last successful or partial refresh.
+- **Settings Toggle**: Scheduled runs also respect the `priceAutoRefresh` setting; if disabled, the refresh is skipped.
+- **Concurrency Guard**: A built-in mutex prevents overlapping refreshes; if a run is already in progress, new requests are blocked with a `409 Conflict`.
+- **Execution History**: All refresh attempts (manual and auto) are recorded in the `PriceRefreshRun` table for audit and monitoring.
 
 ### Manual Refresh
 

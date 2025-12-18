@@ -313,20 +313,17 @@ This document extends the original PRD with a phased implementation plan that ma
   - Confirmed the UI shows “Unknown cost basis” when valuations are absent, matching the original requirement.
 
 ### Phase 4 – Scheduling Guarantees & Monitoring
-**Objective:** (Optional) Align actual refresh scheduler with configured interval and harden concurrent runs.
-
-- **Scheduling metadata**
-  - Introduce `price_refresh_runs` or `settings.last_refresh_at` to persist last execution time.
-  - `/api/prices/refresh` checks this metadata and `priceAutoRefreshIntervalMinutes` before executing scheduled runs.
-  - Manual runs (via UI button) bypass the guard.
-
-- **Concurrency guard**
-  - Use a DB lock or mutex flag to prevent concurrent refreshes.
-  - Rate limiter stays per-process but document multi-instance limitations in README.
+**Status: Fully implemented**
+- **Scheduling metadata**: Introduced `PriceRefreshRun` model to persist execution time, status (`RUNNING`, `SUCCESS`, `PARTIAL`, `FAILED`), and metadata (stats, duration).
+- **Interval Enforcement**: `/api/prices/refresh` now checks the last successful/partial run and enforces `priceAutoRefreshIntervalMinutes` for scheduled runs (`auto` mode).
+- **Concurrency Guard**: Implemented a mutex using the `PriceRefreshRun` table to prevent overlapping refreshes; active runs block new attempts (with a 10-minute safety timeout).
+- **Reliability**: Updated `.env` to use absolute paths for `DATABASE_URL` to ensure consistent database resolution across environments.
 
 - **Validation**
-  - Attempt to trigger two overlapping refreshes; ensure the second run is skipped or waits.
-  - Check that scheduled runs respect the configured interval (if you adopt the guard).
+  - Triggered multiple concurrent refreshes; verified 409 Conflict.
+  - Triggered scheduled refreshes; verified skipping when interval not reached.
+  - Verified manual refreshes bypass interval check but respect concurrency.
+  - Verified database consistency after migrations.
 
 ---
 
