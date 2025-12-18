@@ -621,6 +621,99 @@ export async function POST(request: Request) {
       );
     }
 
+    if (txType === 'COST_BASIS_RESET') {
+      const unitPriceNumber =
+        unitPriceParsed === undefined || unitPriceParsed === null
+          ? null
+          : decimalValueToNumber(unitPriceParsed);
+      if (unitPriceNumber !== null && (!Number.isFinite(unitPriceNumber) || unitPriceNumber < 0)) {
+        return NextResponse.json(
+          { error: 'unit_price_in_base must be a non-negative number.' },
+          { status: 400 },
+        );
+      }
+
+      const totalValueNumber =
+        totalValueParsed === undefined || totalValueParsed === null
+          ? null
+          : decimalValueToNumber(totalValueParsed);
+      if (totalValueNumber !== null && (!Number.isFinite(totalValueNumber) || totalValueNumber < 0)) {
+        return NextResponse.json(
+          { error: 'total_value_in_base must be a non-negative number.' },
+          { status: 400 },
+        );
+      }
+
+      if (unitPriceNumber === null && totalValueNumber === null) {
+        return NextResponse.json(
+          { error: 'Provide either unit_price_in_base or total_value_in_base for COST_BASIS_RESET.' },
+          { status: 400 },
+        );
+      }
+
+      const asset = await prisma.asset.findUnique({
+        where: { id: assetId },
+      });
+
+      if (!asset) {
+        return NextResponse.json(
+          { error: 'Asset not found.' },
+          { status: 400 },
+        );
+      }
+
+      let totalValueFinal: string;
+      if (totalValueNumber !== null) {
+        totalValueFinal = totalValueNumber.toString();
+      } else {
+        const transactions = await prisma.ledgerTransaction.findMany({
+          where: {
+            account_id: accountId,
+            asset_id: assetId,
+            date_time: { lte: dateTime },
+          },
+          select: { quantity: true },
+        });
+
+        const quantityAtTime = transactions.reduce((sum, tx) => {
+          const value = decimalValueToNumber(tx.quantity.toString());
+          return sum + (value ?? 0);
+        }, 0);
+
+        if (!Number.isFinite(quantityAtTime) || Math.abs(quantityAtTime) <= 1e-12) {
+          return NextResponse.json(
+            { error: 'Cannot derive total_value_in_base from unit_price_in_base when quantity is zero at the reset timestamp.' },
+            { status: 400 },
+          );
+        }
+
+        totalValueFinal = (Math.abs(quantityAtTime) * unitPriceNumber!).toString();
+      }
+
+      const created = await prisma.ledgerTransaction.create({
+        data: {
+          date_time: dateTime,
+          account_id: accountId,
+          asset_id: assetId,
+          quantity: '0',
+          tx_type: txType,
+          external_reference: externalReference,
+          notes,
+          unit_price_in_base: null,
+          total_value_in_base: totalValueFinal,
+          fee_in_base: feeParsed,
+        },
+      });
+
+      return NextResponse.json({
+        id: created.id,
+        date_time: created.date_time.toISOString(),
+        unit_price_in_base: created.unit_price_in_base?.toString() ?? null,
+        total_value_in_base: created.total_value_in_base?.toString() ?? null,
+        fee_in_base: created.fee_in_base?.toString() ?? null,
+      });
+    }
+
     const derived = deriveLedgerValuationFields({
       quantity: quantityParsed,
       unitPriceInBase: unitPriceParsed,
@@ -685,5 +778,90 @@ export async function POST(request: Request) {
       { error: 'Failed to create ledger transaction.' },
       { status: 500 },
     );
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const body = await request.json();
+    const { ids } = body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return NextResponse.json({ error: 'No IDs provided' }, { status: 400 });
+    }
+
+    const numericIds = ids.map((id) => Number(id)).filter((id) => Number.isFinite(id));
+
+    if (numericIds.length === 0) {
+      return NextResponse.json({ error: 'No valid IDs provided' }, { status: 400 });
+    }
+
+    const result = await prisma.ledgerTransaction.deleteMany({
+      where: {
+        id: { in: numericIds },
+      },
+    });
+
+    return NextResponse.json({ success: true, count: result.count });
+  } catch (error) {
+    console.error('Bulk delete error:', error);
+    return NextResponse.json({ error: 'Failed to delete transactions' }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json();
+    const { ids, updates } = body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return NextResponse.json({ error: 'No IDs provided' }, { status: 400 });
+    }
+
+    const numericIds = ids.map((id) => Number(id)).filter((id) => Number.isFinite(id));
+    if (numericIds.length === 0) {
+      return NextResponse.json({ error: 'No valid IDs provided' }, { status: 400 });
+    }
+
+    if (!updates || typeof updates !== 'object') {
+      return NextResponse.json({ error: 'No updates provided' }, { status: 400 });
+    }
+
+    const allowedUpdates: Record<string, any> = {};
+
+    if (updates.date_time) {
+      const dt = parseLedgerDateTime(updates.date_time);
+      if (dt) allowedUpdates.date_time = dt;
+    }
+
+    if (updates.account_id) {
+      const accId = Number(updates.account_id);
+      if (Number.isFinite(accId)) allowedUpdates.account_id = accId;
+    }
+
+    if (updates.tx_type) {
+      const type = updates.tx_type.toUpperCase();
+      if (isAllowedTxType(type)) allowedUpdates.tx_type = type;
+    }
+
+    if (updates.notes !== undefined) {
+      allowedUpdates.notes = updates.notes;
+    }
+
+    if (Object.keys(allowedUpdates).length === 0) {
+      return NextResponse.json({ error: 'No valid update fields provided' }, { status: 400 });
+    }
+
+    const result = await prisma.ledgerTransaction.updateMany({
+      where: {
+        id: { in: numericIds },
+      },
+      data: allowedUpdates,
+    });
+
+    return NextResponse.json({ success: true, count: result.count });
+  } catch (error) {
+    console.error('Bulk update error:', error);
+    return NextResponse.json({ error: 'Failed to update transactions' }, { status: 500 });
   }
 }

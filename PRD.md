@@ -627,6 +627,7 @@ Objective: Compute holdings from ledger and value them using manual and auto pri
 Scope:
 	•	Implement prices_latest table and /api/prices/refresh.
 	•	Implement average‑cost holdings calculation (on demand or via positions table).
+	•	Optional: Add a ledger “Cost Basis Reset” adjustment that sets total cost basis as-of a timestamp (quantity unchanged) to handle legacy/imported lots where historical valuation data is missing. Support resetting via either total cost basis in base currency or per-unit cost (unit price), and optionally apply the reset across all accounts holding the asset.
 	•	Implement /holdings page:
 	•	Table with quantity, average cost, total cost basis, current price, market value, PnL, PnL%.
 	•	Filters for account and asset type.

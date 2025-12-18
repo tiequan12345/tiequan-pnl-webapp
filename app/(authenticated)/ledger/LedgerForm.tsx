@@ -77,6 +77,7 @@ const TX_TYPE_LABELS: Record<LedgerTxType, string> = {
   OFFLINE_TRADE: 'Offline Trade',
   OTHER: 'Other',
   HEDGE: 'Hedge',
+  COST_BASIS_RESET: 'Cost Basis Reset',
 };
 
 function getDefaultDateTimeLocal(): string {
@@ -173,6 +174,7 @@ export function LedgerForm({
 
   const [unitPriceTouched, setUnitPriceTouched] = useState<boolean>(false);
   const [totalValueTouched, setTotalValueTouched] = useState<boolean>(false);
+  const [applyResetToAllAccounts, setApplyResetToAllAccounts] = useState<boolean>(false);
 
   const [assetInId, setAssetInId] = useState<string>(() => {
     if (assets.length > 0) {
@@ -213,8 +215,16 @@ export function LedgerForm({
   const [error, setError] = useState<string | null>(null);
 
   const isTradeType = !isEditMode && TRADE_TYPES.includes(txType);
+  const isCostBasisReset = txType === 'COST_BASIS_RESET';
 
   useEffect(() => {
+    if (isCostBasisReset) {
+      if (quantity !== '0') {
+        setQuantity('0');
+      }
+      return;
+    }
+
     const qty = parseFiniteNumber(quantity);
     if (qty === null || qty === 0) {
       return;
@@ -237,7 +247,7 @@ export function LedgerForm({
         setTotalValue(derivedTotal.toString());
       }
     }
-  }, [quantity, unitPrice, totalValue, unitPriceTouched, totalValueTouched]);
+  }, [isCostBasisReset, quantity, unitPrice, totalValue, unitPriceTouched, totalValueTouched]);
 
   useEffect(() => {
     if (!isTradeType) {
@@ -509,26 +519,28 @@ export function LedgerForm({
       }
 
       // Non-trade types: single signed quantity based on tx_type semantics
-      const qtyRaw = quantity.trim();
-      if (!qtyRaw) {
-        setError('Quantity is required.');
-        setSubmitting(false);
-        return;
-      }
+      let signedQtyNumber = 0;
+      if (!isCostBasisReset) {
+        const qtyRaw = quantity.trim();
+        if (!qtyRaw) {
+          setError('Quantity is required.');
+          setSubmitting(false);
+          return;
+        }
 
-      const qtyNumber = Number(qtyRaw);
-      if (!Number.isFinite(qtyNumber)) {
-        setError('Quantity must be a valid number.');
-        setSubmitting(false);
-        return;
-      }
+        const qtyNumber = Number(qtyRaw);
+        if (!Number.isFinite(qtyNumber)) {
+          setError('Quantity must be a valid number.');
+          setSubmitting(false);
+          return;
+        }
 
-      // For non-trade types in create mode, apply sign based on transaction type
-      let signedQtyNumber: number;
-      if (txType === 'WITHDRAWAL') {
-        signedQtyNumber = -Math.abs(qtyNumber);
-      } else {
-        signedQtyNumber = Math.abs(qtyNumber);
+        // For non-trade types in create mode, apply sign based on transaction type
+        if (txType === 'WITHDRAWAL') {
+          signedQtyNumber = -Math.abs(qtyNumber);
+        } else {
+          signedQtyNumber = Math.abs(qtyNumber);
+        }
       }
 
       const assetNumeric = assetId ? Number(assetId) : NaN;
@@ -538,10 +550,87 @@ export function LedgerForm({
         return;
       }
 
+      if (isCostBasisReset && applyResetToAllAccounts) {
+        const totalValueTrimmed = totalValue.trim();
+        const unitPriceTrimmed = unitPrice.trim();
+        if (!totalValueTrimmed && !unitPriceTrimmed) {
+          setError('Enter either unit price or total value for cost basis reset.');
+          setSubmitting(false);
+          return;
+        }
+
+        let response: Response;
+        try {
+          response = await fetch('/api/ledger/cost-basis-reset', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              date_time: dateTime,
+              asset_id: assetNumeric,
+              unit_price_in_base: unitPriceTrimmed || null,
+              total_value_in_base: totalValueTrimmed || null,
+              external_reference: externalReference.trim() || null,
+              notes: notes.trim() || null,
+            }),
+          });
+        } catch (fetchError) {
+          console.error(fetchError);
+          setError('Network error calling bulk cost basis reset endpoint.');
+          setSubmitting(false);
+          return;
+        }
+
+        if (!response.ok) {
+          const text = await response.text().catch(() => '');
+          let errorMessage = 'Failed to create bulk cost basis reset.';
+          try {
+            const parsed = JSON.parse(text) as { error?: string };
+            if (parsed?.error) {
+              errorMessage = parsed.error;
+            }
+          } catch {
+            if (text.trim()) {
+              errorMessage = text.trim();
+            }
+          }
+          setError(errorMessage);
+          setSubmitting(false);
+          return;
+        }
+
+        const createdPayload = (await response.json().catch(() => null)) as
+          | { created?: number }
+          | null;
+
+        if (!createdPayload || typeof createdPayload.created !== 'number') {
+          setError('Bulk cost basis reset succeeded but returned unexpected response.');
+          setSubmitting(false);
+          return;
+        }
+
+        // Clear core fields but keep context (date, asset, txType)
+        setExternalReference('');
+        setNotes('');
+        setSubmitting(false);
+        router.refresh();
+        return;
+      }
+
       const basePayload = buildCommonPayload({
         assetId: assetNumeric,
         quantity: signedQtyNumber.toString(),
       });
+      if (isCostBasisReset) {
+        const totalValueTrimmed = totalValue.trim();
+        const unitPriceTrimmed = unitPrice.trim();
+        if (!totalValueTrimmed && !unitPriceTrimmed) {
+          setError('Enter either unit price or total value for cost basis reset.');
+          setSubmitting(false);
+          return;
+        }
+      }
       const payload = {
         ...basePayload,
         ...valuationPayload,
@@ -570,8 +659,13 @@ export function LedgerForm({
       setNotes('');
       setSubmitting(false);
       router.refresh();
-    } catch {
-      setError('Unexpected error. Please try again.');
+    } catch (submitError) {
+      console.error(submitError);
+      const message =
+        submitError instanceof Error && submitError.message
+          ? submitError.message
+          : 'Unexpected error. Please try again.';
+      setError(message);
       setSubmitting(false);
     }
   };
@@ -670,11 +764,14 @@ export function LedgerForm({
                 min={isEditMode ? undefined : 0}
                 value={quantity}
                 onChange={(event) => setQuantity(event.target.value)}
-                required
+                required={!isCostBasisReset}
+                disabled={isCostBasisReset}
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 placeholder={
                   isEditMode
                     ? 'Transaction amount'
+                    : isCostBasisReset
+                    ? '0 (reset does not change quantity)'
                     : txType === 'WITHDRAWAL'
                     ? 'Size of withdrawal (positive)'
                     : 'Size of deposit / yield'
@@ -689,10 +786,21 @@ export function LedgerForm({
                 </label>
                 <span className="text-xs text-zinc-500">Optional</span>
               </div>
+              {isCostBasisReset && !isEditMode && (
+                <label className="flex items-center gap-2 text-xs text-zinc-400 mb-2">
+                  <input
+                    type="checkbox"
+                    checked={applyResetToAllAccounts}
+                    onChange={(event) => setApplyResetToAllAccounts(event.target.checked)}
+                    className="h-4 w-4 rounded border-zinc-700 bg-zinc-950 text-blue-500 focus:ring-blue-500"
+                  />
+                  Apply reset across all accounts holding this asset (allocates by quantity at time T)
+                </label>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="space-y-2">
                   <label className="text-[10px] uppercase tracking-wide text-zinc-500">
-                    Unit price
+                    Unit price {isCostBasisReset ? '(optional)' : ''}
                   </label>
                   <input
                     type="text"
@@ -703,12 +811,12 @@ export function LedgerForm({
                       setUnitPrice(event.target.value);
                     }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    placeholder="Optional"
+                    placeholder={isCostBasisReset ? 'e.g. 45000 (per unit)' : 'Optional'}
                   />
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] uppercase tracking-wide text-zinc-500">
-                    Total value
+                    Total value {isCostBasisReset ? '(optional)' : ''}
                   </label>
                   <input
                     type="text"
@@ -719,7 +827,9 @@ export function LedgerForm({
                       setTotalValue(event.target.value);
                     }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    placeholder="Optional"
+                    placeholder={
+                      isCostBasisReset ? 'e.g. 45000 (total) or leave blank to derive from unit price' : 'Optional'
+                    }
                   />
                 </div>
                 <div className="space-y-2">

@@ -192,6 +192,18 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
         costBasisKnown: true,
       };
 
+    if (tx.tx_type === 'COST_BASIS_RESET') {
+      const resetValue = decimalToNullableNumber(tx.total_value_in_base);
+      if (resetValue === null) {
+        position.costBasisKnown = false;
+      } else {
+        position.costBasisKnown = true;
+        position.costBasis = Math.max(Math.abs(resetValue), 0);
+      }
+      positions.set(key, position);
+      continue;
+    }
+
     const txValue = getTransactionValue(
       tx.quantity,
       tx.total_value_in_base,
@@ -366,14 +378,18 @@ export function consolidateHoldingsByAsset(rows: HoldingRow[]): HoldingRow[] {
       return latest;
     }, null);
 
-    const allCostBasisKnown = assetRows.every((row) => row.totalCostBasis !== null);
+    const ROW_ZERO_THRESHOLD = 1e-9;
+    const meaningfulRows = assetRows.filter((row) => Math.abs(row.quantity) > ROW_ZERO_THRESHOLD);
+    const relevantRows = meaningfulRows.length > 0 ? meaningfulRows : assetRows;
+
+    const allCostBasisKnown = relevantRows.every((row) => row.totalCostBasis !== null);
     const aggregatedCostBasis = allCostBasisKnown
-      ? assetRows.reduce((sum, row) => sum + (row.totalCostBasis ?? 0), 0)
+      ? relevantRows.reduce((sum, row) => sum + (row.totalCostBasis ?? 0), 0)
       : null;
 
-    const allUnrealizedKnown = assetRows.every((row) => row.unrealizedPnl !== null);
+    const allUnrealizedKnown = relevantRows.every((row) => row.unrealizedPnl !== null);
     const aggregatedUnrealizedPnl = allUnrealizedKnown
-      ? assetRows.reduce((sum, row) => sum + (row.unrealizedPnl ?? 0), 0)
+      ? relevantRows.reduce((sum, row) => sum + (row.unrealizedPnl ?? 0), 0)
       : null;
 
     const consolidatedAverageCost =

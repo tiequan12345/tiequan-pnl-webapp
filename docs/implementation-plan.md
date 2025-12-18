@@ -289,6 +289,7 @@ This document extends the original PRD with a phased implementation plan that ma
 - **API**: `/api/ledger` POST/PUT (single-leg and trade legs) plus the CSV import commit flow accept the valuation trio, validate consistency, persist them, and return them when requested.
 - **Engine**: `lib/holdings` consumes the new columns to compute average cost, total cost basis, and unrealized PnL/percent; summaries now show “Unknown cost basis” whenever valuations are incomplete.
 - **UI**: Ledger create/edit forms expose the valuation inputs (per leg for trades), the holdings table renders Avg Cost/Cost Basis/Unrealized PnL/PnL %, and the dashboard hero card surfaces the valuation summary with explicit missing-data messaging.
+- **Cost Basis Resets**: Ledger supports a `COST_BASIS_RESET` tx type (quantity forced to `0`) that anchors an asset/account’s total cost basis as-of a timestamp using either `total_value_in_base` (total) or `unit_price_in_base` (per-unit, derived via quantity at timestamp). A bulk helper endpoint can apply a reset across all accounts holding an asset at the chosen timestamp.
 
 - **Schema & migrations**
   - Added nullable valuation columns via the `20251218004753_add_ledger_valuation` migration.

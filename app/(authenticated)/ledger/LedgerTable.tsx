@@ -1,7 +1,11 @@
 'use client';
 
+import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { DataTable, type DataTableColumn } from '../_components/table/DataTable';
 import { LedgerRowActions } from './LedgerRowActions';
+import { LedgerBulkEditModal } from './LedgerBulkEditModal';
+import type { LedgerTxType } from '@/lib/ledger';
 
 const DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
   year: 'numeric',
@@ -27,6 +31,96 @@ type LedgerTableProps = {
 };
 
 export function LedgerTable({ rows }: LedgerTableProps) {
+  const router = useRouter();
+  const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [accounts, setAccounts] = useState<{ id: number; name: string }[]>([]);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    // Fetch accounts for the bulk edit modal
+    const fetchAccounts = async () => {
+      try {
+        const res = await fetch('/api/accounts');
+        if (!res.ok) {
+           // If the endpoint doesn't exist or fails, we fail gracefully
+           console.warn('Accounts endpoint returned status:', res.status);
+           return;
+        }
+        const data = await res.json();
+        
+        // Robust handling of different response shapes
+        let accountList: { id: number; name: string }[] = [];
+        if (Array.isArray(data)) {
+          accountList = data;
+        } else if (data && Array.isArray(data.accounts)) {
+          accountList = data.accounts;
+        } else if (data && Array.isArray(data.items)) {
+          accountList = data.items;
+        } else if (data && Array.isArray(data.data)) {
+          accountList = data.data;
+        }
+
+        setAccounts(accountList);
+      } catch (err) {
+        console.error('Failed to fetch accounts for bulk edit', err);
+      }
+    };
+    
+    fetchAccounts();
+  }, []);
+
+  const handleBulkDelete = async () => {
+    if (!confirm(`Are you sure you want to delete ${selectedIds.size} transactions?`)) {
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      const response = await fetch('/api/ledger', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete transactions');
+      }
+
+      setSelectedIds(new Set());
+      router.refresh();
+    } catch (error) {
+      console.error(error);
+      alert('Failed to delete transactions.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleBulkEditConfirm = async (updates: {
+    date_time?: string;
+    account_id?: number;
+    tx_type?: LedgerTxType;
+    notes?: string;
+  }) => {
+    const response = await fetch('/api/ledger', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ids: Array.from(selectedIds),
+        updates,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || 'Failed to update transactions');
+    }
+
+    setSelectedIds(new Set());
+    router.refresh();
+  };
+
   const columns: DataTableColumn<LedgerTableRow>[] = [
     {
       id: 'dateTime',
@@ -104,15 +198,57 @@ export function LedgerTable({ rows }: LedgerTableProps) {
   );
 
   return (
-    <DataTable
-      columns={columns}
-      rows={rows}
-      keyFn={(row) => row.id}
-      defaultSort={{ columnId: 'dateTime', direction: 'desc' }}
-      globalSearch={{ placeholder: 'Search ledger' }}
-      emptyMessage="No ledger transactions found. Once you add transactions, they will appear here."
-      rowClassName={() => 'hover:bg-zinc-800/30'}
-      toolbar={toolbar}
-    />
+    <>
+      <DataTable
+        columns={columns}
+        rows={rows}
+        keyFn={(row) => row.id}
+        defaultSort={{ columnId: 'dateTime', direction: 'desc' }}
+        globalSearch={{ placeholder: 'Search ledger' }}
+        emptyMessage="No ledger transactions found. Once you add transactions, they will appear here."
+        rowClassName={() => 'cursor-pointer'}
+        toolbar={toolbar}
+        enableSelection={true}
+        selectedRowIds={selectedIds}
+        onSelectionChange={setSelectedIds}
+      />
+
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-4 bg-zinc-900 border border-zinc-700 rounded-full px-6 py-3 shadow-2xl animate-in slide-in-from-bottom-4 duration-200">
+          <span className="text-sm font-medium text-zinc-200 whitespace-nowrap">
+            {selectedIds.size} selected
+          </span>
+          <div className="h-4 w-px bg-zinc-700" />
+          <button
+            onClick={() => setIsEditModalOpen(true)}
+            className="text-sm text-blue-400 hover:text-blue-300 font-medium transition"
+          >
+            Edit
+          </button>
+          <button
+            onClick={handleBulkDelete}
+            disabled={isDeleting}
+            className="text-sm text-rose-400 hover:text-rose-300 font-medium transition disabled:opacity-50"
+          >
+            {isDeleting ? 'Deleting...' : 'Delete'}
+          </button>
+          <div className="h-4 w-px bg-zinc-700" />
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="text-sm text-zinc-400 hover:text-zinc-300 transition"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      <LedgerBulkEditModal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        selectedCount={selectedIds.size}
+        accounts={accounts}
+        onConfirm={handleBulkEditConfirm}
+      />
+    </>
   );
 }

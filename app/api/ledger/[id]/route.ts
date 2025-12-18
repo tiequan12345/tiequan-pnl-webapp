@@ -188,6 +188,97 @@ export async function PUT(request: Request, context: RouteContext) {
       }
     }
 
+    if (txType === 'COST_BASIS_RESET') {
+      const nextUnit =
+        parsedValuations.unit_price_in_base !== undefined
+          ? parsedValuations.unit_price_in_base
+          : existing.unit_price_in_base?.toString() ?? null;
+      const nextTotal =
+        parsedValuations.total_value_in_base !== undefined
+          ? parsedValuations.total_value_in_base
+          : existing.total_value_in_base?.toString() ?? null;
+
+      const unitNumber =
+        nextUnit === null || nextUnit === undefined ? null : decimalValueToNumber(nextUnit);
+      if (unitNumber !== null && (!Number.isFinite(unitNumber) || unitNumber < 0)) {
+        return NextResponse.json(
+          { error: 'unit_price_in_base must be a non-negative number.' },
+          { status: 400 },
+        );
+      }
+
+      const totalNumber =
+        nextTotal === null || nextTotal === undefined ? null : decimalValueToNumber(nextTotal);
+      if (totalNumber !== null && (!Number.isFinite(totalNumber) || totalNumber < 0)) {
+        return NextResponse.json(
+          { error: 'total_value_in_base must be a non-negative number.' },
+          { status: 400 },
+        );
+      }
+
+      if (unitNumber === null && totalNumber === null) {
+        return NextResponse.json(
+          { error: 'Provide either unit_price_in_base or total_value_in_base for COST_BASIS_RESET.' },
+          { status: 400 },
+        );
+      }
+
+      let totalValueFinal: string;
+      if (totalNumber !== null) {
+        totalValueFinal = totalNumber.toString();
+      } else {
+        const transactions = await prisma.ledgerTransaction.findMany({
+          where: {
+            account_id: accountId,
+            asset_id: assetId,
+            date_time: { lte: dateTime },
+            NOT: { id },
+          },
+          select: { quantity: true },
+        });
+
+        const quantityAtTime = transactions.reduce((sum, tx) => {
+          const value = decimalValueToNumber(tx.quantity.toString());
+          return sum + (value ?? 0);
+        }, 0);
+
+        if (!Number.isFinite(quantityAtTime) || Math.abs(quantityAtTime) <= 1e-12) {
+          return NextResponse.json(
+            { error: 'Cannot derive total_value_in_base from unit_price_in_base when quantity is zero at the reset timestamp.' },
+            { status: 400 },
+          );
+        }
+
+        totalValueFinal = (Math.abs(quantityAtTime) * unitNumber!).toString();
+      }
+
+      const updateData: Prisma.LedgerTransactionUncheckedUpdateInput = {
+        date_time: dateTime,
+        account_id: accountId,
+        asset_id: assetId,
+        quantity: '0',
+        tx_type: txType,
+        external_reference: externalReference,
+        notes,
+        unit_price_in_base: null,
+        total_value_in_base: totalValueFinal,
+      };
+
+      if (parsedValuations.fee_in_base !== undefined) {
+        updateData.fee_in_base = parsedValuations.fee_in_base;
+      }
+
+      const updated = await prisma.ledgerTransaction.update({
+        where: { id },
+        data: updateData,
+      });
+
+      return NextResponse.json({
+        id: updated.id,
+        date_time: updated.date_time.toISOString(),
+      });
+    }
+
     const derivedValuations = deriveLedgerValuationFields({
       quantity: quantityParsed,
       unitPriceInBase:

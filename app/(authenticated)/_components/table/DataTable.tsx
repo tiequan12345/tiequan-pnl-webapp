@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode, useEffect, useRef } from 'react';
 
 type SortDirection = 'asc' | 'desc';
 
@@ -35,6 +35,9 @@ export type DataTableProps<T> = {
   dense?: boolean;
   tableClassName?: string;
   wrapperClassName?: string;
+  enableSelection?: boolean;
+  selectedRowIds?: Set<string | number>;
+  onSelectionChange?: (selectedIds: Set<string | number>) => void;
 };
 
 function stringValue(raw: unknown): string {
@@ -106,11 +109,15 @@ export function DataTable<T>({
   dense = false,
   tableClassName,
   wrapperClassName,
+  enableSelection = false,
+  selectedRowIds,
+  onSelectionChange,
 }: DataTableProps<T>) {
   const [sort, setSort] = useState<{ columnId: string; direction: SortDirection } | null>(
     defaultSort ?? null,
   );
   const [query, setQuery] = useState(globalSearch?.initialQuery ?? '');
+  const checkboxRef = useRef<HTMLInputElement>(null);
 
   const filteredRows = useMemo(() => {
     if (!globalSearch || !query.trim()) return rows;
@@ -136,6 +143,47 @@ export function DataTable<T>({
       }
       return null;
     });
+  };
+
+  // Selection Logic
+  const visibleKeys = useMemo(() => {
+    if (!keyFn) return [];
+    return sortedRows.map((row, index) => keyFn(row, index));
+  }, [sortedRows, keyFn]);
+
+  const allVisibleSelected =
+    visibleKeys.length > 0 &&
+    visibleKeys.every((key) => selectedRowIds?.has(key));
+  
+  const someVisibleSelected =
+    visibleKeys.some((key) => selectedRowIds?.has(key));
+
+  useEffect(() => {
+    if (checkboxRef.current) {
+      checkboxRef.current.indeterminate = someVisibleSelected && !allVisibleSelected;
+    }
+  }, [someVisibleSelected, allVisibleSelected]);
+
+  const handleSelectAll = () => {
+    if (!onSelectionChange) return;
+    const newSet = new Set(selectedRowIds);
+    if (allVisibleSelected) {
+      visibleKeys.forEach((key) => newSet.delete(key));
+    } else {
+      visibleKeys.forEach((key) => newSet.add(key));
+    }
+    onSelectionChange(newSet);
+  };
+
+  const handleSelectRow = (key: string | number) => {
+    if (!onSelectionChange) return;
+    const newSet = new Set(selectedRowIds);
+    if (newSet.has(key)) {
+      newSet.delete(key);
+    } else {
+      newSet.add(key);
+    }
+    onSelectionChange(newSet);
   };
 
   return (
@@ -170,6 +218,17 @@ export function DataTable<T>({
             }`}
           >
             <tr>
+              {enableSelection && (
+                <th className={`w-10 px-4 py-3 font-medium ${dense ? 'px-3 py-2' : ''}`}>
+                  <input
+                    ref={checkboxRef}
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={handleSelectAll}
+                    className="rounded border-zinc-700 bg-zinc-800 text-blue-500 focus:ring-blue-500/20 focus:ring-offset-0"
+                  />
+                </th>
+              )}
               {columns.map((column) => {
                 const isSorted = sort?.columnId === column.id;
                 const sortDir = isSorted ? sort?.direction : null;
@@ -210,7 +269,7 @@ export function DataTable<T>({
             {sortedRows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={columns.length}
+                  colSpan={columns.length + (enableSelection ? 1 : 0)}
                   className="px-4 py-8 text-center text-sm text-zinc-500"
                 >
                   {emptyMessage ?? 'No data to display.'}
@@ -220,11 +279,25 @@ export function DataTable<T>({
               sortedRows.map((row, index) => {
                 const key = keyFn ? keyFn(row, index) : index;
                 const padding = dense ? 'px-3 py-2' : 'px-4 py-3';
+                const isSelected = selectedRowIds?.has(key);
+                
                 return (
                   <tr
                     key={key}
-                    className={`hover:bg-zinc-800/30 ${rowClassName ? rowClassName(row, index) : ''}`}
+                    className={`${isSelected ? 'bg-blue-500/10 hover:bg-blue-500/20' : 'hover:bg-zinc-800/30'} ${rowClassName ? rowClassName(row, index) : ''}`}
+                    onClick={enableSelection ? () => handleSelectRow(key) : undefined}
                   >
+                    {enableSelection && (
+                      <td className={`w-10 px-4 ${padding}`}>
+                        <input
+                          type="checkbox"
+                          checked={!!isSelected}
+                          onChange={() => handleSelectRow(key)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="rounded border-zinc-700 bg-zinc-800 text-blue-500 focus:ring-blue-500/20 focus:ring-offset-0"
+                        />
+                      </td>
+                    )}
                     {columns.map((column) => {
                       const alignment =
                         column.align === 'right' ? 'text-right' : 'text-left';
