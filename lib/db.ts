@@ -1,13 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { PrismaClient } from '@prisma/client';
 
 const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
 };
 
-function findProjectRoot(): string {
-  let current = path.resolve(process.cwd());
+function findPackageJsonRoot(startDir: string): string | null {
+  let current = path.resolve(startDir);
 
   while (true) {
     if (fs.existsSync(path.join(current, 'package.json'))) {
@@ -22,7 +23,21 @@ function findProjectRoot(): string {
     current = parent;
   }
 
-  return process.cwd();
+  return null;
+}
+
+function findProjectRoot(): string {
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const searchRoots = [process.cwd(), moduleDir];
+
+  for (const rootCandidate of searchRoots) {
+    const discovered = findPackageJsonRoot(rootCandidate);
+    if (discovered) {
+      return discovered;
+    }
+  }
+
+  return path.resolve(process.cwd());
 }
 
 function normalizeSqliteUrl(url: string): string {

@@ -115,6 +115,17 @@ export function DashboardView() {
     [isPrivacyMode]
   );
 
+  const normalizeDateValue = (
+    value: string | Date | null | undefined,
+  ): Date | null => {
+    if (!value) {
+      return null;
+    }
+
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
   const fetchHoldings = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -127,15 +138,23 @@ export function DashboardView() {
         throw new Error('Failed to load holdings');
       }
       const payload = (await response.json()) as HoldingsResponse;
-      const normalizedSummary: HoldingsSummary = payload.summary ?? {
+      const rawSummary: HoldingsSummary = payload.summary ?? {
         totalValue: 0,
+        totalCostBasis: null,
+        totalUnrealizedPnl: null,
         byType: {},
         byVolatility: {},
         updatedAt: null,
+        autoUpdatedAt: null,
+        hasAutoAssets: false,
       };
-      const updatedAt = normalizedSummary.updatedAt
-        ? new Date(normalizedSummary.updatedAt)
-        : null;
+
+      const normalizedSummary: HoldingsSummary = {
+        ...rawSummary,
+        updatedAt: normalizeDateValue(rawSummary.updatedAt),
+        autoUpdatedAt: normalizeDateValue(rawSummary.autoUpdatedAt),
+      };
+      const updatedAt = normalizedSummary.updatedAt;
 
       setState((prev) => ({
         ...prev,

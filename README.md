@@ -432,6 +432,8 @@ Ensure all variables from `.env.example` are set in your hosting platform:
 - `DATABASE_URL` (hosting platform provides this automatically)
 - `FINNHUB_API_KEY`
 - `COINGECKO_API_KEY`
+ 
+When running on your own server with PM2, point the process at `ecosystem.config.js` (provided in the repo). That file loads `.env` using `dotenv`, sets `cwd` to the repo root, and exposes the same vars the rest of the app expects, so you do not need to pass every env var manually to `pm2`.
 
 ### GitHub Actions Secrets
 
@@ -445,6 +447,7 @@ For the price refresh workflow to function, configure these secrets in your GitH
 - **Production Database**: Vercel uses PostgreSQL for production
 - **Migrations**: Run migrations during deployment
 - **Backups**: Set up regular database backups
+- **SQLite Path Resolution**: The server now normalizes `DATABASE_URL` by searching upward from both the current working directory and the compiled module directory for the repo root before resolving relative `file:` URLs, so refer to `prisma/dev.db` only relative to the project root and let the helper turn it into an absolute path.
 
 ## Monitoring and Troubleshooting
 
@@ -457,6 +460,7 @@ For the price refresh workflow to function, configure these secrets in your GitH
 - Check `APP_PASSWORD` environment variable
 - Clear browser cookies
 - Check browser console for errors
+- The backend now checks `x-forwarded-proto` (and the referer) before applying `secure` to the `app_session` cookie, so HTTP deployments behind a proxy still receive the cookie when the password is valid. You only need to ensure `APP_PASSWORD` matches on the running server; the middleware keeps redirecting until that cookie exists.
 
 #### Price Refresh Failures
 

@@ -2,6 +2,14 @@ import { NextResponse } from 'next/server';
 
 const SESSION_COOKIE_NAME = 'app_session';
 
+function isRequestSecure(request: Request) {
+  const forwardedProto = request.headers.get('x-forwarded-proto');
+  if (forwardedProto) {
+    return forwardedProto.split(',')[0].trim() === 'https';
+  }
+  return request.headers.get('referer')?.startsWith('https://') ?? false;
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => null) as { password?: string } | null;
@@ -27,7 +35,7 @@ export async function POST(request: Request) {
     response.cookies.set(SESSION_COOKIE_NAME, 'active', {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure: process.env.NODE_ENV === 'production' ? isRequestSecure(request) : false,
       path: '/',
       maxAge: 60 * 60 * 24 * 7,
     });
