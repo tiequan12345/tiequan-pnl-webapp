@@ -178,6 +178,20 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
     }
   >();
 
+  const isCashLikeAsset = (asset: LedgerTransactionWithRelations['asset']): boolean => {
+    const type = (asset.type ?? '').toUpperCase();
+    const bucket = (asset.volatility_bucket ?? '').toUpperCase();
+    const symbol = (asset.symbol ?? '').toUpperCase();
+    return (
+      type === 'CASH' ||
+      type === 'STABLE' ||
+      bucket === 'CASH_LIKE' ||
+      symbol === 'USD' ||
+      symbol === 'USDT' ||
+      symbol === 'USDC'
+    );
+  };
+
   for (const tx of transactions) {
     const key = `${tx.asset_id}-${tx.account_id}`;
     const quantity = decimalToNumber(tx.quantity);
@@ -200,6 +214,26 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
         position.costBasisKnown = true;
         position.costBasis = Math.max(Math.abs(resetValue), 0);
       }
+      positions.set(key, position);
+      continue;
+    }
+
+    if (isCashLikeAsset(tx.asset)) {
+      // Cash-like assets are assumed to be 1:1 with the base currency, so we can infer cost basis
+      // from quantity alone (no per-tx valuation required).
+      if (quantity > 0) {
+        position.costBasisKnown = true;
+        position.costBasis += Math.abs(quantity);
+        position.quantity += quantity;
+      } else if (quantity < 0) {
+        position.costBasisKnown = true;
+        position.costBasis -= Math.abs(quantity);
+        if (position.costBasis < 0) {
+          position.costBasis = 0;
+        }
+        position.quantity += quantity;
+      }
+
       positions.set(key, position);
       continue;
     }

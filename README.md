@@ -102,7 +102,7 @@ The application uses SQLite with Prisma ORM. The database schema includes:
 
 - **Asset**: Cryptocurrency and equity holdings
 - **Account**: Trading accounts and platforms
-- **LedgerTransaction**: Transaction history (signed quantities) plus optional valuation fields for cost basis (`unit_price_in_base`, `total_value_in_base`, `fee_in_base`). Also supports `COST_BASIS_RESET` entries (quantity `0`) to anchor cost basis as-of a timestamp when historical valuations are incomplete.
+- **LedgerTransaction**: Transaction history (signed quantities) plus optional valuation fields for cost basis (`unit_price_in_base`, `total_value_in_base`, `fee_in_base`). `COST_BASIS_RESET` entries (quantity `0`) anchor cost basis as-of a timestamp, and CASH/STABLE assets are treated as 1:1 with the base currency so their cost basis can be inferred directly from quantity.
 - **PriceLatest**: Latest price cache for assets
 - **Setting**: Application configuration
 - **PortfolioSnapshot**: History of tensile snapshots (timestamp, base currency, total value) plus denormalized components for asset/account breakdowns (see `PortfolioSnapshotComponent`).
