@@ -81,6 +81,18 @@ model Setting {
   value String
 }
 
+model PriceRefreshRun {
+  id         Int      @id @default(autoincrement())
+  started_at DateTime @default(now())
+  ended_at   DateTime?
+  status     String   // 'RUNNING', 'SUCCESS', 'FAILED', 'PARTIAL'
+  mode       String   // 'MANUAL', 'SCHEDULED'
+  metadata   String?  // JSON string for stats
+
+  @@index([started_at])
+  @@index([status])
+}
+
 model PortfolioSnapshot {
   id            Int      @id @default(autoincrement())
   snapshot_at   DateTime
