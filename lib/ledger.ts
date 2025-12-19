@@ -96,6 +96,7 @@ function normalizeLedgerDecimalString(value: string): string | null {
 /**
  * Parses decimal-like input to string form for persistence.
  * Returns undefined when the input is empty, null when invalid, or the stringified number when valid.
+ * Automatically shortens precision to 8 decimal places if needed.
  */
 export function parseLedgerDecimal(
   input: string | number | null | undefined,
@@ -104,19 +105,21 @@ export function parseLedgerDecimal(
     return undefined;
   }
 
+  let normalized: string | null;
+
   if (typeof input === 'number') {
     if (!Number.isFinite(input)) {
       return null;
     }
-    return input.toString();
+    normalized = input.toString();
+  } else {
+    const trimmed = input.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    normalized = normalizeLedgerDecimalString(trimmed);
   }
 
-  const trimmed = input.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-
-  const normalized = normalizeLedgerDecimalString(trimmed);
   if (!normalized) {
     return null;
   }
@@ -126,7 +129,19 @@ export function parseLedgerDecimal(
     return null;
   }
 
-  return numeric.toString();
+  // Automatically shorten precision to 8 decimal places
+  // We use toFixed(8) then wrap in Number() to strip trailing zeros
+  return shortenLedgerPrecision(numeric);
+}
+
+/**
+ * Shortens a number or numeric string to 8 decimal places.
+ * Returns the string representation without trailing zeros.
+ */
+export function shortenLedgerPrecision(value: number | string): string {
+  const n = typeof value === 'string' ? Number(value) : value;
+  if (!Number.isFinite(n)) return String(value);
+  return Number(n.toFixed(8)).toString();
 }
 
 /**

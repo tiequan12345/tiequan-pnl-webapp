@@ -2,7 +2,7 @@
 
 import React, { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ALLOWED_TX_TYPES, LedgerTxType } from '@/lib/ledger';
+import { ALLOWED_TX_TYPES, LedgerTxType, shortenLedgerPrecision } from '@/lib/ledger';
 
 type LedgerFormMode = 'create' | 'edit';
 
@@ -759,11 +759,15 @@ export function LedgerForm({
                 Quantity
               </label>
               <input
-                type="number"
-                step="0.00000001"
-                min={isEditMode ? undefined : 0}
+                type="text"
+                inputMode="decimal"
                 value={quantity}
                 onChange={(event) => setQuantity(event.target.value)}
+                onBlur={(event) => {
+                  if (event.target.value) {
+                    setQuantity(shortenLedgerPrecision(event.target.value));
+                  }
+                }}
                 required={!isCostBasisReset}
                 disabled={isCostBasisReset}
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
@@ -771,14 +775,14 @@ export function LedgerForm({
                   isEditMode
                     ? 'Transaction amount'
                     : isCostBasisReset
-                    ? '0 (reset does not change quantity)'
-                    : txType === 'WITHDRAWAL'
-                    ? 'Size of withdrawal (positive)'
-                    : 'Size of deposit / yield'
+                      ? '0 (reset does not change quantity)'
+                      : txType === 'WITHDRAWAL'
+                        ? 'Size of withdrawal (positive)'
+                        : 'Size of deposit / yield'
                 }
               />
             </div>
-  
+
             <div className="space-y-2 md:col-span-2">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
@@ -810,6 +814,11 @@ export function LedgerForm({
                       setUnitPriceTouched(true);
                       setUnitPrice(event.target.value);
                     }}
+                    onBlur={(event) => {
+                      if (event.target.value) {
+                        setUnitPrice(shortenLedgerPrecision(event.target.value));
+                      }
+                    }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     placeholder={isCostBasisReset ? 'e.g. 45000 (per unit)' : 'Optional'}
                   />
@@ -826,6 +835,11 @@ export function LedgerForm({
                       setTotalValueTouched(true);
                       setTotalValue(event.target.value);
                     }}
+                    onBlur={(event) => {
+                      if (event.target.value) {
+                        setTotalValue(shortenLedgerPrecision(event.target.value));
+                      }
+                    }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     placeholder={
                       isCostBasisReset ? 'e.g. 45000 (total) or leave blank to derive from unit price' : 'Optional'
@@ -841,6 +855,11 @@ export function LedgerForm({
                     inputMode="decimal"
                     value={fee}
                     onChange={(event) => setFee(event.target.value)}
+                    onBlur={(event) => {
+                      if (event.target.value) {
+                        setFee(shortenLedgerPrecision(event.target.value));
+                      }
+                    }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     placeholder="Optional"
                   />
@@ -875,11 +894,15 @@ export function LedgerForm({
                 Quantity Acquired
               </label>
               <input
-                type="number"
-                step="0.00000001"
-                min={0}
+                type="text"
+                inputMode="decimal"
                 value={quantityIn}
                 onChange={(event) => setQuantityIn(event.target.value)}
+                onBlur={(event) => {
+                  if (event.target.value) {
+                    setQuantityIn(shortenLedgerPrecision(event.target.value));
+                  }
+                }}
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 placeholder="e.g. 2 (for +2 BTC)"
               />
@@ -907,11 +930,15 @@ export function LedgerForm({
                 Quantity Spent
               </label>
               <input
-                type="number"
-                step="0.00000001"
-                min={0}
+                type="text"
+                inputMode="decimal"
                 value={quantityOut}
                 onChange={(event) => setQuantityOut(event.target.value)}
+                onBlur={(event) => {
+                  if (event.target.value) {
+                    setQuantityOut(shortenLedgerPrecision(event.target.value));
+                  }
+                }}
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 placeholder="e.g. 200000 (for -200000 USDT)"
               />
@@ -937,6 +964,11 @@ export function LedgerForm({
                       setAssetInUnitPriceTouched(true);
                       setAssetInUnitPrice(event.target.value);
                     }}
+                    onBlur={(event) => {
+                      if (event.target.value) {
+                        setAssetInUnitPrice(shortenLedgerPrecision(event.target.value));
+                      }
+                    }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     placeholder="Optional"
                   />
@@ -953,6 +985,11 @@ export function LedgerForm({
                       setAssetInTotalValueTouched(true);
                       setAssetInTotalValue(event.target.value);
                     }}
+                    onBlur={(event) => {
+                      if (event.target.value) {
+                        setAssetInTotalValue(shortenLedgerPrecision(event.target.value));
+                      }
+                    }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     placeholder="Optional"
                   />
@@ -966,6 +1003,11 @@ export function LedgerForm({
                     inputMode="decimal"
                     value={assetInFee}
                     onChange={(event) => setAssetInFee(event.target.value)}
+                    onBlur={(event) => {
+                      if (event.target.value) {
+                        setAssetInFee(shortenLedgerPrecision(event.target.value));
+                      }
+                    }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     placeholder="Optional"
                   />
@@ -993,6 +1035,11 @@ export function LedgerForm({
                       setAssetOutUnitPriceTouched(true);
                       setAssetOutUnitPrice(event.target.value);
                     }}
+                    onBlur={(event) => {
+                      if (event.target.value) {
+                        setAssetOutUnitPrice(shortenLedgerPrecision(event.target.value));
+                      }
+                    }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     placeholder="Optional"
                   />
@@ -1009,6 +1056,11 @@ export function LedgerForm({
                       setAssetOutTotalValueTouched(true);
                       setAssetOutTotalValue(event.target.value);
                     }}
+                    onBlur={(event) => {
+                      if (event.target.value) {
+                        setAssetOutTotalValue(shortenLedgerPrecision(event.target.value));
+                      }
+                    }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     placeholder="Optional"
                   />
@@ -1022,6 +1074,11 @@ export function LedgerForm({
                     inputMode="decimal"
                     value={assetOutFee}
                     onChange={(event) => setAssetOutFee(event.target.value)}
+                    onBlur={(event) => {
+                      if (event.target.value) {
+                        setAssetOutFee(shortenLedgerPrecision(event.target.value));
+                      }
+                    }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     placeholder="Optional"
                   />
@@ -1076,11 +1133,11 @@ export function LedgerForm({
             ? isEditMode
               ? 'Saving...'
               : isTradeType
-              ? 'Adding Trade...'
-              : 'Adding...'
+                ? 'Adding Trade...'
+                : 'Adding...'
             : isEditMode
-            ? 'Save Changes'
-            : 'Add Transaction'}
+              ? 'Save Changes'
+              : 'Add Transaction'}
         </button>
       </div>
     </form>
