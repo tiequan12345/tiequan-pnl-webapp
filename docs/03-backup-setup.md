@@ -1,8 +1,24 @@
 # Database Backup Setup Guide
 
-This guide explains how to set up automated SQLite database backups to Amazon S3 for your Tiequan PnL WebApp.
+## Table of Contents
+1. [Overview](#overview)
+2. [Prerequisites](#prerequisites)
+3. [AWS S3 Setup](#aws-s3-setup)
+4. [Environment Configuration](#environment-configuration)
+5. [Installation](#installation)
+6. [Testing Manual Backup](#testing-manual-backup)
+7. [Automated Backup Setup](#automated-backup-setup)
+8. [Monitoring Backups](#monitoring-backups)
+9. [Backup Schedule Configuration](#backup-schedule-configuration)
+10. [Backup Retention](#backup-retention)
+11. [Troubleshooting](#troubleshooting)
+12. [Recovery Process](#recovery-process)
+13. [Security Considerations](#security-considerations)
+14. [Production Recommendations](#production-recommendations)
 
 ## Overview
+
+This guide explains how to set up automated SQLite database backups to Amazon S3 for your Tiequan PnL WebApp.
 
 The backup system includes:
 - Automated SQLite database backups to S3
@@ -17,44 +33,43 @@ The backup system includes:
 2. Node.js environment
 3. Your application deployed and running
 
-## Step 1: AWS S3 Setup
+## AWS S3 Setup
 
-1. **Create an S3 Bucket:**
-   ```bash
-   aws s3 mb s3://your-unique-backup-bucket-name
-   ```
+### 1. Create an S3 Bucket
+```bash
+aws s3 mb s3://your-unique-backup-bucket-name
+```
 
-2. **Configure Bucket Policy (optional but recommended):**
-   - Enable versioning for backup history
-   - Set up lifecycle rules for automatic cleanup
-   - Configure encryption (SSE-S3 or SSE-KMS)
+### 2. Configure Bucket Policy (optional but recommended)
+- Enable versioning for backup history
+- Set up lifecycle rules for automatic cleanup
+- Configure encryption (SSE-S3 or SSE-KMS)
 
-3. **Create IAM User with S3 Access:**
-   - Go to AWS IAM console
-   - Create new user with programmatic access
-   - Attach policy with S3 permissions:
-     ```json
-     {
-       "Version": "2012-10-17",
-       "Statement": [
-         {
-           "Effect": "Allow",
-           "Action": [
-             "s3:PutObject",
-             "s3:GetObject",
-             "s3:DeleteObject",
-             "s3:ListBucket"
-           ],
-           "Resource": [
-             "arn:aws:s3:::your-bucket-name",
-             "arn:aws:s3:::your-bucket-name/*"
-           ]
-         }
-       ]
-     }
-     ```
+### 3. Create IAM User with S3 Access
+Go to AWS IAM console and create new user with programmatic access. Attach policy with S3 permissions:
 
-## Step 2: Environment Configuration
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:DeleteObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::your-bucket-name",
+        "arn:aws:s3:::your-bucket-name/*"
+      ]
+    }
+  ]
+}
+```
+
+## Environment Configuration
 
 Update your `.env` file with AWS credentials:
 
@@ -71,7 +86,7 @@ BACKUP_SCHEDULE="0 2 * * *"
 BACKUP_RETENTION_DAYS=60
 ```
 
-## Step 3: Install Dependencies
+## Installation
 
 ```bash
 npm install
@@ -81,7 +96,7 @@ The required dependencies are already added to `package.json`:
 - `@aws-sdk/client-s3` - AWS S3 client
 - `node-cron` - Cron job scheduling
 
-## Step 4: Test Manual Backup
+## Testing Manual Backup
 
 Run a manual backup to verify configuration:
 
@@ -91,7 +106,7 @@ npm run backup
 
 Check the logs in `logs/backup.log` for success/failure messages.
 
-## Step 5: Set Up Automated Backups
+## Automated Backup Setup
 
 ### Option A: Using the Built-in Service (Recommended for Development)
 
@@ -152,7 +167,7 @@ If you're using PM2 for process management:
    pm2 start ecosystem.config.js
    ```
 
-## Step 6: Monitor Backups
+## Monitoring Backups
 
 ### Via API Endpoint
 
@@ -207,18 +222,18 @@ Common schedules:
 
 ### Common Issues
 
-1. **AWS Credentials Error:**
-   - Verify AWS credentials are correct
-   - Check IAM user permissions
-   - Ensure S3 bucket exists and is accessible
+#### 1. AWS Credentials Error
+- Verify AWS credentials are correct
+- Check IAM user permissions
+- Ensure S3 bucket exists and is accessible
 
-2. **Database File Not Found:**
-   - Check `DATABASE_URL` in your environment
-   - Verify the database file path exists
+#### 2. Database File Not Found
+- Check `DATABASE_URL` in your environment
+- Verify the database file path exists
 
-3. **Permission Errors:**
-   - Ensure the application has read access to the database file
-   - Check write permissions for the logs directory
+#### 3. Permission Errors
+- Ensure the application has read access to the database file
+- Check write permissions for the logs directory
 
 ### Debug Mode
 
@@ -226,22 +241,6 @@ Enable verbose logging by setting:
 ```bash
 DEBUG=backup npm run backup
 ```
-
-## Security Considerations
-
-1. **AWS Credentials:**
-   - Store credentials securely (environment variables, AWS Secrets Manager)
-   - Use IAM roles when possible
-   - Rotate credentials regularly
-
-2. **S3 Security:**
-   - Enable S3 bucket encryption
-   - Use bucket policies to restrict access
-   - Enable S3 access logging
-
-3. **Network Security:**
-   - Use VPC endpoints for S3 access when possible
-   - Configure firewall rules appropriately
 
 ## Recovery Process
 
@@ -261,6 +260,22 @@ To restore from backup:
    cp restored.db prisma/dev.db
    # Restart application
    ```
+
+## Security Considerations
+
+### 1. AWS Credentials
+- Store credentials securely (environment variables, AWS Secrets Manager)
+- Use IAM roles when possible
+- Rotate credentials regularly
+
+### 2. S3 Security
+- Enable S3 bucket encryption
+- Use bucket policies to restrict access
+- Enable S3 access logging
+
+### 3. Network Security
+- Use VPC endpoints for S3 access when possible
+- Configure firewall rules appropriately
 
 ## Monitoring and Alerts
 
