@@ -12,7 +12,9 @@ import {
 type NormalizedLedgerRow = {
   date_time?: string;
   account_id?: number | string;
+  account_name?: string;
   asset_id?: number | string;
+  asset_symbol?: string;
   quantity?: string | number | null;
   tx_type?: string;
   external_reference?: string | null;
@@ -36,6 +38,11 @@ type CommitResponse = {
 function toNumber(value: number | string | undefined): number | null {
   if (value === undefined) {
     return null;
+  }
+  if (typeof value === 'string') {
+    if (!value.trim()) {
+      return null;
+    }
   }
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
@@ -75,6 +82,8 @@ export async function POST(request: Request) {
 
     const accountIdsToCheck = new Set<number>();
     const assetIdsToCheck = new Set<number>();
+    const accountNamesToCheck = new Set<string>();
+    const assetSymbolsToCheck = new Set<string>();
 
     rows.forEach((row, index) => {
       const dateTime = parseLedgerDateTime((row.date_time ?? '').toString());
@@ -83,13 +92,17 @@ export async function POST(request: Request) {
       }
 
       const accountId = toNumber(row.account_id as number | string | undefined);
-      if (accountId === null) {
-        errors.push({ index, message: 'Invalid account_id.' });
+      const accountNameRaw = (row.account_name ?? '').toString().trim();
+      const accountName = accountNameRaw.toLowerCase();
+      if (accountId === null && !accountName) {
+        errors.push({ index, message: 'Provide account_id or account_name.' });
       }
 
       const assetId = toNumber(row.asset_id as number | string | undefined);
-      if (assetId === null) {
-        errors.push({ index, message: 'Invalid asset_id.' });
+      const assetSymbolRaw = (row.asset_symbol ?? '').toString().trim();
+      const assetSymbol = assetSymbolRaw.toLowerCase();
+      if (assetId === null && !assetSymbol) {
+        errors.push({ index, message: 'Provide asset_id or asset_symbol.' });
       }
 
       const quantityParsed = parseLedgerDecimal(row.quantity ?? null);
@@ -139,9 +152,12 @@ export async function POST(request: Request) {
       }
 
       if (
-        quantityParsed &&
-        unitPriceParsed &&
-        totalValueParsed &&
+        quantityParsed !== null &&
+        quantityParsed !== undefined &&
+        unitPriceParsed !== null &&
+        unitPriceParsed !== undefined &&
+        totalValueParsed !== null &&
+        totalValueParsed !== undefined &&
         !isLedgerValuationConsistent(
           decimalValueToNumber(quantityParsed)!,
           unitPriceParsed,
@@ -157,26 +173,41 @@ export async function POST(request: Request) {
 
       if (
         dateTime &&
-        accountId !== null &&
-        assetId !== null &&
         quantityParsed !== null &&
         quantityParsed !== undefined &&
         isAllowedTxType(txTypeRaw) &&
         unitPriceParsed !== null &&
         totalValueParsed !== null &&
         feeParsed !== null &&
-        // If all validations passed (consistency checked above if applicable)
-        (unitPriceParsed === undefined || unitPriceParsed === null || totalValueParsed === undefined || totalValueParsed === null || isLedgerValuationConsistent(
-          decimalValueToNumber(quantityParsed)!,
-          unitPriceParsed,
-          totalValueParsed
-        ))
+        (accountId !== null || accountName) &&
+        (assetId !== null || assetSymbol) &&
+        (unitPriceParsed === undefined ||
+          unitPriceParsed === null ||
+          totalValueParsed === undefined ||
+          totalValueParsed === null ||
+          isLedgerValuationConsistent(
+            decimalValueToNumber(quantityParsed)!,
+            unitPriceParsed,
+            totalValueParsed,
+          ))
       ) {
+        if (accountId !== null) {
+          accountIdsToCheck.add(accountId);
+        } else if (accountName) {
+          accountNamesToCheck.add(accountName);
+        }
+
+        if (assetId !== null) {
+          assetIdsToCheck.add(assetId);
+        } else if (assetSymbol) {
+          assetSymbolsToCheck.add(assetSymbol);
+        }
+
         candidateRows.push({
           index,
           dateTime,
-          accountId,
-          assetId,
+          accountId: accountId ?? -1,
+          assetId: assetId ?? -1,
           quantity: quantityParsed,
           txType: txTypeRaw as (typeof ALLOWED_TX_TYPES)[number],
           externalReference,
@@ -185,8 +216,6 @@ export async function POST(request: Request) {
           totalValueInBase: totalValueParsed,
           feeInBase: feeParsed,
         });
-        accountIdsToCheck.add(accountId);
-        assetIdsToCheck.add(assetId);
       }
     });
 
@@ -201,32 +230,78 @@ export async function POST(request: Request) {
     }
 
     const accounts = await prisma.account.findMany({
-      where: { id: { in: Array.from(accountIdsToCheck) } },
-      select: { id: true },
+      where: {
+        OR: [
+          { id: { in: Array.from(accountIdsToCheck) } },
+          { name: { in: Array.from(accountNamesToCheck) } },
+        ],
+      },
+      select: { id: true, name: true },
     });
     const assets = await prisma.asset.findMany({
-      where: { id: { in: Array.from(assetIdsToCheck) } },
-      select: { id: true },
+      where: {
+        OR: [
+          { id: { in: Array.from(assetIdsToCheck) } },
+          { symbol: { in: Array.from(assetSymbolsToCheck) } },
+        ],
+      },
+      select: { id: true, symbol: true },
     });
 
     const accountExists = new Set(accounts.map((a) => a.id));
     const assetExists = new Set(assets.map((a) => a.id));
+    const accountByName = new Map(
+      accounts.map((a) => [a.name.toLowerCase(), a.id]),
+    );
+    const assetBySymbol = new Map(
+      assets.map((a) => [a.symbol.toLowerCase(), a.id]),
+    );
 
     const validRows = candidateRows.filter((row) => {
       let ok = true;
       if (!accountExists.has(row.accountId)) {
-        errors.push({
-          index: row.index,
-          message: `Account ${row.accountId} does not exist.`,
-        });
-        ok = false;
+        if (row.accountId === -1) {
+          const fallbackAccountId = accountByName.get(
+            rows[row.index]?.account_name?.toString().trim().toLowerCase() ?? '',
+          );
+          if (fallbackAccountId) {
+            row.accountId = fallbackAccountId;
+          } else {
+            errors.push({
+              index: row.index,
+              message: 'Account does not exist.',
+            });
+            ok = false;
+          }
+        } else {
+          errors.push({
+            index: row.index,
+            message: 'Account does not exist.',
+          });
+          ok = false;
+        }
       }
       if (!assetExists.has(row.assetId)) {
-        errors.push({
-          index: row.index,
-          message: `Asset ${row.assetId} does not exist.`,
-        });
-        ok = false;
+        if (row.assetId === -1) {
+          const fallbackAssetId = assetBySymbol.get(
+            rows[row.index]?.asset_symbol?.toString().trim().toLowerCase() ?? '',
+          );
+          if (fallbackAssetId) {
+            row.assetId = fallbackAssetId;
+          } else {
+            errors.push({
+              index: row.index,
+              message: 'Asset does not exist.',
+            });
+            ok = false;
+          }
+        } else {
+          errors.push({
+            index: row.index,
+            message: 'Asset does not exist.',
+          });
+          ok = false;
+        }
       }
       return ok;
     });

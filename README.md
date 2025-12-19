@@ -24,10 +24,31 @@ This webapp provides a comprehensive solution for tracking investment portfolios
 
 ## Quick Start
 
+### Installing pnpm
+
+If you don't have pnpm installed, you can install it using one of the following methods:
+
+**Option 1: Using npm (recommended)**
+```bash
+npm install -g pnpm
+```
+
+**Option 2: Using curl**
+```bash
+curl -fsSL https://get.pnpm.io/install.sh | sh -
+```
+
+**Option 3: Using Homebrew (macOS)**
+```bash
+brew install pnpm
+```
+
+For more installation options, visit [pnpm.io/installation](https://pnpm.io/installation)
+
 ### Prerequisites
 
-- Node.js 18+ 
-- npm or pnpm
+- Node.js 18+
+- pnpm
 - Git
 
 ### Installation
@@ -40,8 +61,6 @@ cd tiequan-pnl-webapp
 
 2. Install dependencies:
 ```bash
-npm install
-# or
 pnpm install
 ```
 
@@ -54,13 +73,13 @@ cp .env.example .env.local
 
 5. Set up the database:
 ```bash
-npm run prisma:generate
-npm run prisma:migrate
+pnpm run prisma:generate
+pnpm run prisma:migrate
 ```
 
 6. Start the development server:
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 The application will be available at `http://localhost:1373`
@@ -111,12 +130,12 @@ The application uses SQLite with Prisma ORM. The database schema includes:
 
 1. Generate Prisma client:
 ```bash
-npm run prisma:generate
+pnpm run prisma:generate
 ```
 
 2. Run database migrations:
 ```bash
-npm run prisma:migrate
+pnpm run prisma:migrate
 ```
 
 3. (Optional) Seed initial data through the application UI
@@ -409,12 +428,12 @@ prisma/
 ### Development Scripts
 
 ```bash
-npm run dev          # Start development server (port 1373)
-npm run build        # Build for production
-npm run start        # Start production server
-npm run lint         # Run ESLint
-npm run prisma:generate  # Generate Prisma client
-npm run prisma:migrate   # Run database migrations
+pnpm run dev          # Start development server (port 1373)
+pnpm run build        # Build for production
+pnpm run start        # Start production server
+pnpm run lint         # Run ESLint
+pnpm run prisma:generate  # Generate Prisma client
+pnpm run prisma:migrate   # Run database migrations
 ```
 
 ## Deployment
@@ -487,7 +506,7 @@ For the price refresh workflow to function, configure these secrets in your GitH
 **Issue**: Database connection problems
 **Solution**:
 - Check `DATABASE_URL` environment variable
-- Run migrations: `npm run prisma:migrate`
+- Run migrations: `pnpm run prisma:migrate`
 - Check Prisma client generation
 
 ### Monitoring Endpoints

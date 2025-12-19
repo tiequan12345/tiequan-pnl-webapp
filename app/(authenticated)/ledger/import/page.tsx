@@ -8,6 +8,8 @@ import {
   isAllowedTxType,
   parseLedgerDateTime,
   parseLedgerDecimal,
+  isLedgerValuationConsistent,
+  decimalValueToNumber,
 } from '@/lib/ledger';
 
 type ParsedCsv = {
@@ -17,12 +19,17 @@ type ParsedCsv = {
 
 type Mapping = {
   date_time: string;
-  account: string;
-  asset: string;
+  account_id?: string;
+  account_name?: string;
+  asset_id?: string;
+  asset_symbol?: string;
   quantity: string;
   tx_type: string;
   notes?: string;
   external_reference?: string;
+  unit_price_in_base?: string;
+  total_value_in_base?: string;
+  fee_in_base?: string;
 };
 
 type PreviewRow = {
@@ -36,6 +43,12 @@ type PreviewRow = {
   txType?: string;
   notes?: string | null;
   externalReference?: string | null;
+  unitPriceRaw?: string;
+  totalValueRaw?: string;
+  feeRaw?: string;
+  unitPriceParsed?: string | null | undefined;
+  totalValueParsed?: string | null | undefined;
+  feeParsed?: string | null | undefined;
   errors: string[];
   ignore: boolean;
   accountId?: number;
@@ -53,18 +66,21 @@ type Asset = { id: number; symbol: string; name: string; _count?: { ledger_trans
 
 const REQUIRED_FIELDS: (keyof Mapping)[] = [
   'date_time',
-  'account',
-  'asset',
   'quantity',
   'tx_type',
 ];
 
 const CANONICAL_FIELDS: { key: keyof Mapping; label: string; required?: boolean }[] = [
   { key: 'date_time', label: 'Date / Time', required: true },
-  { key: 'account', label: 'Account Name', required: true },
-  { key: 'asset', label: 'Asset Symbol', required: true },
+  { key: 'account_id', label: 'Account ID' },
+  { key: 'account_name', label: 'Account Name' },
+  { key: 'asset_id', label: 'Asset ID' },
+  { key: 'asset_symbol', label: 'Asset Symbol' },
   { key: 'quantity', label: 'Quantity', required: true },
   { key: 'tx_type', label: 'Tx Type', required: true },
+  { key: 'unit_price_in_base', label: 'Unit Price (Base)' },
+  { key: 'total_value_in_base', label: 'Total Value (Base)' },
+  { key: 'fee_in_base', label: 'Fee (Base)' },
   { key: 'notes', label: 'Notes' },
   { key: 'external_reference', label: 'External Reference' },
 ];
@@ -82,10 +98,15 @@ function guessMapping(headers: string[]): Mapping {
 
   return {
     date_time: pick(['date', 'datetime', 'date_time', 'timestamp']),
-    account: pick(['account', 'account_name', 'account name']),
-    asset: pick(['asset', 'asset_symbol', 'symbol', 'ticker']),
+    account_id: pick(['account_id', 'account id']),
+    account_name: pick(['account', 'account_name', 'account name']),
+    asset_id: pick(['asset_id', 'asset id']),
+    asset_symbol: pick(['asset', 'asset_symbol', 'symbol', 'ticker']),
     quantity: pick(['quantity', 'qty', 'amount']),
     tx_type: pick(['tx_type', 'type', 'tx type', 'transaction_type']),
+    unit_price_in_base: pick(['unit_price_in_base', 'unit price', 'price', 'unit price in base']),
+    total_value_in_base: pick(['total_value_in_base', 'total value', 'total', 'total value in base']),
+    fee_in_base: pick(['fee_in_base', 'fee', 'fees', 'fee in base']),
     notes: pick(['notes', 'note', 'memo', 'description']),
     external_reference: pick(['external_reference', 'external ref', 'reference', 'ref']),
   };
@@ -119,6 +140,18 @@ export default function LedgerImportPage() {
     const map = new Map<string, Asset>();
     assets.forEach((asset) => map.set(toLowerKey(asset.symbol), asset));
     return map;
+  }, [assets]);
+
+  const knownAccountIds = useMemo(() => {
+    const set = new Set<number>();
+    accounts.forEach((acc) => set.add(acc.id));
+    return set;
+  }, [accounts]);
+
+  const knownAssetIds = useMemo(() => {
+    const set = new Set<number>();
+    assets.forEach((asset) => set.add(asset.id));
+    return set;
   }, [assets]);
 
   const unknownAccounts = useMemo(() => {
@@ -216,12 +249,26 @@ export default function LedgerImportPage() {
     }
 
     const requiredMissing = REQUIRED_FIELDS.filter((field) => !mapping[field]);
+    const hasAccountMapping = Boolean(mapping.account_id || mapping.account_name);
+    const hasAssetMapping = Boolean(mapping.asset_id || mapping.asset_symbol);
+    const mappingErrors: string[] = [];
+
     if (requiredMissing.length > 0) {
-      setPreviewError(
+      mappingErrors.push(
         `Required fields not mapped: ${requiredMissing
           .map((f) => f.replace('_', ' '))
           .join(', ')}`,
       );
+    }
+    if (!hasAccountMapping) {
+      mappingErrors.push('Account mapping is required (account_id or account_name).');
+    }
+    if (!hasAssetMapping) {
+      mappingErrors.push('Asset mapping is required (asset_id or asset_symbol).');
+    }
+
+    if (mappingErrors.length > 0) {
+      setPreviewError(mappingErrors.join(' '));
       setPreviewRows([]);
       return;
     }
@@ -240,14 +287,19 @@ export default function LedgerImportPage() {
       };
 
       const dateStr = getValue(mapping.date_time);
-      const accountName = getValue(mapping.account);
-      const assetSymbol = getValue(mapping.asset);
+      const accountIdRaw = mapping.account_id ? getValue(mapping.account_id) : '';
+      const accountName = mapping.account_name ? getValue(mapping.account_name) : '';
+      const assetIdRaw = mapping.asset_id ? getValue(mapping.asset_id) : '';
+      const assetSymbol = mapping.asset_symbol ? getValue(mapping.asset_symbol) : '';
       const quantityRaw = getValue(mapping.quantity);
       const txTypeRaw = getValue(mapping.tx_type).toUpperCase();
       const notes = mapping.notes ? getValue(mapping.notes) : '';
       const externalReference = mapping.external_reference
         ? getValue(mapping.external_reference)
         : '';
+      const unitPriceRaw = mapping.unit_price_in_base ? getValue(mapping.unit_price_in_base) : '';
+      const totalValueRaw = mapping.total_value_in_base ? getValue(mapping.total_value_in_base) : '';
+      const feeRaw = mapping.fee_in_base ? getValue(mapping.fee_in_base) : '';
 
       const errors: string[] = [];
 
@@ -266,14 +318,73 @@ export default function LedgerImportPage() {
         errors.push('Invalid tx_type');
       }
 
-      const accountId = accountLookup.get(toLowerKey(accountName))?.id;
-      if (!accountId) {
-        errors.push('Unknown account');
+      const accountIdParsed = parseLedgerDecimal(accountIdRaw);
+      const accountIdValue =
+        accountIdParsed !== null && accountIdParsed !== undefined
+          ? Number(accountIdParsed)
+          : null;
+      const accountId =
+        accountIdValue !== null && Number.isFinite(accountIdValue)
+          ? accountIdValue
+          : undefined;
+
+      const assetIdParsed = parseLedgerDecimal(assetIdRaw);
+      const assetIdValue =
+        assetIdParsed !== null && assetIdParsed !== undefined
+          ? Number(assetIdParsed)
+          : null;
+      const assetId =
+        assetIdValue !== null && Number.isFinite(assetIdValue)
+          ? assetIdValue
+          : undefined;
+
+      const resolvedAccountId =
+        accountId !== undefined && knownAccountIds.has(accountId)
+          ? accountId
+          : accountLookup.get(toLowerKey(accountName))?.id;
+
+      const resolvedAssetId =
+        assetId !== undefined && knownAssetIds.has(assetId)
+          ? assetId
+          : assetLookup.get(toLowerKey(assetSymbol))?.id;
+
+      if (!resolvedAccountId) {
+        errors.push('Missing or unknown account');
       }
 
-      const assetId = assetLookup.get(toLowerKey(assetSymbol))?.id;
-      if (!assetId) {
-        errors.push('Unknown asset');
+      if (!resolvedAssetId) {
+        errors.push('Missing or unknown asset');
+      }
+
+      const unitPriceParsed = parseLedgerDecimal(unitPriceRaw);
+      if (unitPriceParsed === null) {
+        errors.push('Invalid unit_price_in_base');
+      }
+
+      const totalValueParsed = parseLedgerDecimal(totalValueRaw);
+      if (totalValueParsed === null) {
+        errors.push('Invalid total_value_in_base');
+      }
+
+      const feeParsed = parseLedgerDecimal(feeRaw);
+      if (feeParsed === null) {
+        errors.push('Invalid fee_in_base');
+      }
+
+      if (
+        quantityParsed !== null &&
+        quantityParsed !== undefined &&
+        unitPriceParsed !== null &&
+        unitPriceParsed !== undefined &&
+        totalValueParsed !== null &&
+        totalValueParsed !== undefined &&
+        !isLedgerValuationConsistent(
+          decimalValueToNumber(quantityParsed)!,
+          unitPriceParsed,
+          totalValueParsed,
+        )
+      ) {
+        errors.push('Valuation mismatch');
       }
 
       return {
@@ -287,16 +398,22 @@ export default function LedgerImportPage() {
         txType: txTypeRaw,
         notes: notes || null,
         externalReference: externalReference || null,
+        unitPriceRaw,
+        totalValueRaw,
+        feeRaw,
+        unitPriceParsed,
+        totalValueParsed,
+        feeParsed,
         errors,
         ignore: false,
-        accountId,
-        assetId,
+        accountId: resolvedAccountId,
+        assetId: resolvedAssetId,
       };
     });
 
     setPreviewRows(rows);
     setCommitResult(null);
-  }, [parsed, mapping, accountLookup, assetLookup]);
+  }, [parsed, mapping, accountLookup, assetLookup, knownAccountIds, knownAssetIds]);
 
   useEffect(() => {
     rebuildPreview();
@@ -369,6 +486,39 @@ export default function LedgerImportPage() {
       accessor: (row) => row.txType ?? '—',
       cell: (row) => <span className="text-zinc-300">{row.txType || '—'}</span>,
       sortable: true,
+    },
+    {
+      id: 'unitPriceParsed',
+      header: 'Unit Price',
+      accessor: (row) => row.unitPriceParsed ?? '—',
+      cell: (row) => (
+        <span className="text-zinc-400">{row.unitPriceRaw ?? '—'}</span>
+      ),
+      sortable: true,
+      align: 'right',
+      className: 'text-right',
+    },
+    {
+      id: 'totalValueParsed',
+      header: 'Total Value',
+      accessor: (row) => row.totalValueParsed ?? '—',
+      cell: (row) => (
+        <span className="text-zinc-400">{row.totalValueRaw ?? '—'}</span>
+      ),
+      sortable: true,
+      align: 'right',
+      className: 'text-right',
+    },
+    {
+      id: 'feeParsed',
+      header: 'Fee',
+      accessor: (row) => row.feeParsed ?? '—',
+      cell: (row) => (
+        <span className="text-zinc-400">{row.feeRaw ?? '—'}</span>
+      ),
+      sortable: true,
+      align: 'right',
+      className: 'text-right',
     },
     {
       id: 'notes',
@@ -498,6 +648,9 @@ export default function LedgerImportPage() {
           tx_type: row.txType,
           external_reference: row.externalReference,
           notes: row.notes,
+          unit_price_in_base: row.unitPriceParsed,
+          total_value_in_base: row.totalValueParsed,
+          fee_in_base: row.feeParsed,
         })),
       };
 
@@ -546,9 +699,17 @@ export default function LedgerImportPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-white">Import Ledger CSV</h2>
-        {fileName ? (
-          <span className="text-xs text-zinc-500">Loaded: {fileName}</span>
-        ) : null}
+        <div className="flex items-center gap-3">
+          <a
+            href="/api/export/ledger?template=1"
+            className="text-xs text-blue-300 hover:text-blue-200 underline"
+          >
+            Download template CSV
+          </a>
+          {fileName ? (
+            <span className="text-xs text-zinc-500">Loaded: {fileName}</span>
+          ) : null}
+        </div>
       </div>
 
       <Card>
