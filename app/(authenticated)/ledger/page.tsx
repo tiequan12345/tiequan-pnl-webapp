@@ -132,6 +132,7 @@ export default async function LedgerPage({ searchParams }: LedgerPageProps) {
     select: {
       id: true,
       name: true,
+      status: true,
       _count: {
         select: {
           ledger_transactions: true,
@@ -172,6 +173,7 @@ export default async function LedgerPage({ searchParams }: LedgerPageProps) {
   const accountsForSelect = accountsWithUsage.map((account) => ({
     id: account.id,
     name: account.name,
+    status: account.status,
     usageCount: account._count.ledger_transactions,
   }));
 
@@ -210,7 +212,7 @@ export default async function LedgerPage({ searchParams }: LedgerPageProps) {
           </div>
           <LedgerForm
             mode="create"
-            accounts={accountsForSelect}
+            accounts={accountsForSelect.filter((a) => a.status === 'ACTIVE')}
             assets={assetsForSelect}
           />
         </div>

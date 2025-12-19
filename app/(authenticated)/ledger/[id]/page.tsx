@@ -31,6 +31,7 @@ export default async function EditLedgerPage({ params }: EditLedgerPageProps) {
     select: {
       id: true,
       name: true,
+      status: true,
       _count: {
         select: {
           ledger_transactions: true,
@@ -70,6 +71,7 @@ export default async function EditLedgerPage({ params }: EditLedgerPageProps) {
   const accountsForSelect = accounts.map((account) => ({
     id: account.id,
     name: account.name,
+    status: account.status,
     usageCount: account._count.ledger_transactions,
   }));
 
@@ -89,7 +91,9 @@ export default async function EditLedgerPage({ params }: EditLedgerPageProps) {
         mode="edit"
         transactionId={id}
         initialValues={initialValues}
-        accounts={accountsForSelect}
+        accounts={accountsForSelect.filter(
+          (a) => a.status === 'ACTIVE' || a.id === transaction.account_id,
+        )}
         assets={assetsForSelect}
       />
     </div>

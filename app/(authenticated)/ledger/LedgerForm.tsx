@@ -23,7 +23,7 @@ type LedgerFormProps = {
   mode: LedgerFormMode;
   transactionId?: number;
   initialValues?: LedgerFormInitialValues;
-  accounts: { id: number; name: string; usageCount?: number }[];
+  accounts: { id: number; name: string; status?: string; usageCount?: number }[];
   assets: { id: number; symbol: string; name: string; usageCount?: number }[];
 };
 
