@@ -2,7 +2,7 @@
 
 import React, { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ALLOWED_TX_TYPES, LedgerTxType, shortenLedgerPrecision } from '@/lib/ledger';
+import { ALLOWED_TX_TYPES, LedgerTxType, shortenLedgerPrecision, parseLedgerDecimal, decimalValueToNumber } from '@/lib/ledger';
 
 type LedgerFormMode = 'create' | 'edit';
 
@@ -30,6 +30,7 @@ type LedgerFormProps = {
 type TxType = LedgerTxType;
 
 const TRADE_TYPES: TxType[] = ['TRADE', 'NFT_TRADE', 'OFFLINE_TRADE', 'HEDGE'];
+const TRANSFER_TYPES: TxType[] = ['TRANSFER'];
 
 type ValuationFieldKey =
   | 'unit_price_in_base'
@@ -78,6 +79,7 @@ const TX_TYPE_LABELS: Record<LedgerTxType, string> = {
   OTHER: 'Other',
   HEDGE: 'Hedge',
   COST_BASIS_RESET: 'Cost Basis Reset',
+  TRANSFER: 'Transfer',
 };
 
 function getDefaultDateTimeLocal(): string {
@@ -211,10 +213,22 @@ export function LedgerForm({
   const [assetOutUnitPriceTouched, setAssetOutUnitPriceTouched] = useState<boolean>(false);
   const [assetOutTotalValueTouched, setAssetOutTotalValueTouched] = useState<boolean>(false);
 
+  // Transfer-specific state
+  const [transferFromAccountId, setTransferFromAccountId] = useState<string>('');
+  const [transferToAccountId, setTransferToAccountId] = useState<string>('');
+  const [transferAssetId, setTransferAssetId] = useState<string>('');
+  const [transferQuantity, setTransferQuantity] = useState<string>('');
+  const [transferUnitPrice, setTransferUnitPrice] = useState<string>('');
+  const [transferTotalValue, setTransferTotalValue] = useState<string>('');
+  const [transferFee, setTransferFee] = useState<string>('');
+  const [transferUnitPriceTouched, setTransferUnitPriceTouched] = useState<boolean>(false);
+  const [transferTotalValueTouched, setTransferTotalValueTouched] = useState<boolean>(false);
+
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   const isTradeType = !isEditMode && TRADE_TYPES.includes(txType);
+  const isTransferType = !isEditMode && TRANSFER_TYPES.includes(txType);
   const isCostBasisReset = txType === 'COST_BASIS_RESET';
 
   useEffect(() => {
@@ -248,6 +262,36 @@ export function LedgerForm({
       }
     }
   }, [isCostBasisReset, quantity, unitPrice, totalValue, unitPriceTouched, totalValueTouched]);
+
+  useEffect(() => {
+    // Transfer-specific valuation auto-derivation
+    if (isTransferType) {
+      const qty = parseFiniteNumber(transferQuantity);
+      if (qty !== null && qty !== 0) {
+        const unit = parseFiniteNumber(transferUnitPrice);
+        const total = parseFiniteNumber(transferTotalValue);
+
+        if (!transferUnitPriceTouched && (transferUnitPrice.trim() === '' || unit === null) && total !== null) {
+          const derivedUnit = total / qty;
+          if (Number.isFinite(derivedUnit)) {
+            setTransferUnitPrice(derivedUnit.toString());
+          }
+        } else if (!transferTotalValueTouched && (transferTotalValue.trim() === '' || total === null) && unit !== null) {
+          const derivedTotal = qty * unit;
+          if (Number.isFinite(derivedTotal)) {
+            setTransferTotalValue(derivedTotal.toString());
+          }
+        }
+      }
+    }
+  }, [isTransferType, transferQuantity, transferUnitPrice, transferTotalValue, transferUnitPriceTouched, transferTotalValueTouched]);
+
+  // Default transfer "From" account to the main account selection
+  useEffect(() => {
+    if (isTransferType && accountId && !transferFromAccountId) {
+      setTransferFromAccountId(accountId);
+    }
+  }, [isTransferType, accountId, transferFromAccountId]);
 
   useEffect(() => {
     if (!isTradeType) {
@@ -416,6 +460,92 @@ export function LedgerForm({
       }
 
       // Create mode
+      if (isTransferType) {
+        // Transfer handling: move asset between accounts
+        if (!transferFromAccountId || !transferToAccountId || !transferAssetId || !transferQuantity.trim()) {
+          setError('From account, To account, Asset, and Quantity are required for transfers.');
+          setSubmitting(false);
+          return;
+        }
+
+        if (transferFromAccountId === transferToAccountId) {
+          setError('Source and destination accounts must be different.');
+          setSubmitting(false);
+          return;
+        }
+
+        const qtyParsed = parseLedgerDecimal(transferQuantity);
+        const qtyNumber = decimalValueToNumber(qtyParsed);
+        if (qtyParsed === null || qtyParsed === undefined || qtyNumber === null || qtyNumber <= 0) {
+          setError('Transfer quantity must be a positive number.');
+          setSubmitting(false);
+          return;
+        }
+
+        const assetNumeric = Number(transferAssetId);
+        if (!Number.isFinite(assetNumeric)) {
+          setError('Valid asset is required for transfer.');
+          setSubmitting(false);
+          return;
+        }
+
+        // Build valuation payload for transfer
+        const transferValuationPayload = buildValuationPayload({
+          unitPrice: transferUnitPrice,
+          totalValue: transferTotalValue,
+          fee: transferFee,
+        });
+
+        // Use the parsed quantity which handles commas properly
+        const qtyString = qtyParsed!;
+        const transferPayload = {
+          ...buildCommonPayload({
+            assetId: assetNumeric, // Will be ignored for multi-leg transfers
+            quantity: '0', // Will be ignored for multi-leg transfers
+          }),
+          legs: [
+            {
+              account_id: Number(transferFromAccountId),
+              asset_id: assetNumeric,
+              quantity: (-Math.abs(qtyNumber)).toString(), // Negative for source
+              ...transferValuationPayload,
+            },
+            {
+              account_id: Number(transferToAccountId),
+              asset_id: assetNumeric,
+              quantity: Math.abs(qtyNumber).toString(), // Positive for destination
+              ...transferValuationPayload,
+            },
+          ],
+        };
+
+        const response = await fetch('/api/ledger', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(transferPayload),
+        });
+
+        if (!response.ok) {
+          const data = (await response.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          setError(data?.error || 'Failed to create transfer.');
+          setSubmitting(false);
+          return;
+        }
+
+        // Clear transfer-specific fields but keep context
+        setTransferQuantity('');
+        setTransferUnitPrice('');
+        setTransferTotalValue('');
+        setTransferFee('');
+        setSubmitting(false);
+        router.refresh();
+        return;
+      }
+
       if (isTradeType) {
         // Double-entry trades: one positive leg (asset in) and one negative leg (asset out)
         const inQtyRaw = quantityIn.trim();
@@ -453,8 +583,8 @@ export function LedgerForm({
         }
 
         const payload = buildCommonPayload({
-          assetId: assetInNumeric,
-          quantity: Math.abs(inQtyNumber).toString(),
+          assetId: assetInNumeric, // This will be ignored for multi-leg trades
+          quantity: '0', // This will be ignored for multi-leg trades
         });
 
         const payloadOut = buildCommonPayload({
@@ -729,8 +859,157 @@ export function LedgerForm({
           </select>
         </div>
 
+        {/* Transfer-specific fields (create mode only) */}
+        {isTransferType && (
+          <>
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+                From Account
+              </label>
+              <select
+                value={transferFromAccountId}
+                onChange={(event) => setTransferFromAccountId(event.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="">Select source account</option>
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+                To Account
+              </label>
+              <select
+                value={transferToAccountId}
+                onChange={(event) => setTransferToAccountId(event.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="">Select destination account</option>
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+                Asset to Transfer
+              </label>
+              <select
+                value={transferAssetId}
+                onChange={(event) => setTransferAssetId(event.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="">Select asset</option>
+                {assets.map((asset) => (
+                  <option key={asset.id} value={asset.id}>
+                    {asset.symbol} ({asset.name})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+                Quantity to Transfer
+              </label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={transferQuantity}
+                onChange={(event) => setTransferQuantity(event.target.value)}
+                onBlur={(event) => {
+                  if (event.target.value) {
+                    setTransferQuantity(shortenLedgerPrecision(event.target.value));
+                  }
+                }}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                placeholder="Amount to move (positive)"
+              />
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+                  Transfer Valuation (base currency)
+                </label>
+                <span className="text-xs text-zinc-500">Optional</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-wide text-zinc-500">
+                    Unit price
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={transferUnitPrice}
+                    onChange={(event) => {
+                      setTransferUnitPriceTouched(true);
+                      setTransferUnitPrice(event.target.value);
+                    }}
+                    onBlur={(event) => {
+                      if (event.target.value) {
+                        setTransferUnitPrice(shortenLedgerPrecision(event.target.value));
+                      }
+                    }}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    placeholder="Optional"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-wide text-zinc-500">
+                    Total value
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={transferTotalValue}
+                    onChange={(event) => {
+                      setTransferTotalValueTouched(true);
+                      setTransferTotalValue(event.target.value);
+                    }}
+                    onBlur={(event) => {
+                      if (event.target.value) {
+                        setTransferTotalValue(shortenLedgerPrecision(event.target.value));
+                      }
+                    }}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    placeholder="Optional"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-wide text-zinc-500">
+                    Fee
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={transferFee}
+                    onChange={(event) => setTransferFee(event.target.value)}
+                    onBlur={(event) => {
+                      if (event.target.value) {
+                        setTransferFee(shortenLedgerPrecision(event.target.value));
+                      }
+                    }}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    placeholder="Optional"
+                  />
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
         {/* Non-trade asset + quantity */}
-        {!isTradeType && (
+        {!isTradeType && !isTransferType && (
           <>
             <div className="space-y-2">
               <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
@@ -1134,10 +1413,16 @@ export function LedgerForm({
               ? 'Saving...'
               : isTradeType
                 ? 'Adding Trade...'
-                : 'Adding...'
+                : isTransferType
+                  ? 'Adding Transfer...'
+                  : 'Adding...'
             : isEditMode
               ? 'Save Changes'
-              : 'Add Transaction'}
+              : isTransferType
+                ? 'Add Transfer'
+                : isTradeType
+                  ? 'Add Trade'
+                  : 'Add Transaction'}
         </button>
       </div>
     </form>

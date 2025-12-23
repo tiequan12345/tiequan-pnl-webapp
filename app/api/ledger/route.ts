@@ -30,6 +30,7 @@ type LedgerLeg = {
   unit_price_in_base?: string | number | null;
   total_value_in_base?: string | number | null;
   fee_in_base?: string | number | null;
+  account_id?: number | string;
 };
 
 type LedgerListItem = {
@@ -305,18 +306,26 @@ export async function POST(request: Request) {
     // Check if this is a multi-leg trade
     const legs = body.legs;
     if (legs && Array.isArray(legs)) {
-      // Multi-leg trade support
-      const TRADE_TYPES: (typeof ALLOWED_TX_TYPES)[number][] = ['TRADE', 'NFT_TRADE', 'OFFLINE_TRADE', 'HEDGE'];
-      if (!TRADE_TYPES.includes(txType)) {
+      const TRADE_TYPES: (typeof ALLOWED_TX_TYPES)[number][] = [
+        'TRADE',
+        'NFT_TRADE',
+        'OFFLINE_TRADE',
+        'HEDGE',
+      ];
+      const MULTI_LEG_TX_TYPES: (typeof ALLOWED_TX_TYPES)[number][] = [
+        ...TRADE_TYPES,
+        'TRANSFER',
+      ];
+      if (!MULTI_LEG_TX_TYPES.includes(txType)) {
         return NextResponse.json(
-          { error: 'legs can only be used with trade transaction types.' },
+          { error: 'legs can only be used with trade or transfer transaction types.' },
           { status: 400 },
         );
       }
 
       if (legs.length < 2) {
         return NextResponse.json(
-          { error: 'At least 2 legs are required for trades.' },
+          { error: 'At least 2 legs are required for trades or transfers.' },
           { status: 400 },
         );
       }
@@ -328,6 +337,7 @@ export async function POST(request: Request) {
         unitPriceParsed: string | null | undefined;
         totalValueParsed: string | null | undefined;
         feeParsed: string | null | undefined;
+        accountId: number;
       }[] = [];
 
       // Validate all legs
@@ -355,6 +365,33 @@ export async function POST(request: Request) {
         if (quantityParsed === null || quantityParsed === undefined) {
           return NextResponse.json(
             { error: `Leg ${i + 1}: quantity must be a valid number.` },
+            { status: 400 },
+          );
+        }
+
+        const legAccountIdRaw = leg.account_id;
+        let legAccountId: number;
+        if (legAccountIdRaw === undefined) {
+          if (txType === 'TRANSFER') {
+            return NextResponse.json(
+              { error: `Leg ${i + 1}: account_id is required for transfers.` },
+              { status: 400 },
+            );
+          }
+          legAccountId = accountId;
+        } else {
+          legAccountId = Number(legAccountIdRaw);
+          if (!Number.isFinite(legAccountId)) {
+            return NextResponse.json(
+              { error: `Leg ${i + 1}: Invalid account_id.` },
+              { status: 400 },
+            );
+          }
+        }
+
+        if (txType !== 'TRANSFER' && legAccountId !== accountId) {
+          return NextResponse.json(
+            { error: 'All legs must use the primary account for trade transactions.' },
             { status: 400 },
           );
         }
@@ -397,11 +434,13 @@ export async function POST(request: Request) {
             ? derived.total_value_in_base
             : totalValueParsed;
 
-        if (!isLedgerValuationConsistent(
-          decimalValueToNumber(quantityParsed)!,
-          unitPriceFinal,
-          totalValueFinal
-        )) {
+        if (
+          !isLedgerValuationConsistent(
+            decimalValueToNumber(quantityParsed)!,
+            unitPriceFinal,
+            totalValueFinal,
+          )
+        ) {
           return NextResponse.json(
             { error: `Leg ${i + 1}: Valuation mismatch (Quantity * Unit Price != Total Value).` },
             { status: 400 },
@@ -415,7 +454,63 @@ export async function POST(request: Request) {
           unitPriceParsed: unitPriceFinal,
           totalValueParsed: totalValueFinal,
           feeParsed,
+          accountId: legAccountId,
         });
+      }
+
+      if (txType === 'TRANSFER') {
+        if (validLegs.length !== 2) {
+          return NextResponse.json(
+            { error: 'Transfers must consist of exactly two legs (source and destination).' },
+            { status: 400 },
+          );
+        }
+
+        const [legA, legB] = validLegs;
+        if (legA.accountId === legB.accountId) {
+          return NextResponse.json(
+            { error: 'Transfer legs must move the asset between two different accounts.' },
+            { status: 400 },
+          );
+        }
+
+        if (legA.assetId !== legB.assetId) {
+          return NextResponse.json(
+            { error: 'Both transfer legs must reference the same asset.' },
+            { status: 400 },
+          );
+        }
+
+        const qtyA = decimalValueToNumber(legA.quantityParsed);
+        const qtyB = decimalValueToNumber(legB.quantityParsed);
+
+        if (
+          qtyA === null ||
+          qtyB === null ||
+          !Number.isFinite(qtyA) ||
+          !Number.isFinite(qtyB) ||
+          qtyA === 0 ||
+          qtyB === 0
+        ) {
+          return NextResponse.json(
+            { error: 'Transfer quantities must be non-zero numeric values.' },
+            { status: 400 },
+          );
+        }
+
+        if (Math.abs(qtyA + qtyB) > 1e-9) {
+          return NextResponse.json(
+            { error: 'Transfer legs must sum to zero (same magnitude, opposite sign).' },
+            { status: 400 },
+          );
+        }
+
+        if (Math.abs(Math.abs(qtyA) - Math.abs(qtyB)) > 1e-9) {
+          return NextResponse.json(
+            { error: 'Transfer legs must carry the same absolute quantity.' },
+            { status: 400 },
+          );
+        }
       }
 
       // Verify all assets exist
@@ -542,7 +637,7 @@ export async function POST(request: Request) {
           prisma.ledgerTransaction.create({
             data: {
               date_time: dateTime,
-              account_id: accountId,
+              account_id: leg.accountId,
               asset_id: leg.assetId,
               quantity: leg.quantityParsed,
               tx_type: txType,

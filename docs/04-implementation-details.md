@@ -27,10 +27,11 @@ All core phases (0-6) are complete with the following key features implemented:
 - Validation of required fields and enum-like string constraints
 
 ### ✅ Phase 2 – Ledger: Manual Transactions & List View
-- Manual transaction entry with double-entry for trades
+- Manual transaction entry with double-entry for trades and transfers
 - Ledger list with pagination and filtering
-- Support for all transaction types (DEPOSIT, WITHDRAWAL, TRADE, etc.)
+- Support for all transaction types (DEPOSIT, WITHDRAWAL, TRADE, TRANSFER, etc.)
 - Hedges page for net exposure calculation
+- **Transfer Support**: Move assets between accounts while preserving cost basis and valuation
 
 ### ✅ Phase 3 – Holdings Calculation & Valuation
 - Cost basis computation with average cost method
@@ -59,6 +60,7 @@ All core phases (0-6) are complete with the following key features implemented:
 - **Price Refresh System**: Automated hourly refresh via GitHub Actions with rate limiting
 - **Snapshot Persistence**: Portfolio snapshots for historical PnL tracking
 - **Backup System**: Automated SQLite backups to S3 with configurable schedule
+- **Transfer Transaction Type**: Move assets between accounts with cost basis preservation
 
 ## Issue Resolution
 
@@ -136,6 +138,17 @@ All core phases (0-6) are complete with the following key features implemented:
 - Recommended Redis for multi-instance deployments
 - Current implementation suitable for single-instance deployment
 
+### Issue 10: Transfer Transaction Support ✅
+**Problem**: No way to move assets between accounts while preserving cost basis and valuation.
+
+**Solution**: Implemented comprehensive transfer functionality:
+- Added `TRANSFER` to `ALLOWED_TX_TYPES` for system-wide recognition
+- Extended API to support per-leg `account_id` for multi-account transactions
+- Added transfer validation: exactly 2 legs, same asset, opposite quantities, different accounts
+- Created transfer-specific UI with source/destination account selection
+- Ensured valuation consistency between transfer legs to preserve cost basis
+- Holdings calculations automatically handle transfer legs per account
+
 ## Technical Architecture
 
 ### Authentication & Middleware
@@ -155,12 +168,14 @@ All core phases (0-6) are complete with the following key features implemented:
 - RESTful design with JSON responses
 - Comprehensive error handling with appropriate HTTP status codes
 - Input validation and sanitization
+- Multi-leg transaction support for trades and transfers
 
 ### Frontend Architecture
 - Server components for data fetching with direct Prisma access
 - Client components for interactivity and forms
 - Shared `AppShell` layout for authenticated experience
 - Tailwind CSS for styling consistency
+- Transfer-specific UI components for account-to-account movements
 
 ### External Integrations
 - CoinGecko API for crypto pricing with rate limiting
@@ -185,8 +200,8 @@ All core phases (0-6) are complete with the following key features implemented:
 #### ledger_transactions
 - Transaction records with signed quantities
 - Valuation fields for cost basis calculation
-- Support for all transaction types including trades
-- Double-entry pattern for trade-like transactions
+- Support for all transaction types including trades and transfers
+- Double-entry pattern for trade-like and transfer transactions
 
 #### prices_latest
 - Current price cache for all assets
@@ -224,9 +239,10 @@ All core phases (0-6) are complete with the following key features implemented:
 
 #### Ledger Operations
 - `GET /api/ledger` - List with pagination and filtering
-- `POST /api/ledger` - Create transactions (single or double-entry)
+- `POST /api/ledger` - Create transactions (single, double-entry trades, or transfers)
 - `PUT /api/ledger/:id` - Update existing transactions
 - `DELETE /api/ledger/:id` - Remove transactions
+- **Transfer Support**: Multi-leg POST with per-leg `account_id` for account-to-account movements
 
 #### Import/Export
 - `POST /api/ledger/import/parse` - CSV parsing and validation
@@ -246,6 +262,57 @@ All core phases (0-6) are complete with the following key features implemented:
 - `GET /api/settings` - Retrieve all settings
 - `POST /api/settings` - Update configuration
 - `GET /api/pnl` - Historical PnL data
+
+### Transfer API Contract
+
+#### POST /api/ledger (Transfer)
+**Request Format:**
+```json
+{
+  "date_time": "2025-12-23T21:00:00Z",
+  "account_id": 1,
+  "tx_type": "TRANSFER",
+  "external_reference": "transfer-001",
+  "notes": "Moving BTC between accounts",
+  "legs": [
+    {
+      "account_id": 1,
+      "asset_id": 1,
+      "quantity": "-0.5",
+      "unit_price_in_base": "50000",
+      "total_value_in_base": "-25000",
+      "fee_in_base": "0"
+    },
+    {
+      "account_id": 2,
+      "asset_id": 1,
+      "quantity": "0.5",
+      "unit_price_in_base": "50000",
+      "total_value_in_base": "25000",
+      "fee_in_base": "0"
+    }
+  ]
+}
+```
+
+**Validation Rules:**
+- Exactly 2 legs required
+- Both legs must specify `account_id`
+- Accounts must be distinct
+- Both legs must reference the same `asset_id`
+- Quantities must be opposites (sum to zero)
+- Valuation fields must be consistent between legs
+- All referenced accounts and assets must exist
+
+**Response:**
+```json
+{
+  "ids": [123, 124],
+  "date_time": "2025-12-23T21:00:00.000Z",
+  "legs": 2,
+  "type": "TRANSFER"
+}
+```
 
 ### Error Handling Patterns
 - 400 Bad Request for validation errors
@@ -272,13 +339,20 @@ All core phases (0-6) are complete with the following key features implemented:
 
 #### Forms
 - `AssetForm` & `AccountForm` - Entity creation/editing
-- `LedgerForm` - Transaction entry with trade support
+- `LedgerForm` - Transaction entry with trade and transfer support
 - `LedgerBulkEditModal` - Bulk transaction operations
+
+#### Transfer-Specific UI
+- Transfer mode detection in `LedgerForm`
+- Source and destination account selectors
+- Asset and quantity inputs for transfer
+- Valuation fields shared across both legs
+- Validation to prevent same-account transfers
 
 #### Charts & Visualization
 - `HoldingsAllocationCharts` - Portfolio allocation pie charts
 - `PnlTimeSeriesChart` - Historical PnL visualization
-- Dashboard charts integrated with existing design
+- Dashboard charts integrated with existing design shell
 
 #### Import/Export
 - CSV import workflow with column mapping
@@ -291,41 +365,48 @@ All core phases (0-6) are complete with the following key features implemented:
 - Valuation fields added via `20251218004753_add_ledger_valuation` migration
 - Price refresh tracking via `20251218045457_add_price_refresh_run` migration
 - Portfolio snapshots via `20260101000000_create_portfolio_snapshot` migration
+- Transfer type support added via `ALLOWED_TX_TYPES` extension (no schema change required)
 
 ### Backward Compatibility
 - All new fields are nullable to support existing data
 - API contracts maintain backward compatibility
 - UI gracefully handles missing valuation data
+- Transfer functionality is additive - existing flows unaffected
 
 ### Data Migration Strategies
 - Existing transactions without valuation show "Unknown cost basis"
 - Settings migration coerces non-USD currencies to USD
 - Snapshot data requires migration before PnL history is available
+- Transfer functionality works with existing account/asset data
 
 ## Testing Strategy
 
 ### Unit Testing
-- Cost basis calculations with various transaction patterns
+- Cost basis calculations with various transaction patterns including transfers
 - Rate limiting behavior under different scenarios
 - Settings validation and normalization
-- API endpoint input validation
+- API endpoint input validation including transfer validation
+- Transfer-specific validation logic (same asset, opposite quantities, distinct accounts)
 
 ### Integration Testing
-- End-to-end transaction flows (create, edit, delete)
+- End-to-end transaction flows (create, edit, delete) including transfers
 - CSV import with various data formats
 - Price refresh with mock external APIs
 - Backup and restore procedures
+- Transfer creation and validation workflows
 
 ### End-to-End Testing
 - Complete user workflows from asset creation to portfolio viewing
-- Multi-step processes like trade entry and double-entry verification
+- Multi-step processes like trade entry, transfer execution, and double-entry verification
 - Settings changes and their impact across the application
+- Cross-account holdings movements and cost basis preservation
 
 ### Performance Testing
-- Large dataset handling (thousands of transactions)
+- Large dataset handling (thousands of transactions including transfers)
 - Concurrent user operations
 - Price refresh performance with many assets
 - Database query optimization verification
+- Multi-leg transaction performance
 
 ## Security Considerations
 
@@ -338,6 +419,7 @@ All core phases (0-6) are complete with the following key features implemented:
 - Input sanitization and validation
 - SQL injection prevention via parameterized queries
 - Rate limiting to prevent API abuse
+- Transfer validation to prevent unauthorized cross-account movements
 
 ### External API Security
 - Secure API key storage in environment variables
@@ -357,11 +439,13 @@ All core phases (0-6) are complete with the following key features implemented:
 - Health endpoints for monitoring systems
 - Performance metrics tracking
 - Error rate monitoring and alerting
+- Transfer operation monitoring for audit trails
 
 ### Scaling Considerations
 - Database connection pooling
 - API rate limiting and caching strategies
 - Horizontal scaling considerations for multi-instance deployments
 - CDN configuration for static assets
+- Transfer validation performance with large account/asset datasets
 
-This implementation provides a complete, production-ready portfolio tracking application with all MVP requirements fulfilled and additional enterprise-grade features for reliability and maintainability.
+This implementation provides a complete, production-ready portfolio tracking application with all MVP requirements fulfilled, additional enterprise-grade features for reliability and maintainability, and comprehensive transfer functionality for cross-account asset movements.

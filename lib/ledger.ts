@@ -8,9 +8,13 @@ export const ALLOWED_TX_TYPES = [
   'OTHER',
   'HEDGE',
   'COST_BASIS_RESET',
+  'TRANSFER',
 ] as const;
 
 export type LedgerTxType = (typeof ALLOWED_TX_TYPES)[number];
+
+export const TRANSFER_TX_TYPES = ['TRANSFER'] as const;
+export type TransferTxType = (typeof TRANSFER_TX_TYPES)[number];
 
 export function isAllowedTxType(value: string | undefined): value is LedgerTxType {
   if (!value) {
