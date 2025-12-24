@@ -413,9 +413,10 @@ export function LedgerForm({
           return;
         }
 
-        // Parse the quantity to ensure it's a valid number
-        const qtyNumber = Number(trimmedQuantity);
-        if (!Number.isFinite(qtyNumber)) {
+        // Parse the quantity to ensure it's a valid number (supports comma-formatted input)
+        const qtyParsed = parseLedgerDecimal(trimmedQuantity);
+        const qtyNumber = decimalValueToNumber(qtyParsed);
+        if (qtyParsed === null || qtyParsed === undefined || qtyNumber === null || !Number.isFinite(qtyNumber)) {
           setError('Quantity must be a valid number.');
           setSubmitting(false);
           return;
@@ -423,7 +424,7 @@ export function LedgerForm({
 
         const basePayload = buildCommonPayload({
           assetId: assetId ? Number(assetId) : NaN,
-          quantity: trimmedQuantity,
+          quantity: qtyParsed!, // Use the parsed quantity string
         });
 
         if (!Number.isFinite(basePayload.asset_id as number)) {
