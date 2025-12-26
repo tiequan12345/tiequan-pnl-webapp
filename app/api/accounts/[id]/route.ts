@@ -135,3 +135,52 @@ export async function PUT(request: Request, context: RouteContext) {
     );
   }
 }
+
+export async function DELETE(request: Request, context: RouteContext) {
+  const id = Number(context.params.id);
+
+  if (!Number.isFinite(id)) {
+    return NextResponse.json(
+      { error: 'Invalid account id.' },
+      { status: 400 },
+    );
+  }
+
+  try {
+    const existing = await prisma.account.findUnique({
+      where: { id },
+    });
+
+    if (!existing) {
+      return NextResponse.json(
+        { error: 'Account not found.' },
+        { status: 404 },
+      );
+    }
+
+    // Check for related ledger transactions
+    const transactionCount = await prisma.ledgerTransaction.count({
+      where: { account_id: id },
+    });
+
+    if (transactionCount > 0) {
+      return NextResponse.json(
+        {
+          error: `Cannot delete account with ${transactionCount} transaction${transactionCount > 1 ? 's' : ''}. Please delete the transactions first.`,
+        },
+        { status: 409 },
+      );
+    }
+
+    await prisma.account.delete({
+      where: { id },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch {
+    return NextResponse.json(
+      { error: 'Failed to delete account.' },
+      { status: 500 },
+    );
+  }
+}

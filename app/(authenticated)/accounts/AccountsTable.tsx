@@ -1,8 +1,8 @@
 'use client';
 
-import Link from 'next/link';
 import { DataTable, type DataTableColumn } from '../_components/table/DataTable';
 import { Badge } from '../_components/ui/Badge';
+import { AccountRowActions } from './AccountRowActions';
 
 type AccountRow = {
   id: number;
@@ -67,14 +67,7 @@ export function AccountsTable({ rows }: AccountsTableProps) {
     {
       id: 'actions',
       header: 'Actions',
-      cell: (row) => (
-        <Link
-          href={`/accounts/${row.id}`}
-          className="text-xs text-blue-400 hover:text-blue-300"
-        >
-          Edit
-        </Link>
-      ),
+      cell: (row) => <AccountRowActions accountId={row.id} />,
       sortable: false,
       align: 'right',
       className: 'text-right',
