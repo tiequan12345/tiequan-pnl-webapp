@@ -2,6 +2,13 @@ import Link from 'next/link';
 import { prisma } from '@/lib/db';
 import { Card } from '../_components/ui/Card';
 import { AccountsTable } from './AccountsTable';
+import { AccountsFilters } from './AccountsFilters';
+
+type AccountsPageProps = {
+  searchParams?: {
+    status?: string;
+  };
+};
 
 type AccountRow = {
   id: number;
@@ -13,12 +20,19 @@ type AccountRow = {
   notes: string | null;
 };
 
-export default async function AccountsPage() {
+export default async function AccountsPage({ searchParams }: AccountsPageProps) {
+  const params = searchParams ?? {};
+  const statusFilter = params.status ?? 'ACTIVE';
+
   const accounts = await prisma.account.findMany({
     orderBy: { name: 'asc' },
   });
 
-  const rows: AccountRow[] = accounts.map((account) => ({
+  const filteredAccounts = accounts.filter(
+    (account) => account.status === statusFilter
+  );
+
+  const rows: AccountRow[] = filteredAccounts.map((account) => ({
     id: account.id,
     name: account.name,
     platform: account.platform,
@@ -43,6 +57,8 @@ export default async function AccountsPage() {
       <div className="text-zinc-400 text-sm">
         Accounts are logical locations where assets are held. These can be CEX, Brokerages, DeFi Projects, or anywhere else that makes sense
       </div>
+
+      <AccountsFilters currentStatus={statusFilter} />
 
       <Card className="p-0">
         <AccountsTable rows={rows} />
