@@ -54,7 +54,14 @@ function buildValuationPayload(
   const setField = (field: ValuationFieldKey, value: string) => {
     const trimmed = value?.trim() ?? '';
     if (trimmed) {
-      payload[field] = trimmed;
+      // Parse and re-format to ensure comma-formatted input is normalized
+      const parsed = parseLedgerDecimal(trimmed);
+      if (parsed !== null && parsed !== undefined) {
+        payload[field] = parsed;
+      } else {
+        // If parsing fails, use original trimmed value
+        payload[field] = trimmed;
+      }
       return;
     }
     if (options?.allowNull) {
@@ -99,13 +106,17 @@ function toLocalDateTimeInput(value: string): string {
   return local.toISOString().slice(0, 16);
 }
 
-function parseFiniteNumber(input: string): number | null {
+// Helper function to parse numbers with comma support for auto-calculations
+function parseFiniteNumberWithCommas(input: string): number | null {
   const trimmed = input.trim();
   if (!trimmed) {
     return null;
   }
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : null;
+  
+  // Use parseLedgerDecimal for comma tolerance, then convert to number
+  const parsed = parseLedgerDecimal(trimmed);
+  const number = decimalValueToNumber(parsed);
+  return number !== null && Number.isFinite(number) ? number : null;
 }
 
 export function LedgerForm({
@@ -239,13 +250,13 @@ export function LedgerForm({
       return;
     }
 
-    const qty = parseFiniteNumber(quantity);
+    const qty = parseFiniteNumberWithCommas(quantity);
     if (qty === null || qty === 0) {
       return;
     }
 
-    const unit = parseFiniteNumber(unitPrice);
-    const total = parseFiniteNumber(totalValue);
+    const unit = parseFiniteNumberWithCommas(unitPrice);
+    const total = parseFiniteNumberWithCommas(totalValue);
 
     if (!unitPriceTouched && (unitPrice.trim() === '' || unit === null) && total !== null) {
       const derivedUnit = total / qty;
@@ -266,10 +277,10 @@ export function LedgerForm({
   useEffect(() => {
     // Transfer-specific valuation auto-derivation
     if (isTransferType) {
-      const qty = parseFiniteNumber(transferQuantity);
+      const qty = parseFiniteNumberWithCommas(transferQuantity);
       if (qty !== null && qty !== 0) {
-        const unit = parseFiniteNumber(transferUnitPrice);
-        const total = parseFiniteNumber(transferTotalValue);
+        const unit = parseFiniteNumberWithCommas(transferUnitPrice);
+        const total = parseFiniteNumberWithCommas(transferTotalValue);
 
         if (!transferUnitPriceTouched && (transferUnitPrice.trim() === '' || unit === null) && total !== null) {
           const derivedUnit = total / qty;
@@ -298,10 +309,10 @@ export function LedgerForm({
       return;
     }
 
-    const qtyIn = parseFiniteNumber(quantityIn);
+    const qtyIn = parseFiniteNumberWithCommas(quantityIn);
     if (qtyIn !== null && qtyIn !== 0) {
-      const unitIn = parseFiniteNumber(assetInUnitPrice);
-      const totalIn = parseFiniteNumber(assetInTotalValue);
+      const unitIn = parseFiniteNumberWithCommas(assetInUnitPrice);
+      const totalIn = parseFiniteNumberWithCommas(assetInTotalValue);
 
       if (
         !assetInUnitPriceTouched &&
@@ -324,11 +335,11 @@ export function LedgerForm({
       }
     }
 
-    const qtyOutRaw = parseFiniteNumber(quantityOut);
+    const qtyOutRaw = parseFiniteNumberWithCommas(quantityOut);
     const qtyOut = qtyOutRaw === null ? null : -Math.abs(qtyOutRaw);
     if (qtyOut !== null && qtyOut !== 0) {
-      const unitOut = parseFiniteNumber(assetOutUnitPrice);
-      const totalOut = parseFiniteNumber(assetOutTotalValue);
+      const unitOut = parseFiniteNumberWithCommas(assetOutUnitPrice);
+      const totalOut = parseFiniteNumberWithCommas(assetOutTotalValue);
 
       if (
         !assetOutUnitPriceTouched &&
@@ -560,10 +571,14 @@ export function LedgerForm({
           return;
         }
 
-        const inQtyNumber = Number(inQtyRaw);
-        const outQtyNumber = Number(outQtyRaw);
+        const inQtyParsed = parseLedgerDecimal(inQtyRaw);
+        const outQtyParsed = parseLedgerDecimal(outQtyRaw);
+        const inQtyNumber = decimalValueToNumber(inQtyParsed);
+        const outQtyNumber = decimalValueToNumber(outQtyParsed);
 
         if (
+          inQtyNumber === null ||
+          outQtyNumber === null ||
           !Number.isFinite(inQtyNumber) ||
           !Number.isFinite(outQtyNumber) ||
           inQtyNumber <= 0 ||
@@ -590,7 +605,7 @@ export function LedgerForm({
 
         const payloadOut = buildCommonPayload({
           assetId: assetOutNumeric,
-          quantity: (-Math.abs(outQtyNumber)).toString(),
+          quantity: (-Math.abs(outQtyNumber!)).toString(),
         });
 
         // Use the new multi-leg API
@@ -613,12 +628,12 @@ export function LedgerForm({
           legs: [
             {
               asset_id: assetInNumeric,
-              quantity: Math.abs(inQtyNumber).toString(),
+              quantity: Math.abs(inQtyNumber!).toString(),
               ...assetInValuations,
             },
             {
               asset_id: assetOutNumeric,
-              quantity: (-Math.abs(outQtyNumber)).toString(),
+              quantity: (-Math.abs(outQtyNumber!)).toString(),
               ...assetOutValuations,
             },
           ],
@@ -659,8 +674,9 @@ export function LedgerForm({
           return;
         }
 
-        const qtyNumber = Number(qtyRaw);
-        if (!Number.isFinite(qtyNumber)) {
+        const qtyParsed = parseLedgerDecimal(qtyRaw);
+        const qtyNumber = decimalValueToNumber(qtyParsed);
+        if (qtyParsed === null || qtyNumber === null || !Number.isFinite(qtyNumber)) {
           setError('Quantity must be a valid number.');
           setSubmitting(false);
           return;
@@ -668,9 +684,9 @@ export function LedgerForm({
 
         // For non-trade types in create mode, apply sign based on transaction type
         if (txType === 'WITHDRAWAL') {
-          signedQtyNumber = -Math.abs(qtyNumber);
+          signedQtyNumber = -Math.abs(qtyNumber!);
         } else {
-          signedQtyNumber = Math.abs(qtyNumber);
+          signedQtyNumber = Math.abs(qtyNumber!);
         }
       }
 
