@@ -866,7 +866,6 @@ export function LedgerForm({
             value={txType}
             onChange={(event) => setTxType(event.target.value as TxType)}
             className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-            disabled={isEditMode}
           >
             {ALLOWED_TX_TYPES.map((type) => (
               <option key={type} value={type}>
