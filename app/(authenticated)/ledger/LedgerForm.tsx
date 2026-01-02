@@ -420,7 +420,7 @@ export function LedgerForm({
     const trimmedNotes = notes.trim();
 
     return {
-      date_time: dateTime,
+      date_time: new Date(dateTime).toISOString(),
       account_id: accountId ? Number(accountId) : undefined,
       asset_id: overrides.assetId,
       quantity: overrides.quantity,
@@ -820,7 +820,7 @@ export function LedgerForm({
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              date_time: dateTime,
+              date_time: new Date(dateTime).toISOString(),
               asset_id: assetNumeric,
               unit_price_in_base: unitPriceTrimmed || null,
               total_value_in_base: totalValueTrimmed || null,
