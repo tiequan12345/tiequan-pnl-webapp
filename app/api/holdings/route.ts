@@ -10,11 +10,19 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
 
     const accountIdsParam = searchParams.get('accountIds') || '';
+    const assetIdsParam = searchParams.get('assetIds') || '';
     const assetTypesParam = searchParams.get('assetTypes') || '';
     const volatilityBucketsParam = searchParams.get('volatilityBuckets') || '';
     const viewParam = searchParams.get('view');
 
     const accountIds = accountIdsParam
+      .split(',')
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0)
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value));
+
+    const assetIds = assetIdsParam
       .split(',')
       .map((value) => value.trim())
       .filter((value) => value.length > 0)
@@ -35,6 +43,7 @@ export async function GET(request: Request) {
 
     const { rows: fetchedRows, summary } = await getHoldings({
       accountIds: accountIds.length > 0 ? accountIds : undefined,
+      assetIds: assetIds.length > 0 ? assetIds : undefined,
       assetTypes: assetTypes.length > 0 ? assetTypes : undefined,
       volatilityBuckets: volatilityBuckets.length > 0 ? volatilityBuckets : undefined,
     });

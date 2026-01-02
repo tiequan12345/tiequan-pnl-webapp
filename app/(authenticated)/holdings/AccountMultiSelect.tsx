@@ -23,6 +23,7 @@ export function AccountMultiSelect({
   label = 'Accounts',
 }: AccountMultiSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -35,6 +36,13 @@ export function AccountMultiSelect({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Reset search when dropdown closes
+  useEffect(() => {
+    if (!isOpen) {
+      setSearchQuery('');
+    }
+  }, [isOpen]);
+
   const handleToggle = (id: string) => {
     if (selectedIds.includes(id)) {
       onChange(selectedIds.filter((currentId) => currentId !== id));
@@ -44,20 +52,32 @@ export function AccountMultiSelect({
   };
 
   const handleSelectAll = () => {
-    onChange(accounts.map((a) => String(a.id)));
+    const filteredAccountIds = filteredAccounts.map(a => String(a.id));
+    const newSelectedIds = Array.from(new Set([...selectedIds, ...filteredAccountIds]));
+    onChange(newSelectedIds);
   };
 
   const handleClear = () => {
-    onChange([]);
+    if (searchQuery) {
+      const filteredAccountIds = filteredAccounts.map(a => String(a.id));
+      onChange(selectedIds.filter(id => !filteredAccountIds.includes(id)));
+    } else {
+      onChange([]);
+    }
   };
+
+  const filteredAccounts = accounts.filter(account =>
+    account.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   const selectedCount = selectedIds.length;
   const isAllSelected = accounts.length > 0 && selectedCount === accounts.length;
+  const isAllFilteredSelected = filteredAccounts.length > 0 && filteredAccounts.every(a => selectedIds.includes(String(a.id)));
 
   return (
     <div className="flex items-center gap-4">
       {label && <span className="text-sm font-medium text-zinc-400">{label}:</span>}
-      
+
       <div className="relative" ref={containerRef}>
         <button
           type="button"
@@ -69,10 +89,10 @@ export function AccountMultiSelect({
             {isLoading
               ? 'Loading...'
               : selectedCount === 0
-              ? 'Select accounts...'
-              : isAllSelected
-              ? 'All accounts selected'
-              : `${selectedCount} account${selectedCount === 1 ? '' : 's'} selected`}
+                ? 'Select accounts...'
+                : isAllSelected
+                  ? 'All accounts selected'
+                  : `${selectedCount} account${selectedCount === 1 ? '' : 's'} selected`}
           </span>
           <svg
             className={`w-4 h-4 ml-2 text-zinc-500 transition-transform ${isOpen ? 'rotate-180' : ''}`}
@@ -86,42 +106,59 @@ export function AccountMultiSelect({
 
         {isOpen && !isLoading && (
           <div className="absolute z-50 w-72 mt-2 origin-top-left border rounded-xl shadow-2xl bg-zinc-950 border-zinc-800 ring-1 ring-black ring-opacity-5 focus:outline-none overflow-hidden left-0">
+            {/* Search Input */}
+            <div className="p-2 border-b border-zinc-800/50 bg-zinc-900/20">
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
+                  <svg className="h-3.5 w-3.5 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="Search accounts..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="block w-full pl-8 pr-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded-md text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:border-blue-500/50"
+                />
+              </div>
+            </div>
+
             <div className="p-2 border-b border-zinc-800/50 flex justify-between bg-zinc-900/50">
               <button
                 type="button"
                 onClick={handleSelectAll}
                 className="text-xs font-medium text-blue-400 hover:text-blue-300 px-2 py-1 rounded hover:bg-blue-400/10 transition-colors"
               >
-                Select All
+                {searchQuery ? 'Select Visible' : 'Select All'}
               </button>
               <button
                 type="button"
                 onClick={handleClear}
                 className="text-xs font-medium text-zinc-500 hover:text-zinc-300 px-2 py-1 rounded hover:bg-zinc-800 transition-colors"
               >
-                Clear
+                {searchQuery ? 'Clear Visible' : 'Clear All'}
               </button>
             </div>
-            
+
             <div className="max-h-[300px] overflow-y-auto p-1 space-y-0.5">
-              {accounts.length > 0 ? (
-                accounts.map((account) => {
+              {filteredAccounts.length > 0 ? (
+                filteredAccounts.map((account) => {
                   const isSelected = selectedIds.includes(String(account.id));
                   return (
                     <div
                       key={account.id}
                       onClick={() => handleToggle(String(account.id))}
-                      className={`flex items-center px-2 py-2 rounded-lg cursor-pointer transition-colors ${
-                        isSelected ? 'bg-blue-500/10' : 'hover:bg-zinc-800/50'
-                      }`}
+                      className={`flex items-center px-2 py-2 rounded-lg cursor-pointer transition-colors ${isSelected ? 'bg-blue-500/10' : 'hover:bg-zinc-800/50'
+                        }`}
                     >
-                      <div className={`flex-shrink-0 w-4 h-4 flex items-center justify-center border rounded transition-colors mr-3 ${
-                        isSelected
-                          ? 'bg-blue-500 border-blue-500'
-                          : 'border-zinc-600 bg-transparent group-hover:border-zinc-500'
-                      }`}>
+                      <div className={`flex-shrink-0 w-3.5 h-3.5 flex items-center justify-center border rounded transition-colors mr-3 ${isSelected
+                        ? 'bg-blue-500 border-blue-500'
+                        : 'border-zinc-700 bg-transparent group-hover:border-zinc-600'
+                        }`}>
                         {isSelected && (
-                          <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                           </svg>
                         )}
@@ -134,13 +171,13 @@ export function AccountMultiSelect({
                 })
               ) : (
                 <div className="px-4 py-3 text-sm text-zinc-500 text-center italic">
-                  No accounts found
+                  {searchQuery ? 'No accounts match search' : 'No accounts found'}
                 </div>
               )}
             </div>
-            
-            {selectedCount > 0 && !isAllSelected && (
-              <div className="px-3 py-2 border-t border-zinc-800/50 bg-zinc-900/30 text-xs text-zinc-500 text-center">
+
+            {selectedCount > 0 && (
+              <div className="px-3 py-2 border-t border-zinc-800/50 bg-zinc-900/30 text-[10px] text-zinc-500 text-center">
                 {selectedCount} of {accounts.length} selected
               </div>
             )}

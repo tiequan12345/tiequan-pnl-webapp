@@ -46,6 +46,7 @@ type HoldingFilters = {
   accountIds?: number[];
   assetTypes?: string[];
   volatilityBuckets?: string[];
+  assetIds?: number[];
 };
 
 export function decimalToNumber(
@@ -137,6 +138,9 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
   const where: Prisma.LedgerTransactionWhereInput = {};
   if (filters?.accountIds && filters.accountIds.length > 0) {
     where.account_id = { in: filters.accountIds };
+  }
+  if (filters?.assetIds && filters.assetIds.length > 0) {
+    where.asset_id = { in: filters.assetIds };
   }
 
   const assetWhere: Prisma.AssetWhereInput = {};
@@ -433,8 +437,8 @@ export function consolidateHoldingsByAsset(rows: HoldingRow[]): HoldingRow[] {
 
     const consolidatedUnrealizedPct =
       aggregatedCostBasis !== null &&
-      aggregatedCostBasis !== 0 &&
-      aggregatedUnrealizedPnl !== null
+        aggregatedCostBasis !== 0 &&
+        aggregatedUnrealizedPnl !== null
         ? (aggregatedUnrealizedPnl / aggregatedCostBasis) * 100
         : null;
 

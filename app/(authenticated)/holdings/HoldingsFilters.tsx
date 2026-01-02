@@ -9,6 +9,7 @@ import { AccountMultiSelect } from './AccountMultiSelect';
 type HoldingsFiltersProps = {
   currentView?: string;
   currentAccountIds?: number[];
+  currentAssetIds?: number[];
   currentAssetTypes?: string[];
   currentVolatilityBuckets?: string[];
   hideViewToggle?: boolean;
@@ -19,9 +20,16 @@ type Account = {
   name: string;
 };
 
+type Asset = {
+  id: number;
+  symbol: string;
+  name: string;
+};
+
 export function HoldingsFilters({
-  currentView = 'consolidated',
+  currentView = 'per-account',
   currentAccountIds = [],
+  currentAssetIds = [],
   currentAssetTypes = [],
   currentVolatilityBuckets = [],
   hideViewToggle = false,
@@ -30,28 +38,38 @@ export function HoldingsFilters({
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [topAssets, setTopAssets] = useState<Asset[]>([]);
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>(
     currentAccountIds.map(id => String(id))
   );
   const [isLoading, setIsLoading] = useState(true);
 
-  // Fetch accounts on component mount
+  // Fetch accounts and top assets on component mount
   useEffect(() => {
-    const fetchAccounts = async () => {
+    const fetchData = async () => {
       try {
-        const response = await fetch('/api/accounts');
-        if (response.ok) {
-          const data = await response.json();
+        const [accountsRes, topAssetsRes] = await Promise.all([
+          fetch('/api/accounts'),
+          fetch('/api/assets/top')
+        ]);
+
+        if (accountsRes.ok) {
+          const data = await accountsRes.json();
           setAccounts(data);
         }
+
+        if (topAssetsRes.ok) {
+          const data = await topAssetsRes.json();
+          setTopAssets(data);
+        }
       } catch (error) {
-        console.error('Failed to fetch accounts:', error);
+        console.error('Failed to fetch filter data:', error);
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchAccounts();
+    fetchData();
   }, []);
 
   // Update selected account IDs when currentAccountIds prop changes
@@ -62,27 +80,32 @@ export function HoldingsFilters({
   const buildUrl = (updates: {
     view?: string;
     accountIds?: number[];
+    assetIds?: number[];
     assetTypes?: string[];
     volatilityBuckets?: string[];
   }) => {
     const params = new URLSearchParams();
-    
-    if (updates.view && updates.view !== 'consolidated') {
+
+    if (updates.view && updates.view !== 'per-account') {
       params.set('view', updates.view);
     }
-    
+
     if (updates.accountIds && updates.accountIds.length > 0) {
       params.set('accountIds', updates.accountIds.join(','));
     }
-    
+
+    if (updates.assetIds && updates.assetIds.length > 0) {
+      params.set('assetIds', updates.assetIds.join(','));
+    }
+
     if (updates.assetTypes && updates.assetTypes.length > 0) {
       params.set('assetTypes', updates.assetTypes.join(','));
     }
-    
+
     if (updates.volatilityBuckets && updates.volatilityBuckets.length > 0) {
       params.set('volatilityBuckets', updates.volatilityBuckets.join(','));
     }
-    
+
     const queryString = params.toString();
     const targetPath = pathname ?? '/holdings';
     return queryString ? `${targetPath}?${queryString}` : targetPath;
@@ -90,13 +113,13 @@ export function HoldingsFilters({
 
   const updateUrlWithAccountIds = (newAccountIds: number[]) => {
     const params = new URLSearchParams(searchParams.toString());
-    
+
     if (newAccountIds.length > 0) {
       params.set('accountIds', newAccountIds.join(','));
     } else {
       params.delete('accountIds');
     }
-    
+
     const search = params.toString();
     router.push(search ? `${pathname}?${search}` : pathname);
   };
@@ -106,11 +129,26 @@ export function HoldingsFilters({
     const newAssetTypes = currentAssetTypes.includes(assetType)
       ? currentAssetTypes.filter(t => t !== assetType)
       : [...currentAssetTypes, assetType];
-    
+
     return buildUrl({
       view: currentView,
       accountIds: currentAccountIds,
+      assetIds: currentAssetIds,
       assetTypes: newAssetTypes,
+      volatilityBuckets: currentVolatilityBuckets,
+    });
+  };
+
+  const toggleAssetId = (assetId: number) => {
+    const newAssetIds = currentAssetIds.includes(assetId)
+      ? currentAssetIds.filter(id => id !== assetId)
+      : [...currentAssetIds, assetId];
+
+    return buildUrl({
+      view: currentView,
+      accountIds: currentAccountIds,
+      assetIds: newAssetIds,
+      assetTypes: currentAssetTypes,
       volatilityBuckets: currentVolatilityBuckets,
     });
   };
@@ -119,10 +157,11 @@ export function HoldingsFilters({
     const newVolatilityBuckets = currentVolatilityBuckets.includes(volatilityBucket)
       ? currentVolatilityBuckets.filter(v => v !== volatilityBucket)
       : [...currentVolatilityBuckets, volatilityBucket];
-    
+
     return buildUrl({
       view: currentView,
       accountIds: currentAccountIds,
+      assetIds: currentAssetIds,
       assetTypes: currentAssetTypes,
       volatilityBuckets: newVolatilityBuckets,
     });
@@ -138,21 +177,19 @@ export function HoldingsFilters({
             <div className="inline-flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-lg p-1">
               <Link
                 href={buildUrl({ view: 'per-account', accountIds: currentAccountIds, assetTypes: currentAssetTypes, volatilityBuckets: currentVolatilityBuckets })}
-                className={`px-3 py-1.5 text-sm rounded-md transition ${
-                  currentView === 'per-account'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-zinc-300 hover:text-white'
-                }`}
+                className={`px-3 py-1.5 text-sm rounded-md transition ${currentView === 'per-account'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-zinc-300 hover:text-white'
+                  }`}
               >
                 Per Account
               </Link>
               <Link
                 href={buildUrl({ view: 'consolidated', accountIds: currentAccountIds, assetTypes: currentAssetTypes, volatilityBuckets: currentVolatilityBuckets })}
-                className={`px-3 py-1.5 text-sm rounded-md transition ${
-                  currentView === 'consolidated'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-zinc-300 hover:text-white'
-                }`}
+                className={`px-3 py-1.5 text-sm rounded-md transition ${currentView === 'consolidated'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-zinc-300 hover:text-white'
+                  }`}
               >
                 Consolidated
               </Link>
@@ -175,17 +212,47 @@ export function HoldingsFilters({
         />
       )}
 
+      {/* Top Assets Filter */}
+      {topAssets.length > 0 && (
+        <div className="flex items-center gap-4">
+          <span className="text-sm font-medium text-zinc-400">Assets:</span>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href={buildUrl({ view: currentView, accountIds: currentAccountIds, assetIds: [], assetTypes: currentAssetTypes, volatilityBuckets: currentVolatilityBuckets })}
+              className={`px-3 py-1.5 text-sm rounded-md transition ${currentAssetIds.length === 0
+                ? 'bg-emerald-600 text-white'
+                : 'text-zinc-300 hover:text-white border border-zinc-700'
+                }`}
+            >
+              All Assets
+            </Link>
+            {topAssets.map((asset) => (
+              <Link
+                key={asset.id}
+                href={toggleAssetId(asset.id)}
+                className={`px-3 py-1.5 text-sm rounded-md transition ${currentAssetIds.includes(asset.id)
+                  ? 'bg-emerald-600 text-white'
+                  : 'text-zinc-300 hover:text-white border border-zinc-700'
+                  }`}
+                title={asset.name}
+              >
+                {asset.symbol}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Asset Type Filter */}
       <div className="flex items-center gap-4">
         <span className="text-sm font-medium text-zinc-400">Type:</span>
         <div className="flex flex-wrap gap-2">
           <Link
-            href={buildUrl({ view: currentView, accountIds: currentAccountIds, assetTypes: [], volatilityBuckets: currentVolatilityBuckets })}
-            className={`px-3 py-1.5 text-sm rounded-md transition ${
-              currentAssetTypes.length === 0
-                ? 'bg-blue-600 text-white'
-                : 'text-zinc-300 hover:text-white border border-zinc-700'
-            }`}
+            href={buildUrl({ view: currentView, accountIds: currentAccountIds, assetIds: currentAssetIds, assetTypes: [], volatilityBuckets: currentVolatilityBuckets })}
+            className={`px-3 py-1.5 text-sm rounded-md transition ${currentAssetTypes.length === 0
+              ? 'bg-blue-600 text-white'
+              : 'text-zinc-300 hover:text-white border border-zinc-700'
+              }`}
           >
             All
           </Link>
@@ -193,11 +260,10 @@ export function HoldingsFilters({
             <Link
               key={assetType}
               href={toggleAssetType(assetType)}
-              className={`px-3 py-1.5 text-sm rounded-md transition ${
-                currentAssetTypes.includes(assetType)
-                  ? 'bg-blue-600 text-white'
-                  : 'text-zinc-300 hover:text-white border border-zinc-700'
-              }`}
+              className={`px-3 py-1.5 text-sm rounded-md transition ${currentAssetTypes.includes(assetType)
+                ? 'bg-blue-600 text-white'
+                : 'text-zinc-300 hover:text-white border border-zinc-700'
+                }`}
             >
               {assetType}
             </Link>
@@ -210,12 +276,11 @@ export function HoldingsFilters({
         <span className="text-sm font-medium text-zinc-400">Volatility:</span>
         <div className="flex flex-wrap gap-2">
           <Link
-            href={buildUrl({ view: currentView, accountIds: currentAccountIds, assetTypes: currentAssetTypes, volatilityBuckets: [] })}
-            className={`px-3 py-1.5 text-sm rounded-md transition ${
-              currentVolatilityBuckets.length === 0
-                ? 'bg-blue-600 text-white'
-                : 'text-zinc-300 hover:text-white border border-zinc-700'
-            }`}
+            href={buildUrl({ view: currentView, accountIds: currentAccountIds, assetIds: currentAssetIds, assetTypes: currentAssetTypes, volatilityBuckets: [] })}
+            className={`px-3 py-1.5 text-sm rounded-md transition ${currentVolatilityBuckets.length === 0
+              ? 'bg-blue-600 text-white'
+              : 'text-zinc-300 hover:text-white border border-zinc-700'
+              }`}
           >
             All
           </Link>
@@ -223,11 +288,10 @@ export function HoldingsFilters({
             <Link
               key={volatilityBucket}
               href={toggleVolatilityBucket(volatilityBucket)}
-              className={`px-3 py-1.5 text-sm rounded-md transition ${
-                currentVolatilityBuckets.includes(volatilityBucket)
-                  ? 'bg-blue-600 text-white'
-                  : 'text-zinc-300 hover:text-white border border-zinc-700'
-              }`}
+              className={`px-3 py-1.5 text-sm rounded-md transition ${currentVolatilityBuckets.includes(volatilityBucket)
+                ? 'bg-blue-600 text-white'
+                : 'text-zinc-300 hover:text-white border border-zinc-700'
+                }`}
             >
               {volatilityBucket}
             </Link>

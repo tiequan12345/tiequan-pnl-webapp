@@ -16,6 +16,7 @@ type HoldingsPageProps = {
   searchParams?: {
     view?: string;
     accountIds?: string;
+    assetIds?: string;
     assetTypes?: string;
     volatilityBuckets?: string;
   };
@@ -50,9 +51,10 @@ function parseStringList(value?: string) {
 
 export default async function HoldingsPage({ searchParams }: HoldingsPageProps) {
   const params = searchParams ?? {};
-  const viewMode = params.view === 'per-account' ? 'per-account' : 'consolidated';
+  const viewMode = params.view === 'consolidated' ? 'consolidated' : 'per-account';
 
   const accountIds = parseNumberList(params.accountIds);
+  const assetIds = parseNumberList(params.assetIds);
   const assetTypes = parseStringList(params.assetTypes);
   const volatilityBuckets = parseStringList(params.volatilityBuckets);
 
@@ -60,6 +62,7 @@ export default async function HoldingsPage({ searchParams }: HoldingsPageProps) 
     getAppSettings(),
     getHoldings({
       accountIds: accountIds.length > 0 ? accountIds : undefined,
+      assetIds: assetIds.length > 0 ? assetIds : undefined,
       assetTypes: assetTypes.length > 0 ? assetTypes : undefined,
       volatilityBuckets: volatilityBuckets.length > 0 ? volatilityBuckets : undefined,
     }),
@@ -98,6 +101,7 @@ export default async function HoldingsPage({ searchParams }: HoldingsPageProps) 
       <HoldingsFilters
         currentView={viewMode}
         currentAccountIds={accountIds}
+        currentAssetIds={assetIds}
         currentAssetTypes={assetTypes}
         currentVolatilityBuckets={volatilityBuckets}
       />
