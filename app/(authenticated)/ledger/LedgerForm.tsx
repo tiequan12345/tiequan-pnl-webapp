@@ -112,7 +112,7 @@ function parseFiniteNumberWithCommas(input: string): number | null {
   if (!trimmed) {
     return null;
   }
-  
+
   // Use parseLedgerDecimal for comma tolerance, then convert to number
   const parsed = parseLedgerDecimal(trimmed);
   const number = decimalValueToNumber(parsed);
@@ -225,13 +225,50 @@ export function LedgerForm({
   const [assetOutTotalValueTouched, setAssetOutTotalValueTouched] = useState<boolean>(false);
 
   // Transfer-specific state
-  const [transferFromAccountId, setTransferFromAccountId] = useState<string>('');
-  const [transferToAccountId, setTransferToAccountId] = useState<string>('');
-  const [transferAssetId, setTransferAssetId] = useState<string>('');
-  const [transferQuantity, setTransferQuantity] = useState<string>('');
-  const [transferUnitPrice, setTransferUnitPrice] = useState<string>('');
-  const [transferTotalValue, setTransferTotalValue] = useState<string>('');
-  const [transferFee, setTransferFee] = useState<string>('');
+  const [transferFromAccountId, setTransferFromAccountId] = useState<string>(() => {
+    if (mode === 'edit' && initialValues && TRANSFER_TYPES.includes(initialValues.tx_type as TxType)) {
+      const qty = parseFloat(initialValues.quantity);
+      if (qty < 0) return String(initialValues.account_id);
+    }
+    return '';
+  });
+  const [transferToAccountId, setTransferToAccountId] = useState<string>(() => {
+    if (mode === 'edit' && initialValues && TRANSFER_TYPES.includes(initialValues.tx_type as TxType)) {
+      const qty = parseFloat(initialValues.quantity);
+      if (qty >= 0) return String(initialValues.account_id);
+    }
+    return '';
+  });
+  const [transferAssetId, setTransferAssetId] = useState<string>(() => {
+    if (mode === 'edit' && initialValues && TRANSFER_TYPES.includes(initialValues.tx_type as TxType)) {
+      return String(initialValues.asset_id);
+    }
+    return '';
+  });
+  const [transferQuantity, setTransferQuantity] = useState<string>(() => {
+    if (mode === 'edit' && initialValues && TRANSFER_TYPES.includes(initialValues.tx_type as TxType)) {
+      return Math.abs(parseFloat(initialValues.quantity)).toString();
+    }
+    return '';
+  });
+  const [transferUnitPrice, setTransferUnitPrice] = useState<string>(() => {
+    if (mode === 'edit' && initialValues && TRANSFER_TYPES.includes(initialValues.tx_type as TxType)) {
+      return initialValues.unit_price_in_base || '';
+    }
+    return '';
+  });
+  const [transferTotalValue, setTransferTotalValue] = useState<string>(() => {
+    if (mode === 'edit' && initialValues && TRANSFER_TYPES.includes(initialValues.tx_type as TxType)) {
+      return initialValues.total_value_in_base || '';
+    }
+    return '';
+  });
+  const [transferFee, setTransferFee] = useState<string>(() => {
+    if (mode === 'edit' && initialValues && TRANSFER_TYPES.includes(initialValues.tx_type as TxType)) {
+      return initialValues.fee_in_base || '';
+    }
+    return '';
+  });
   const [transferUnitPriceTouched, setTransferUnitPriceTouched] = useState<boolean>(false);
   const [transferTotalValueTouched, setTransferTotalValueTouched] = useState<boolean>(false);
 
@@ -239,7 +276,7 @@ export function LedgerForm({
   const [error, setError] = useState<string | null>(null);
 
   const isTradeType = !isEditMode && TRADE_TYPES.includes(txType);
-  const isTransferType = !isEditMode && TRANSFER_TYPES.includes(txType);
+  const isTransferType = TRANSFER_TYPES.includes(txType);
   const isCostBasisReset = txType === 'COST_BASIS_RESET';
 
   useEffect(() => {
@@ -417,26 +454,90 @@ export function LedgerForm({
           return;
         }
 
-        const trimmedQuantity = quantity.trim();
-        if (!trimmedQuantity) {
-          setError('Quantity is required.');
-          setSubmitting(false);
-          return;
-        }
+        let targetAssetId = assetId ? Number(assetId) : NaN;
+        let targetQuantity = quantity;
+        let targetValuations = { unitPrice, totalValue, fee };
+        let targetAccountId = accountId;
 
-        // Parse the quantity to ensure it's a valid number (supports comma-formatted input)
-        const qtyParsed = parseLedgerDecimal(trimmedQuantity);
-        const qtyNumber = decimalValueToNumber(qtyParsed);
-        if (qtyParsed === null || qtyParsed === undefined || qtyNumber === null || !Number.isFinite(qtyNumber)) {
-          setError('Quantity must be a valid number.');
-          setSubmitting(false);
-          return;
+        // If editing a transfer, map transfer fields back to payload
+        if (isTransferType) {
+          const qtyParsed = parseLedgerDecimal(transferQuantity);
+          const qtyNumber = decimalValueToNumber(qtyParsed);
+
+          if (qtyParsed === null || qtyParsed === undefined || qtyNumber === null || qtyNumber <= 0) {
+            setError('Transfer quantity must be a positive number.');
+            setSubmitting(false);
+            return;
+          }
+
+          targetAssetId = transferAssetId ? Number(transferAssetId) : NaN;
+          targetValuations = {
+            unitPrice: transferUnitPrice,
+            totalValue: transferTotalValue,
+            fee: transferFee,
+          };
+
+          // Determine direction based on initial state or filled fields
+          const initialQty = initialValues ? parseFloat(initialValues.quantity) : 0;
+          const wasSource = initialQty < 0;
+
+          if (wasSource) {
+            // We were the source (negative). Prefer From Account.
+            if (transferFromAccountId) {
+              targetAccountId = transferFromAccountId;
+              targetQuantity = (-Math.abs(qtyNumber)).toString();
+            } else if (transferToAccountId) {
+              // User presumably flipped it
+              targetAccountId = transferToAccountId;
+              targetQuantity = Math.abs(qtyNumber).toString();
+            } else {
+              setError('From Account is required for this transfer leg.');
+              setSubmitting(false);
+              return;
+            }
+          } else {
+            // We were destination (positive). Prefer To Account.
+            if (transferToAccountId) {
+              targetAccountId = transferToAccountId;
+              targetQuantity = Math.abs(qtyNumber).toString();
+            } else if (transferFromAccountId) {
+              // User presumably flipped it
+              targetAccountId = transferFromAccountId;
+              targetQuantity = (-Math.abs(qtyNumber)).toString();
+            } else {
+              setError('To Account is required for this transfer leg.');
+              setSubmitting(false);
+              return;
+            }
+          }
+        } else {
+          // Standard validation for non-transfer edits
+          const trimmedQuantity = quantity.trim();
+          if (!trimmedQuantity) {
+            setError('Quantity is required.');
+            setSubmitting(false);
+            return;
+          }
+
+          const qtyParsed = parseLedgerDecimal(trimmedQuantity);
+          const qtyNumber = decimalValueToNumber(qtyParsed);
+          if (qtyParsed === null || qtyParsed === undefined || qtyNumber === null || !Number.isFinite(qtyNumber)) {
+            setError('Quantity must be a valid number.');
+            setSubmitting(false);
+            return;
+          }
+          // targetQuantity is already set to quantity string
         }
 
         const basePayload = buildCommonPayload({
-          assetId: assetId ? Number(assetId) : NaN,
-          quantity: qtyParsed!, // Use the parsed quantity string
+          assetId: targetAssetId,
+          quantity: targetQuantity,
         });
+
+        // Override account if derived from transfer fields
+        if (isTransferType) {
+          basePayload.account_id = targetAccountId ? Number(targetAccountId) : undefined;
+        }
 
         if (!Number.isFinite(basePayload.asset_id as number)) {
           setError('Asset is required.');
@@ -444,9 +545,14 @@ export function LedgerForm({
           return;
         }
 
+        const editValuationPayload = buildValuationPayload(
+          targetValuations,
+          { allowNull: true },
+        );
+
         const payload = {
           ...basePayload,
-          ...valuationPayload,
+          ...editValuationPayload,
         };
 
         const response = await fetch(`/api/ledger/${transactionId}`, {
