@@ -133,36 +133,46 @@ export function LedgerTable({ rows }: LedgerTableProps) {
       ),
       sortable: true,
       footer: (rows) => <span className="text-zinc-400 font-medium pl-2">Total ({rows.length})</span>,
+      headerClassName: 'w-[160px]',
     },
     {
       id: 'accountName',
       header: 'Account',
       accessor: (row) => row.accountName,
       cell: (row) => (
-        <span className="text-zinc-200 font-semibold">{row.accountName}</span>
+        <span className="text-zinc-200 font-semibold block truncate" title={row.accountName}>
+          {row.accountName}
+        </span>
       ),
       sortable: true,
+      headerClassName: 'w-[15%]',
     },
     {
       id: 'assetLabel',
       header: 'Asset',
       accessor: (row) => row.assetLabel,
-      cell: (row) => <span className="text-zinc-300">{row.assetLabel}</span>,
+      cell: (row) => (
+        <span className="text-zinc-300 block truncate" title={row.assetLabel}>
+          {row.assetLabel}
+        </span>
+      ),
       sortable: true,
+      headerClassName: 'w-[15%]',
     },
     {
       id: 'txType',
       header: 'Tx Type',
       accessor: (row) => row.txType,
-      cell: (row) => <span className="text-zinc-400">{row.txType}</span>,
+      cell: (row) => <span className="text-zinc-400 block truncate">{row.txType}</span>,
       sortable: true,
+      headerClassName: 'w-[100px]',
     },
     {
       id: 'quantityValue',
       header: 'Quantity',
       accessor: (row) => row.quantityValue,
       cell: (row) => (
-        <span className="text-zinc-300">
+        <span className="text-zinc-300 whitespace-nowrap">
           {row.quantity.startsWith('-') ? row.quantity : `+${row.quantity}`}
         </span>
       ),
@@ -173,20 +183,24 @@ export function LedgerTable({ rows }: LedgerTableProps) {
       footer: (rows) => {
         const total = rows.reduce((sum, row) => sum + row.quantityValue, 0);
         return (
-          <span className="text-zinc-200 font-medium">
+          <span className="text-zinc-200 font-medium whitespace-nowrap">
             {total > 0 ? '+' : ''}{total.toLocaleString(undefined, { maximumFractionDigits: 8 })}
           </span>
         );
       },
+      headerClassName: 'w-[15%]',
     },
     {
       id: 'notes',
       header: 'Notes',
       accessor: (row) => row.notes ?? '—',
       cell: (row) => (
-        <span className="text-zinc-500 max-w-xs truncate">{row.notes ?? '—'}</span>
+        <span className="text-zinc-500 block truncate" title={row.notes ?? ''}>
+          {row.notes ?? '—'}
+        </span>
       ),
       sortable: true,
+      headerClassName: 'w-auto',
     },
     {
       id: 'actions',
@@ -195,6 +209,7 @@ export function LedgerTable({ rows }: LedgerTableProps) {
       sortable: false,
       align: 'right',
       className: 'text-right',
+      headerClassName: 'w-[120px]',
     },
   ];
 
@@ -220,6 +235,7 @@ export function LedgerTable({ rows }: LedgerTableProps) {
         enableSelection={true}
         selectedRowIds={selectedIds}
         onSelectionChange={setSelectedIds}
+        tableClassName="table-fixed w-full"
       />
 
       {selectedIds.size > 0 && (
