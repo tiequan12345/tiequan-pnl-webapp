@@ -153,6 +153,18 @@ All core phases (0-6) are complete with the following key features implemented:
 - Ensured valuation consistency between transfer legs to preserve cost basis
 - Holdings calculations automatically handle transfer legs per account
 
+### Issue 11: Unmatched Transfer Resolution ✅
+**Problem**: Cost basis recalculation could fail to pair transfer legs if dates/quantities mismatches occurred (e.g. from disparate csv imports or timezones), resulting in "UNMATCHED" warnings.
+
+**Solution**: Implemented interactive resolution workflow:
+- **Enriched Diagnostics**: API now returns full leg details (account, asset, date, qty) for unmatched items.
+- **Interactive UI**: New `UnmatchedDiagnosticsViewer` in Settings allows users to "Match Together" or "Treat as Separate" directly.
+- **Match Logic**: 
+  - Syncs timestamps of selected legs.
+  - Applies a unique `MATCH:<uuid>` external reference.
+  - Cost basis engine respects `MATCH:` prefix to force-group legs even if quantities differ (handling fee discrepancies).
+- **Separate Logic**: Converts legs to independent `DEPOSIT` / `WITHDRAWAL` entries.
+
 ## Technical Architecture
 
 ### Authentication & Middleware
@@ -254,6 +266,10 @@ All core phases (0-6) are complete with the following key features implemented:
   - Response includes `created`, `skippedUnknown`, `skippedZeroQuantity`, and `diagnostics` for transfer pairing issues.
   - Diagnostics are also logged server-side with a `[cost-basis-recalc]` prefix for quick visibility.
 - **Transfer Support**: Multi-leg POST with per-leg `account_id` for account-to-account movements
+- `POST /api/ledger/resolve-transfer` - Resolve unmatched diagnostics.
+  - Request: `{ "legIds": [id1, id2], "action": "MATCH|SEPARATE" }`
+  - `MATCH`: Syncs timestamps and sets `external_reference="MATCH:<uuid>"`.
+  - `SEPARATE`: Changes type to DEPOSIT/WITHDRAWAL.
 
 #### Import/Export
 - `POST /api/ledger/import/parse` - CSV parsing and validation
@@ -360,6 +376,12 @@ All core phases (0-6) are complete with the following key features implemented:
 - Asset and quantity inputs for transfer
 - Valuation fields shared across both legs
 - Validation to prevent same-account transfers
+
+#### Settings & Diagnostics
+- `UnmatchedDiagnosticsViewer` - Interactive component for cost basis issues
+- Support for multi-select matching and resolution actions
+- Real-time status feedback during resolution
+
 
 #### Charts & Visualization
 - `HoldingsAllocationCharts` - Portfolio allocation pie charts

@@ -420,7 +420,9 @@ The application includes a settings system for configuration:
 
 Access settings through the authenticated `/settings` page.
 - Includes a cost basis recalculation trigger that calls `POST /api/ledger/cost-basis-recalc`.
-- Transfer pairing diagnostics are returned in the response and logged server-side for review.
+- **Interactive Transfer Resolution**: Unmatched transfer legs are displayed with an interface to easy resolve them:
+  - **Match Together**: Forces separate transactions to be treated as a single transfer by syncing timestamps and ID.
+  - **Treat as Separate**: Converts generic transfers into independent Deposits/Withdrawals to clear warnings.
 
 ## Development
 

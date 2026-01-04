@@ -38,10 +38,12 @@ export async function POST(request: Request) {
     }
 
     const asOfInput = (body.as_of ?? '').trim();
-    const asOf = asOfInput ? parseLedgerDateTime(asOfInput) : new Date();
-    if (asOfInput && !asOf) {
+    const parsedAsOf = asOfInput ? parseLedgerDateTime(asOfInput) : new Date();
+
+    if (!parsedAsOf) {
       return NextResponse.json({ error: 'Invalid as_of.' }, { status: 400 });
     }
+    const asOf = parsedAsOf;
 
     const mode = body.mode ?? 'PURE';
     if (mode !== 'PURE' && mode !== 'HONOR_RESETS') {
@@ -65,12 +67,33 @@ export async function POST(request: Request) {
             symbol: true,
           },
         },
+        account: {
+          select: {
+            name: true,
+          },
+        },
       },
     });
 
     const filtered = transactions.filter((tx) => !isRecalcReset(tx));
 
     const { positions, diagnostics } = recalcCostBasis(filtered, { mode });
+
+    const txMap = new Map(transactions.map((tx) => [tx.id, tx]));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const enrichedDiagnostics = diagnostics.map((d: any) => {
+      const legs = (d.legIds || []).map((id: number) => {
+        const tx = txMap.get(id);
+        return {
+          id,
+          date_time: tx?.date_time,
+          quantity: tx?.quantity,
+          account_name: tx?.account?.name,
+          asset_symbol: tx?.asset?.symbol,
+        };
+      });
+      return { ...d, legs };
+    });
 
     if (diagnostics.length > 0) {
       console.warn('[cost-basis-recalc] transfer diagnostics', diagnostics);
@@ -160,7 +183,7 @@ export async function POST(request: Request) {
       skippedUnknown,
       skippedZeroQuantity,
       external_reference: externalReference,
-      diagnostics,
+      diagnostics: enrichedDiagnostics,
     });
   } catch {
     return NextResponse.json(

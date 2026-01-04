@@ -12,8 +12,8 @@ export type RecalcTransaction = {
   quantity: string | number | DecimalLike;
   tx_type: string;
   external_reference: string | null;
-  total_value_in_base: string | number | null;
-  unit_price_in_base: string | number | null;
+  total_value_in_base: string | number | DecimalLike | null;
+  unit_price_in_base: string | number | DecimalLike | null;
   asset: {
     type: string | null;
     volatility_bucket: string | null;
@@ -119,9 +119,12 @@ function getOrCreatePosition(
 }
 
 function buildTransferKey(tx: RecalcTransaction): string {
+  const reference = (tx.external_reference ?? '').trim();
+  if (reference.startsWith('MATCH:')) {
+    return `${tx.asset_id}|${reference}`;
+  }
   const qtyNumber = Math.abs(toNumber(tx.quantity) ?? 0);
   const dateKey = tx.date_time.toISOString();
-  const reference = (tx.external_reference ?? '').trim();
   return `${tx.asset_id}|${dateKey}|${qtyNumber}|${reference}`;
 }
 
@@ -255,17 +258,24 @@ export function recalcCostBasis(
     const qtyA = toNumber(legA.quantity);
     const qtyB = toNumber(legB.quantity);
 
-    const invalidLegs =
-      qtyA === null ||
-      qtyB === null ||
-      qtyA === 0 ||
-      qtyB === 0 ||
+    // Refined validation:
+    const isManualMatch = (legA.external_reference || '').startsWith('MATCH:');
+
+    const quantitiesValid = qtyA !== null && qtyB !== null;
+    const signsDiffer = quantitiesValid && ((qtyA > 0 && qtyB < 0) || (qtyA < 0 && qtyB > 0));
+
+    // Strict equality check for auto-matched items
+    const strictBalance = quantitiesValid && !isManualMatch &&
+      (Math.abs(qtyA + qtyB) > 1e-9 || Math.abs(Math.abs(qtyA) - Math.abs(qtyB)) > 1e-9);
+
+    if (
+      !quantitiesValid ||
+      qtyA === 0 || qtyB === 0 ||
       legA.asset_id !== legB.asset_id ||
       legA.account_id === legB.account_id ||
-      Math.abs(qtyA + qtyB) > 1e-9 ||
-      Math.abs(Math.abs(qtyA) - Math.abs(qtyB)) > 1e-9;
-
-    if (invalidLegs) {
+      !signsDiffer ||
+      strictBalance
+    ) {
       diagnostics.push({
         key: transferKey,
         assetId: legA.asset_id,
@@ -279,9 +289,14 @@ export function recalcCostBasis(
       continue;
     }
 
-    const sourceLeg = qtyA < 0 ? legA : legB;
+    // At this point, we know qtyA and qtyB are numbers.
+    const validQtyA = qtyA as number;
+    // const validQtyB = qtyB as number;
+
+    const sourceLeg = validQtyA < 0 ? legA : legB;
     const destLeg = sourceLeg === legA ? legB : legA;
-    const moveQuantity = Math.abs(qtyA);
+
+    const transferQty = Math.abs(toNumber(sourceLeg.quantity) ?? 0);
 
     const sourcePosition = getOrCreatePosition(positions, sourceLeg);
     const destPosition = getOrCreatePosition(positions, destLeg);
@@ -298,7 +313,7 @@ export function recalcCostBasis(
     }
 
     const averageCost = sourcePosition.costBasis / sourceQtyBefore;
-    const movedBasis = averageCost * moveQuantity;
+    const movedBasis = averageCost * transferQty;
 
     if (!Number.isFinite(movedBasis)) {
       destPosition.costBasisKnown = false;

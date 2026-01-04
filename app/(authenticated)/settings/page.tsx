@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 
 import { Card } from '../_components/ui/Card';
+import { UnmatchedDiagnosticsViewer, type EnrichedDiagnostic } from './_components/UnmatchedDiagnosticsViewer';
 
 type SettingsState = {
   baseCurrency: string;
@@ -20,14 +21,6 @@ const INITIAL_SETTINGS: SettingsState = {
   priceRefreshEndpoint: '/api/prices/refresh',
 };
 
-type TransferDiagnostic = {
-  key: string;
-  assetId: number;
-  dateTime: string;
-  issue: 'UNMATCHED' | 'AMBIGUOUS' | 'INVALID_LEGS';
-  legIds: number[];
-};
-
 export default function SettingsPage() {
   const [settings, setSettings] = useState<SettingsState>(INITIAL_SETTINGS);
   const [loading, setLoading] = useState(true);
@@ -40,7 +33,7 @@ export default function SettingsPage() {
   const [recalcNotes, setRecalcNotes] = useState<string>('');
   const [recalcStatus, setRecalcStatus] = useState<string | null>(null);
   const [recalcDiagnostics, setRecalcDiagnostics] = useState<number | null>(null);
-  const [recalcDiagnosticsList, setRecalcDiagnosticsList] = useState<TransferDiagnostic[] | null>(null);
+  const [recalcDiagnosticsList, setRecalcDiagnosticsList] = useState<EnrichedDiagnostic[] | null>(null);
   const [recalcError, setRecalcError] = useState<string | null>(null);
   const [recalcSubmitting, setRecalcSubmitting] = useState<boolean>(false);
 
@@ -113,19 +106,20 @@ export default function SettingsPage() {
 
       const data = (await res.json().catch(() => null)) as
         | {
-            created?: number;
-            skippedUnknown?: number;
-            skippedZeroQuantity?: number;
-            diagnostics?: unknown[];
-          }
+          created?: number;
+          skippedUnknown?: number;
+          skippedZeroQuantity?: number;
+          diagnostics?: unknown[];
+        }
         | null;
 
       const created = typeof data?.created === 'number' ? data.created : 0;
       const skippedUnknown = typeof data?.skippedUnknown === 'number' ? data.skippedUnknown : 0;
       const skippedZeroQuantity =
         typeof data?.skippedZeroQuantity === 'number' ? data.skippedZeroQuantity : 0;
+
       const diagnosticsList = Array.isArray(data?.diagnostics)
-        ? (data?.diagnostics as TransferDiagnostic[])
+        ? (data?.diagnostics as EnrichedDiagnostic[])
         : [];
       const diagnosticsCount = diagnosticsList.length;
 
@@ -140,6 +134,22 @@ export default function SettingsPage() {
     } finally {
       setRecalcSubmitting(false);
     }
+  };
+
+  const handleResolveTransfer = async (legIds: number[], action: 'MATCH' | 'SEPARATE') => {
+    const res = await fetch('/api/ledger/resolve-transfer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ legIds, action }),
+    });
+
+    if (!res.ok) {
+      throw new Error('Resolution failed');
+    }
+
+    // Instead of optimistically removing, re-run recalc to ensure world state is consistent
+    // and to clear out the diagnostics truly.
+    await handleCostBasisRecalc();
   };
 
   const handleChange = (field: keyof SettingsState, value: string | boolean | number) => {
@@ -317,44 +327,10 @@ export default function SettingsPage() {
           </div>
         )}
         {recalcDiagnosticsList && recalcDiagnosticsList.length > 0 && (
-          <div className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-100">
-            <div className="flex items-center justify-between">
-              <span className="font-medium uppercase tracking-wide text-amber-300">
-                Transfer Diagnostics
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  const payload = JSON.stringify(recalcDiagnosticsList, null, 2);
-                  void navigator.clipboard?.writeText(payload);
-                }}
-                className="text-[11px] px-2 py-1 rounded border border-amber-400/50 text-amber-200 hover:bg-amber-400/10"
-              >
-                Copy JSON
-              </button>
-            </div>
-            <div className="space-y-2">
-              {recalcDiagnosticsList.map((diag) => (
-                <div key={`${diag.key}-${diag.issue}-${diag.legIds.join('-')}`} className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1">
-                  <div>
-                    <span className="font-semibold">Issue:</span> {diag.issue}
-                  </div>
-                  <div>
-                    <span className="font-semibold">Asset ID:</span> {diag.assetId}
-                  </div>
-                  <div>
-                    <span className="font-semibold">Date:</span> {diag.dateTime}
-                  </div>
-                  <div>
-                    <span className="font-semibold">Leg IDs:</span> {diag.legIds.join(', ') || 'n/a'}
-                  </div>
-                  <div className="break-all">
-                    <span className="font-semibold">Key:</span> {diag.key}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <UnmatchedDiagnosticsViewer
+            diagnostics={recalcDiagnosticsList}
+            onResolve={handleResolveTransfer}
+          />
         )}
         <div className="grid gap-4 md:grid-cols-2">
           <label className="space-y-2">
