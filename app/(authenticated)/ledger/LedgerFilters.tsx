@@ -113,85 +113,116 @@ export function LedgerFilters({ accounts, assets, initialFilters }: LedgerFilter
     updateUrl({ txType: value || null });
   };
 
+  const handleExportCsv = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    // Ensure we don't include pagination in the export
+    params.delete('page');
+    params.delete('pageSize');
+
+    window.location.href = `/api/ledger/export?${params.toString()}`;
+  };
+
   return (
-    <div className="flex flex-col md:flex-row md:items-end gap-3">
-      <div className="flex flex-col gap-1">
-        <label className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide">
-          Date From
-        </label>
-        <input
-          type="date"
-          value={dateFrom}
-          onChange={(event) => handleDateFromChange(event.target.value)}
-          className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-        />
+    <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-end gap-3 flex-wrap">
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide">
+            Date From
+          </label>
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(event) => handleDateFromChange(event.target.value)}
+            className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide">
+            Date To
+          </label>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(event) => handleDateToChange(event.target.value)}
+            className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide">
+            Account
+          </label>
+          <select
+            value={accountId}
+            onChange={(event) => handleAccountChange(event.target.value)}
+            className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 min-w-[140px]"
+          >
+            <option value="">All Accounts</option>
+            {accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide">
+            Asset
+          </label>
+          <select
+            value={assetId}
+            onChange={(event) => handleAssetChange(event.target.value)}
+            className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 min-w-[160px]"
+          >
+            <option value="">All Assets</option>
+            {assets.map((asset) => (
+              <option key={asset.id} value={asset.id}>
+                {asset.symbol} ({asset.name})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide">
+            Tx Type
+          </label>
+          <select
+            value={txType}
+            onChange={(event) => handleTxTypeChange(event.target.value)}
+            className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 min-w-[160px]"
+          >
+            <option value="">All Types</option>
+            {ALLOWED_TX_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
-      <div className="flex flex-col gap-1">
-        <label className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide">
-          Date To
-        </label>
-        <input
-          type="date"
-          value={dateTo}
-          onChange={(event) => handleDateToChange(event.target.value)}
-          className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-        />
-      </div>
-
-      <div className="flex flex-col gap-1">
-        <label className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide">
-          Account
-        </label>
-        <select
-          value={accountId}
-          onChange={(event) => handleAccountChange(event.target.value)}
-          className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 min-w-[140px]"
+      <button
+        onClick={handleExportCsv}
+        className="flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white px-4 py-1.5 rounded-lg text-xs font-medium transition-all shadow-sm"
+      >
+        <svg
+          className="w-3.5 h-3.5"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
         >
-          <option value="">All Accounts</option>
-          {accounts.map((account) => (
-            <option key={account.id} value={account.id}>
-              {account.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="flex flex-col gap-1">
-        <label className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide">
-          Asset
-        </label>
-        <select
-          value={assetId}
-          onChange={(event) => handleAssetChange(event.target.value)}
-          className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 min-w-[160px]"
-        >
-          <option value="">All Assets</option>
-          {assets.map((asset) => (
-            <option key={asset.id} value={asset.id}>
-              {asset.symbol} ({asset.name})
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="flex flex-col gap-1">
-        <label className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide">
-          Tx Type
-        </label>
-        <select
-          value={txType}
-          onChange={(event) => handleTxTypeChange(event.target.value)}
-          className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 min-w-[160px]"
-        >
-          <option value="">All Types</option>
-          {ALLOWED_TX_TYPES.map((type) => (
-            <option key={type} value={type}>
-              {type}
-            </option>
-          ))}
-        </select>
-      </div>
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="vertical-align: middle; M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+          />
+        </svg>
+        Export CSV
+      </button>
     </div>
   );
 }

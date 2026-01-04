@@ -14,6 +14,7 @@ export type DataTableColumn<T> = {
   align?: 'left' | 'right';
   className?: string;
   headerClassName?: string;
+  footer?: ReactNode | ((rows: T[]) => ReactNode);
 };
 
 export type GlobalSearch<T> = {
@@ -154,7 +155,7 @@ export function DataTable<T>({
   const allVisibleSelected =
     visibleKeys.length > 0 &&
     visibleKeys.every((key) => selectedRowIds?.has(key));
-  
+
   const someVisibleSelected =
     visibleKeys.some((key) => selectedRowIds?.has(key));
 
@@ -175,14 +176,35 @@ export function DataTable<T>({
     onSelectionChange(newSet);
   };
 
-  const handleSelectRow = (key: string | number) => {
+  const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
+
+  const handleSelectRow = (key: string | number, index: number, event?: React.MouseEvent) => {
     if (!onSelectionChange) return;
     const newSet = new Set(selectedRowIds);
-    if (newSet.has(key)) {
-      newSet.delete(key);
+
+    if (event?.shiftKey && lastSelectedIndex !== null) {
+      const start = Math.min(index, lastSelectedIndex);
+      const end = Math.max(index, lastSelectedIndex);
+
+      const isSelecting = !selectedRowIds?.has(key);
+
+      for (let i = start; i <= end; i++) {
+        const rowKey = visibleKeys[i];
+        if (isSelecting) {
+          newSet.add(rowKey);
+        } else {
+          newSet.delete(rowKey);
+        }
+      }
     } else {
-      newSet.add(key);
+      if (newSet.has(key)) {
+        newSet.delete(key);
+      } else {
+        newSet.add(key);
+      }
     }
+
+    setLastSelectedIndex(index);
     onSelectionChange(newSet);
   };
 
@@ -213,9 +235,8 @@ export function DataTable<T>({
           className={`w-full text-left text-sm text-zinc-400 ${tableClassName ?? ''}`}
         >
           <thead
-            className={`bg-zinc-900/50 border-b border-zinc-800 text-xs uppercase tracking-wide ${
-              stickyHeader ? 'sticky top-0 z-10' : ''
-            }`}
+            className={`bg-zinc-900/50 border-b border-zinc-800 text-xs uppercase tracking-wide ${stickyHeader ? 'sticky top-0 z-10' : ''
+              }`}
           >
             <tr>
               {enableSelection && (
@@ -238,9 +259,8 @@ export function DataTable<T>({
                 return (
                   <th
                     key={column.id}
-                    className={`${padding} font-medium ${alignment} ${
-                      column.headerClassName ?? ''
-                    }`}
+                    className={`${padding} font-medium ${alignment} ${column.headerClassName ?? ''
+                      }`}
                   >
                     {column.sortable ? (
                       <button
@@ -280,19 +300,27 @@ export function DataTable<T>({
                 const key = keyFn ? keyFn(row, index) : index;
                 const padding = dense ? 'px-3 py-2' : 'px-4 py-3';
                 const isSelected = selectedRowIds?.has(key);
-                
+
                 return (
                   <tr
                     key={key}
-                    className={`${isSelected ? 'bg-blue-500/10 hover:bg-blue-500/20' : 'hover:bg-zinc-800/30'} ${rowClassName ? rowClassName(row, index) : ''}`}
-                    onClick={enableSelection ? () => handleSelectRow(key) : undefined}
+                    className={`
+                      relative transition-all duration-150
+                      ${isSelected ? 'bg-blue-600/15 ring-1 ring-inset ring-blue-500/30' : 'hover:bg-zinc-800/40'} 
+                      ${rowClassName ? rowClassName(row, index) : ''}
+                    `}
+                    onClick={enableSelection ? (e) => {
+                      // Don't toggle if we clicked a button, link, or something inside them
+                      if ((e.target as HTMLElement).closest('button, a')) return;
+                      handleSelectRow(key, index, e);
+                    } : undefined}
                   >
                     {enableSelection && (
                       <td className={`w-10 px-4 ${padding}`}>
                         <input
                           type="checkbox"
                           checked={!!isSelected}
-                          onChange={() => handleSelectRow(key)}
+                          onChange={(e) => handleSelectRow(key, index, e as any)}
                           onClick={(e) => e.stopPropagation()}
                           className="rounded border-zinc-700 bg-zinc-800 text-blue-500 focus:ring-blue-500/20 focus:ring-offset-0"
                         />
@@ -324,6 +352,29 @@ export function DataTable<T>({
               })
             )}
           </tbody>
+          {columns.some((col) => col.footer) && (
+            <tfoot className="border-t border-zinc-700 bg-zinc-900/50 font-medium text-zinc-300">
+              <tr>
+                {enableSelection && <td className="px-4 py-3" />}
+                {columns.map((column) => {
+                  const alignment =
+                    column.align === 'right' ? 'text-right' : 'text-left';
+                  const padding = dense ? 'px-3 py-2' : 'px-4 py-3';
+
+                  return (
+                    <td
+                      key={column.id}
+                      className={`${padding} ${alignment} ${column.className ?? ''}`}
+                    >
+                      {typeof column.footer === 'function'
+                        ? column.footer(sortedRows)
+                        : column.footer}
+                    </td>
+                  );
+                })}
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
     </div>

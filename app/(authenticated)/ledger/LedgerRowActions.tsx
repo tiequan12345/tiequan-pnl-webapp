@@ -43,12 +43,16 @@ export function LedgerRowActions({ transactionId }: LedgerRowActionsProps) {
       <Link
         href={`/ledger/${transactionId}`}
         className="text-xs text-blue-400 hover:text-blue-300"
+        onClick={(e) => e.stopPropagation()}
       >
         Edit
       </Link>
       <button
         type="button"
-        onClick={handleDelete}
+        onClick={(e) => {
+          e.stopPropagation();
+          handleDelete();
+        }}
         className="text-xs text-rose-400 hover:text-rose-300"
       >
         Delete

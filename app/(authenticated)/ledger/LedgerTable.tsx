@@ -43,12 +43,12 @@ export function LedgerTable({ rows }: LedgerTableProps) {
       try {
         const res = await fetch('/api/accounts');
         if (!res.ok) {
-           // If the endpoint doesn't exist or fails, we fail gracefully
-           console.warn('Accounts endpoint returned status:', res.status);
-           return;
+          // If the endpoint doesn't exist or fails, we fail gracefully
+          console.warn('Accounts endpoint returned status:', res.status);
+          return;
         }
         const data = await res.json();
-        
+
         // Robust handling of different response shapes
         let accountList: { id: number; name: string }[] = [];
         if (Array.isArray(data)) {
@@ -66,7 +66,7 @@ export function LedgerTable({ rows }: LedgerTableProps) {
         console.error('Failed to fetch accounts for bulk edit', err);
       }
     };
-    
+
     fetchAccounts();
   }, []);
 
@@ -132,6 +132,7 @@ export function LedgerTable({ rows }: LedgerTableProps) {
         </span>
       ),
       sortable: true,
+      footer: (rows) => <span className="text-zinc-400 font-medium pl-2">Total ({rows.length})</span>,
     },
     {
       id: 'accountName',
@@ -169,6 +170,14 @@ export function LedgerTable({ rows }: LedgerTableProps) {
       sortFn: (a, b) => a.quantityValue - b.quantityValue,
       align: 'right',
       className: 'text-right',
+      footer: (rows) => {
+        const total = rows.reduce((sum, row) => sum + row.quantityValue, 0);
+        return (
+          <span className="text-zinc-200 font-medium">
+            {total > 0 ? '+' : ''}{total.toLocaleString(undefined, { maximumFractionDigits: 8 })}
+          </span>
+        );
+      },
     },
     {
       id: 'notes',
