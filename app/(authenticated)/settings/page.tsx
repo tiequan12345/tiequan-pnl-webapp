@@ -20,12 +20,29 @@ const INITIAL_SETTINGS: SettingsState = {
   priceRefreshEndpoint: '/api/prices/refresh',
 };
 
+type TransferDiagnostic = {
+  key: string;
+  assetId: number;
+  dateTime: string;
+  issue: 'UNMATCHED' | 'AMBIGUOUS' | 'INVALID_LEGS';
+  legIds: number[];
+};
+
 export default function SettingsPage() {
   const [settings, setSettings] = useState<SettingsState>(INITIAL_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [refreshStatus, setRefreshStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [recalcMode, setRecalcMode] = useState<'PURE' | 'HONOR_RESETS'>('PURE');
+  const [recalcAsOf, setRecalcAsOf] = useState<string>('');
+  const [recalcExternalRef, setRecalcExternalRef] = useState<string>('');
+  const [recalcNotes, setRecalcNotes] = useState<string>('');
+  const [recalcStatus, setRecalcStatus] = useState<string | null>(null);
+  const [recalcDiagnostics, setRecalcDiagnostics] = useState<number | null>(null);
+  const [recalcDiagnosticsList, setRecalcDiagnosticsList] = useState<TransferDiagnostic[] | null>(null);
+  const [recalcError, setRecalcError] = useState<string | null>(null);
+  const [recalcSubmitting, setRecalcSubmitting] = useState<boolean>(false);
 
   useEffect(() => {
     const load = async () => {
@@ -46,6 +63,84 @@ export default function SettingsPage() {
 
     load();
   }, []);
+
+  const handleCostBasisRecalc = async () => {
+    setRecalcStatus(null);
+    setRecalcDiagnostics(null);
+    setRecalcDiagnosticsList(null);
+    setRecalcError(null);
+    setRecalcSubmitting(true);
+
+    try {
+      const payload: {
+        mode: 'PURE' | 'HONOR_RESETS';
+        as_of?: string;
+        external_reference?: string;
+        notes?: string;
+      } = {
+        mode: recalcMode,
+      };
+
+      const asOfTrimmed = recalcAsOf.trim();
+      if (asOfTrimmed) {
+        const asOfDate = new Date(asOfTrimmed);
+        if (Number.isNaN(asOfDate.getTime())) {
+          throw new Error('Invalid as_of date/time.');
+        }
+        payload.as_of = asOfDate.toISOString();
+      }
+
+      const externalRef = recalcExternalRef.trim();
+      if (externalRef) {
+        payload.external_reference = externalRef;
+      }
+
+      const notesTrimmed = recalcNotes.trim();
+      if (notesTrimmed) {
+        payload.notes = notesTrimmed;
+      }
+
+      const res = await fetch('/api/ledger/cost-basis-recalc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || 'Failed to recalculate cost basis.');
+      }
+
+      const data = (await res.json().catch(() => null)) as
+        | {
+            created?: number;
+            skippedUnknown?: number;
+            skippedZeroQuantity?: number;
+            diagnostics?: unknown[];
+          }
+        | null;
+
+      const created = typeof data?.created === 'number' ? data.created : 0;
+      const skippedUnknown = typeof data?.skippedUnknown === 'number' ? data.skippedUnknown : 0;
+      const skippedZeroQuantity =
+        typeof data?.skippedZeroQuantity === 'number' ? data.skippedZeroQuantity : 0;
+      const diagnosticsList = Array.isArray(data?.diagnostics)
+        ? (data?.diagnostics as TransferDiagnostic[])
+        : [];
+      const diagnosticsCount = diagnosticsList.length;
+
+      setRecalcDiagnostics(diagnosticsCount);
+      setRecalcDiagnosticsList(diagnosticsList);
+      setRecalcStatus(
+        `Created ${created} resets. Skipped ${skippedUnknown} unknown, ${skippedZeroQuantity} zero-quantity.`,
+      );
+    } catch (err) {
+      console.error(err);
+      setRecalcError(err instanceof Error ? err.message : 'Failed to recalculate cost basis.');
+    } finally {
+      setRecalcSubmitting(false);
+    }
+  };
 
   const handleChange = (field: keyof SettingsState, value: string | boolean | number) => {
     setSettings((prev) => ({
@@ -200,6 +295,116 @@ export default function SettingsPage() {
           className="text-sm px-3 py-2 rounded-lg border border-blue-500/40 bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors"
         >
           Refresh Prices Now
+        </button>
+      </Card>
+
+      <Card className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Cost Basis Recalculation</h2>
+          {recalcStatus && <span className="text-sm text-zinc-400">{recalcStatus}</span>}
+        </div>
+        <p className="text-sm text-zinc-400">
+          Recompute cost basis across all accounts and persist results as COST_BASIS_RESET entries.
+        </p>
+        {recalcError && (
+          <div className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/40 rounded-lg px-3 py-2">
+            {recalcError}
+          </div>
+        )}
+        {recalcDiagnostics !== null && (
+          <div className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/40 rounded-lg px-3 py-2">
+            Diagnostics: {recalcDiagnostics} transfer pairing issue(s) detected.
+          </div>
+        )}
+        {recalcDiagnosticsList && recalcDiagnosticsList.length > 0 && (
+          <div className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-100">
+            <div className="flex items-center justify-between">
+              <span className="font-medium uppercase tracking-wide text-amber-300">
+                Transfer Diagnostics
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const payload = JSON.stringify(recalcDiagnosticsList, null, 2);
+                  void navigator.clipboard?.writeText(payload);
+                }}
+                className="text-[11px] px-2 py-1 rounded border border-amber-400/50 text-amber-200 hover:bg-amber-400/10"
+              >
+                Copy JSON
+              </button>
+            </div>
+            <div className="space-y-2">
+              {recalcDiagnosticsList.map((diag) => (
+                <div key={`${diag.key}-${diag.issue}-${diag.legIds.join('-')}`} className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1">
+                  <div>
+                    <span className="font-semibold">Issue:</span> {diag.issue}
+                  </div>
+                  <div>
+                    <span className="font-semibold">Asset ID:</span> {diag.assetId}
+                  </div>
+                  <div>
+                    <span className="font-semibold">Date:</span> {diag.dateTime}
+                  </div>
+                  <div>
+                    <span className="font-semibold">Leg IDs:</span> {diag.legIds.join(', ') || 'n/a'}
+                  </div>
+                  <div className="break-all">
+                    <span className="font-semibold">Key:</span> {diag.key}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="space-y-2">
+            <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Mode</span>
+            <select
+              value={recalcMode}
+              onChange={(e) => setRecalcMode(e.target.value as 'PURE' | 'HONOR_RESETS')}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="PURE">PURE (ignore resets)</option>
+              <option value="HONOR_RESETS">HONOR_RESETS (apply existing resets)</option>
+            </select>
+          </label>
+          <label className="space-y-2">
+            <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">As Of (optional)</span>
+            <input
+              type="datetime-local"
+              value={recalcAsOf}
+              onChange={(e) => setRecalcAsOf(e.target.value)}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            />
+          </label>
+          <label className="space-y-2">
+            <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">External Reference (optional)</span>
+            <input
+              type="text"
+              value={recalcExternalRef}
+              onChange={(e) => setRecalcExternalRef(e.target.value)}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              placeholder="RECALC:2025-12-31"
+            />
+          </label>
+          <label className="space-y-2">
+            <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Notes (optional)</span>
+            <input
+              type="text"
+              value={recalcNotes}
+              onChange={(e) => setRecalcNotes(e.target.value)}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              placeholder="Recalc notes"
+            />
+          </label>
+        </div>
+        <button
+          type="button"
+          onClick={handleCostBasisRecalc}
+          disabled={recalcSubmitting}
+          className="text-sm px-3 py-2 rounded-lg border border-amber-500/40 bg-amber-600 hover:bg-amber-500 disabled:bg-amber-700/60 text-white font-medium transition-colors"
+        >
+          {recalcSubmitting ? 'Recalculating...' : 'Recalculate Cost Basis'}
         </button>
       </Card>
 

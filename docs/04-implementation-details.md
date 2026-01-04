@@ -57,6 +57,7 @@ All core phases (0-6) are complete with the following key features implemented:
 - Settings persistence for currency/timezone/pricing preferences
 - CSV and DB export functionality via `/api/export/*` endpoints
 - Manual price refresh trigger
+- Cost basis recalculation trigger in Settings (calls `/api/ledger/cost-basis-recalc`)
 
 ### ✅ Additional Features
 - **USD Currency Lock**: Base currency fixed to USD across UI and backend
@@ -245,6 +246,13 @@ All core phases (0-6) are complete with the following key features implemented:
 - `POST /api/ledger` - Create transactions (single, double-entry trades, or transfers)
 - `PUT /api/ledger/:id` - Update existing transactions
 - `DELETE /api/ledger/:id` - Remove transactions
+- `POST /api/ledger/cost-basis-recalc` - Recompute cost basis by replaying ledger transactions and persist results as COST_BASIS_RESET rows.
+  - Request body: `{ "as_of": "ISO-8601", "mode": "PURE|HONOR_RESETS", "external_reference": "string", "notes": "string" }`
+  - Modes:
+    - `PURE` ignores existing COST_BASIS_RESET records.
+    - `HONOR_RESETS` applies existing resets during replay.
+  - Response includes `created`, `skippedUnknown`, `skippedZeroQuantity`, and `diagnostics` for transfer pairing issues.
+  - Diagnostics are also logged server-side with a `[cost-basis-recalc]` prefix for quick visibility.
 - **Transfer Support**: Multi-leg POST with per-leg `account_id` for account-to-account movements
 
 #### Import/Export

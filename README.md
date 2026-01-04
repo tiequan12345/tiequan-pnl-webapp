@@ -282,6 +282,43 @@ Returns a time-series of portfolio snapshots recorded after each successful pric
 }
 ```
 
+## API Endpoints
+### Cost Basis Recalculation
+
+#### Recalculate & Persist: `POST /api/ledger/cost-basis-recalc`
+
+Replays the ledger to recompute cost basis (transfer-aware) and persists results as `COST_BASIS_RESET` entries.
+
+**Request:**
+```json
+{
+  \"as_of\": \"2025-12-31T23:59:59Z\",
+  \"mode\": \"PURE\",
+  \"external_reference\": \"RECALC:2025-12-31\",
+  \"notes\": \"Recalc (PURE) as of 2025-12-31\"
+}
+```
+
+**Response:**
+```json
+{
+  \"as_of\": \"2025-12-31T23:59:59.000Z\",
+  \"mode\": \"PURE\",
+  \"created\": 128,
+  \"skippedUnknown\": 4,
+  \"skippedZeroQuantity\": 2,
+  \"external_reference\": \"RECALC:2025-12-31T23:59:59.000Z\",
+  \"diagnostics\": []
+}
+```
+
+**Modes:**
+- `PURE` ignores existing cost basis resets.
+- `HONOR_RESETS` applies existing resets during replay.
+
+**Diagnostics:**
+- Transfer pairing issues are returned in `diagnostics` and logged server-side for review.
+
 ## CoinGecko Refresh Lifecycle
 
 The application implements a robust price refresh system with rate limiting and error handling.
@@ -382,6 +419,8 @@ The application includes a settings system for configuration:
 ### Settings UI
 
 Access settings through the authenticated `/settings` page.
+- Includes a cost basis recalculation trigger that calls `POST /api/ledger/cost-basis-recalc`.
+- Transfer pairing diagnostics are returned in the response and logged server-side for review.
 
 ## Development
 
