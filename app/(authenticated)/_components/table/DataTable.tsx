@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, type ReactNode, useEffect, useRef } from 'react';
+import { useMemo, useState, type ReactNode, useEffect, useRef, useCallback } from 'react';
 
 type SortDirection = 'asc' | 'desc';
 
@@ -177,36 +177,127 @@ export function DataTable<T>({
   };
 
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragState = useRef<{
+    active: boolean;
+    startIndex: number;
+    startSelection: Set<string | number>;
+    shouldSelect: boolean;
+  }>({
+    active: false,
+    startIndex: 0,
+    startSelection: new Set(),
+    shouldSelect: false, // true = add, false = remove
+  });
 
-  const handleSelectRow = (key: string | number, index: number, event?: React.MouseEvent) => {
-    if (!onSelectionChange) return;
-    const newSet = new Set(selectedRowIds);
+  // Handle global mouse up to stop dragging
+  useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      if (dragState.current.active) {
+        dragState.current.active = false;
+        setIsDragging(false);
+        // Remove text selection prevention style
+        document.body.style.userSelect = '';
+      }
+    };
 
-    if (event?.shiftKey && lastSelectedIndex !== null) {
-      const start = Math.min(index, lastSelectedIndex);
-      const end = Math.max(index, lastSelectedIndex);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+      document.body.style.userSelect = ''; // Clean up on unmount
+    };
+  }, []);
 
-      const isSelecting = !selectedRowIds?.has(key);
+  const updateDragSelection = useCallback(
+    (currentIndex: number) => {
+      if (!onSelectionChange || !dragState.current.active) return;
+
+      const { startIndex, startSelection, shouldSelect } = dragState.current;
+      const newSet = new Set(startSelection);
+
+      const start = Math.min(startIndex, currentIndex);
+      const end = Math.max(startIndex, currentIndex);
 
       for (let i = start; i <= end; i++) {
         const rowKey = visibleKeys[i];
-        if (isSelecting) {
+        if (shouldSelect) {
           newSet.add(rowKey);
         } else {
           newSet.delete(rowKey);
         }
       }
-    } else {
-      if (newSet.has(key)) {
-        newSet.delete(key);
-      } else {
-        newSet.add(key);
-      }
-    }
 
-    setLastSelectedIndex(index);
-    onSelectionChange(newSet);
-  };
+      onSelectionChange(newSet);
+    },
+    [onSelectionChange, visibleKeys]
+  );
+
+  const handleMouseDown = useCallback(
+    (key: string | number, index: number, event: React.MouseEvent) => {
+      // Don't toggle if we clicked a button, link, or something inside them
+      if ((event.target as HTMLElement).closest('button, a, input[type="checkbox"]')) return;
+      if (!onSelectionChange) return;
+
+      // Handle Shift+Click (Range Select) - bypass drag logic
+      if (event.shiftKey && lastSelectedIndex !== null) {
+        // Prevent text selection
+        event.preventDefault();
+
+        const newSet = new Set(selectedRowIds);
+        const start = Math.min(index, lastSelectedIndex);
+        const end = Math.max(index, lastSelectedIndex);
+        const isSelecting = !selectedRowIds?.has(key);
+
+        for (let i = start; i <= end; i++) {
+          const rowKey = visibleKeys[i];
+          if (isSelecting) {
+            newSet.add(rowKey);
+          } else {
+            newSet.delete(rowKey);
+          }
+        }
+        setLastSelectedIndex(index);
+        onSelectionChange(newSet);
+        return;
+      }
+
+      // Start Drag Logic
+      if (event.button === 0) { // Left click only
+        // Prevent text selection/highlighting during drag
+        /* event.preventDefault(); // Commented out to allow focus events if needed, but usually desirable for drag selection */
+
+        const isSelected = selectedRowIds?.has(key);
+        // If it's already selected, we unselect it. If not, we select it.
+        // This is the "shouldSelect" state for the entire drag operation.
+        const shouldSelect = !isSelected;
+
+        dragState.current = {
+          active: true,
+          startIndex: index,
+          startSelection: new Set(selectedRowIds), // snapshot
+          shouldSelect,
+        };
+        setIsDragging(true);
+        setLastSelectedIndex(index);
+
+        // Apply selection to the single row immediately
+        updateDragSelection(index);
+
+        // Disable text selection globally while dragging
+        document.body.style.userSelect = 'none';
+      }
+    },
+    [lastSelectedIndex, onSelectionChange, selectedRowIds, updateDragSelection, visibleKeys]
+  );
+
+  const handleMouseEnter = useCallback(
+    (index: number) => {
+      if (dragState.current.active) {
+        updateDragSelection(index);
+      }
+    },
+    [updateDragSelection]
+  );
 
   return (
     <div className={wrapperClassName}>
@@ -308,21 +399,39 @@ export function DataTable<T>({
                       relative transition-all duration-150
                       ${isSelected ? 'bg-blue-600/15 ring-1 ring-inset ring-blue-500/30' : 'hover:bg-zinc-800/40'} 
                       ${rowClassName ? rowClassName(row, index) : ''}
+                      ${isDragging ? 'cursor-grabbing' : 'cursor-pointer'}
                     `}
-                    onClick={enableSelection ? (e) => {
-                      // Don't toggle if we clicked a button, link, or something inside them
-                      if ((e.target as HTMLElement).closest('button, a')) return;
-                      handleSelectRow(key, index, e);
-                    } : undefined}
+                    onMouseDown={enableSelection ? (e) => handleMouseDown(key, index, e) : undefined}
+                    onMouseEnter={enableSelection ? () => handleMouseEnter(index) : undefined}
+                    // Prevent normal click if we handled it via mousedown (optional, but clean)
+                    onClick={undefined}
                   >
                     {enableSelection && (
                       <td className={`w-10 px-4 ${padding}`}>
                         <input
                           type="checkbox"
                           checked={!!isSelected}
-                          onChange={(e) => handleSelectRow(key, index, e as any)}
-                          onClick={(e) => e.stopPropagation()}
-                          className="rounded border-zinc-700 bg-zinc-800 text-blue-500 focus:ring-blue-500/20 focus:ring-offset-0"
+                          // Use dummy onChange to avoid "controlled without onChange" warning,
+                          // but mostly we control it via the row interaction now.
+                          onChange={() => { }}
+                          // We also allow direct checkbox clicking, but prevent propagation to row 
+                          // so it doesn't trigger row drag logic conflicts if needed.
+                          // Actually, we want checkbox to trigger the same logic. 
+                          // The row handler ignores inputs, so we need to handle it here explicitly OR remove exclusion.
+                          // Let's rely on the INPUT's own interaction.
+                          // Actually, standard checkbox needs onClick/onChange. 
+                          // If we click Checkbox, handleMouseDown in row returns early.
+                          // So we should wire Checkbox to toggle selection simply.
+                          onClick={(e) => {
+                            if (!onSelectionChange) return;
+                            e.stopPropagation();
+                            const newSet = new Set(selectedRowIds);
+                            if (newSet.has(key)) newSet.delete(key);
+                            else newSet.add(key);
+                            onSelectionChange(newSet);
+                            setLastSelectedIndex(index);
+                          }}
+                          className="rounded border-zinc-700 bg-zinc-800 text-blue-500 focus:ring-blue-500/20 focus:ring-offset-0 cursor-pointer"
                         />
                       </td>
                     )}

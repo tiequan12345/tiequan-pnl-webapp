@@ -34,7 +34,7 @@ All core phases (0-6) are complete with the following key features implemented:
 - **Transfer Support**: Move assets between accounts while preserving cost basis and valuation
 - **CSV Export**: Filtered export of ledger transactions
 - **Live Totals**: Dynamic column footers showing transaction counts and quantity sums
-- **Bulk Selection**: Shift-click multi-selection for efficient management
+- **Bulk Selection**: Shift-click and drag-to-select support for efficient multi-row management
 
 ### ✅ Phase 3 – Holdings Calculation & Valuation
 - Cost basis computation with average cost method
@@ -164,6 +164,15 @@ All core phases (0-6) are complete with the following key features implemented:
   - Applies a unique `MATCH:<uuid>` external reference.
   - Cost basis engine respects `MATCH:` prefix to force-group legs even if quantities differ (handling fee discrepancies).
 - **Separate Logic**: Converts legs to independent `DEPOSIT` / `WITHDRAWAL` entries.
+
+### Feature 12: Enhanced Ledger Selection (Drag-to-Select) ✅
+**Problem**: Selecting multiple contiguous rows in the ledger required repeated clicking or precise Shift-clicking, which could be cumbersome for large ranges.
+
+**Solution**: implemented intuitive mouse-drag selection:
+- **Drag Interaction**: Users can click and drag across rows to select a range.
+- **State Management**: Uses `onMouseDown` and `onMouseEnter` events to track standard drag gestures.
+- **Visual Feedback**: Dragged rows invoke a `cursor-grabbing` state and immediate visual highlighting.
+- **Compatibility**: Retains existing checkbox and Shift-click behavior alongside the new drag gesture.
 
 ## Technical Architecture
 

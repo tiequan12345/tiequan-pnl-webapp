@@ -7,13 +7,6 @@ import { LedgerRowActions } from './LedgerRowActions';
 import { LedgerBulkEditModal } from './LedgerBulkEditModal';
 import type { LedgerTxType } from '@/lib/ledger';
 
-const DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
-  year: 'numeric',
-  month: 'short',
-  day: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit',
-});
 
 export type LedgerTableRow = {
   id: number;
@@ -126,14 +119,21 @@ export function LedgerTable({ rows }: LedgerTableProps) {
       id: 'dateTime',
       header: 'Date / Time',
       accessor: (row) => new Date(row.dateTime).getTime(),
-      cell: (row) => (
-        <span className="text-zinc-300">
-          {DATE_FORMATTER.format(new Date(row.dateTime))}
-        </span>
-      ),
+      cell: (row) => {
+        const d = new Date(row.dateTime);
+        const pad = (n: number) => n.toString().padStart(2, '0');
+        const formatted = `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear().toString().slice(-2)} ${pad(
+          d.getHours()
+        )}:${pad(d.getMinutes())}`;
+        return (
+          <span className="text-zinc-300 whitespace-nowrap">
+            {formatted}
+          </span>
+        );
+      },
       sortable: true,
       footer: (rows) => <span className="text-zinc-400 font-medium pl-2">Total ({rows.length})</span>,
-      headerClassName: 'w-[160px]',
+      headerClassName: 'w-[140px]',
     },
     {
       id: 'accountName',
