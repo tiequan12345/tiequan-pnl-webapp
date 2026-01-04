@@ -174,7 +174,7 @@ export function LedgerFilters({ accounts, assets, initialFilters }: LedgerFilter
           <select
             value={assetId}
             onChange={(event) => handleAssetChange(event.target.value)}
-            className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 min-w-[160px]"
+            className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 w-[160px]"
           >
             <option value="">All Assets</option>
             {assets.map((asset) => (
