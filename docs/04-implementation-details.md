@@ -32,6 +32,9 @@ All core phases (0-6) are complete with the following key features implemented:
 - Support for all transaction types (DEPOSIT, WITHDRAWAL, TRADE, TRANSFER, etc.)
 - Hedges page for net exposure calculation
 - **Transfer Support**: Move assets between accounts while preserving cost basis and valuation
+- **CSV Export**: Filtered export of ledger transactions
+- **Live Totals**: Dynamic column footers showing transaction counts and quantity sums
+- **Bulk Selection**: Shift-click multi-selection for efficient management
 
 ### ✅ Phase 3 – Holdings Calculation & Valuation
 - Cost basis computation with average cost method
@@ -250,6 +253,7 @@ All core phases (0-6) are complete with the following key features implemented:
 - `GET /api/export/assets` - Asset data export
 - `GET /api/export/accounts` - Account data export
 - `GET /api/export/ledger` - Transaction data export
+- `GET /api/ledger/export` - Filtered CSV export
 - `GET /api/export/db` - Database file export
 
 #### Pricing & Monitoring

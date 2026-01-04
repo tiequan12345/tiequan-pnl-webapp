@@ -206,7 +206,7 @@ export function LedgerFilters({ accounts, assets, initialFilters }: LedgerFilter
 
       <button
         onClick={handleExportCsv}
-        className="flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white px-4 py-1.5 rounded-lg text-xs font-medium transition-all shadow-sm"
+        className="flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white px-4 py-1.5 rounded-lg text-xs font-medium transition-all shadow-sm whitespace-nowrap shrink-0"
       >
         <svg
           className="w-3.5 h-3.5"
@@ -218,7 +218,7 @@ export function LedgerFilters({ accounts, assets, initialFilters }: LedgerFilter
             strokeLinecap="round"
             strokeLinejoin="round"
             strokeWidth={2}
-            d="vertical-align: middle; M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
           />
         </svg>
         Export CSV
