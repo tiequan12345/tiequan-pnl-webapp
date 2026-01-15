@@ -23,6 +23,29 @@ type LedgerTableProps = {
   rows: LedgerTableRow[];
 };
 
+function QuantityCell({ quantity, value }: { quantity: string; value: number }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(Math.abs(value).toString());
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      onMouseDown={(e) => e.stopPropagation()}
+      title="Click to copy absolute value"
+      className={`whitespace-nowrap cursor-pointer transition-colors duration-200 inline-block bg-transparent border-none p-0 focus:outline-none ${copied ? 'text-emerald-400 font-medium' : 'text-zinc-300 hover:text-white'
+        }`}
+    >
+      {quantity.startsWith('-') ? quantity : `+${quantity}`}
+    </button>
+  );
+}
+
 export function LedgerTable({ rows }: LedgerTableProps) {
   const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
@@ -171,11 +194,7 @@ export function LedgerTable({ rows }: LedgerTableProps) {
       id: 'quantityValue',
       header: 'Quantity',
       accessor: (row) => row.quantityValue,
-      cell: (row) => (
-        <span className="text-zinc-300 whitespace-nowrap">
-          {row.quantity.startsWith('-') ? row.quantity : `+${row.quantity}`}
-        </span>
-      ),
+      cell: (row) => <QuantityCell quantity={row.quantity} value={row.quantityValue} />,
       sortable: true,
       sortFn: (a, b) => a.quantityValue - b.quantityValue,
       align: 'right',
