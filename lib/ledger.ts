@@ -9,6 +9,7 @@ export const ALLOWED_TX_TYPES = [
   'HEDGE',
   'COST_BASIS_RESET',
   'TRANSFER',
+  'RECONCILIATION',
 ] as const;
 
 export type LedgerTxType = (typeof ALLOWED_TX_TYPES)[number];

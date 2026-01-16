@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 
 import { Card } from '../_components/ui/Card';
 import { UnmatchedDiagnosticsViewer, type EnrichedDiagnostic } from './_components/UnmatchedDiagnosticsViewer';
+import { ReconciliationCard } from './_components/ReconciliationCard';
 
 type SettingsState = {
   baseCurrency: string;
@@ -383,6 +384,8 @@ export default function SettingsPage() {
           {recalcSubmitting ? 'Recalculating...' : 'Recalculate Cost Basis'}
         </button>
       </Card>
+
+      <ReconciliationCard />
 
       <Card className="space-y-3">
         <h2 className="text-lg font-semibold">System Health</h2>

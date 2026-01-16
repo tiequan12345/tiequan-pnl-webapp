@@ -303,6 +303,59 @@ export async function POST(request: Request) {
       );
     }
 
+    // Special handling for batch RECONCILIATION (Zero out account)
+    // If tx_type is RECONCILIATION and no asset_id or legs provided, we assume "zero out account" mode
+    if (txType === 'RECONCILIATION' && body.asset_id === undefined && !body.legs) {
+      // Find all assets with non-zero balances in this account as of the given timestamp
+      const grouped = await prisma.ledgerTransaction.groupBy({
+        by: ['asset_id'],
+        where: {
+          account_id: accountId,
+          date_time: { lte: dateTime },
+        },
+        _sum: { quantity: true },
+      });
+
+      const toCreate = grouped
+        .map((g) => ({
+          assetId: g.asset_id,
+          current: g._sum.quantity ? Number(g._sum.quantity) : 0,
+        }))
+        .filter((item) => Math.abs(item.current) > 1e-12) // Only if non-zero
+        .map((item) => ({
+          date_time: dateTime,
+          account_id: accountId,
+          asset_id: item.assetId,
+          quantity: (-item.current).toString(), // Adjust to zero
+          tx_type: 'RECONCILIATION' as const,
+          external_reference: externalReference,
+          notes: notes || 'Auto-zero via Reconciliation',
+          unit_price_in_base: null,
+          total_value_in_base: null,
+          fee_in_base: null,
+        }));
+
+      if (toCreate.length === 0) {
+        return NextResponse.json({
+          message: 'No non-zero balances found in this account to reconcile.',
+          ids: [],
+          date_time: dateTime.toISOString(),
+        });
+      }
+
+      // Create all reconciliation entries in a transaction
+      const created = await prisma.$transaction(
+        toCreate.map((data) => prisma.ledgerTransaction.create({ data })),
+      );
+
+      return NextResponse.json({
+        ids: created.map((r) => r.id),
+        date_time: dateTime.toISOString(),
+        legs: created.length,
+        message: `Reconciled ${created.length} assets in ${account.name} to zero.`,
+      });
+    }
+
     // Check if this is a multi-leg trade
     const legs = body.legs;
     if (legs && Array.isArray(legs)) {

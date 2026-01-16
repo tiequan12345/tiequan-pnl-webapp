@@ -87,6 +87,7 @@ const TX_TYPE_LABELS: Record<LedgerTxType, string> = {
   HEDGE: 'Hedge',
   COST_BASIS_RESET: 'Cost Basis Reset',
   TRANSFER: 'Transfer',
+  RECONCILIATION: 'Reconciliation (True-Up)',
 };
 
 function getDefaultDateTimeLocal(): string {
@@ -278,6 +279,7 @@ export function LedgerForm({
   const isTradeType = !isEditMode && TRADE_TYPES.includes(txType);
   const isTransferType = TRANSFER_TYPES.includes(txType);
   const isCostBasisReset = txType === 'COST_BASIS_RESET';
+  const isReconciliationType = txType === 'RECONCILIATION' && !isEditMode;
 
   useEffect(() => {
     if (isCostBasisReset) {
@@ -439,6 +441,38 @@ export function LedgerForm({
       setError('Date/time and account are required.');
       setSubmitting(false);
       return;
+    }
+
+    if (isReconciliationType) {
+      // Batch reconciliation mode: asset and quantity are handled by backend (zeros out account)
+      try {
+        const payload = {
+          date_time: new Date(dateTime).toISOString(),
+          account_id: Number(accountId),
+          tx_type: 'RECONCILIATION',
+          external_reference: externalReference.trim() || null,
+          notes: notes.trim() || null,
+        };
+
+        const response = await fetch('/api/ledger', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => null);
+          throw new Error(data?.error || 'Failed to reconcile account.');
+        }
+
+        router.push('/ledger');
+        router.refresh();
+        return;
+      } catch (e: any) {
+        setError(e.message);
+        setSubmitting(false);
+        return;
+      }
     }
 
     try {
@@ -791,6 +825,8 @@ export function LedgerForm({
         // For non-trade types in create mode, apply sign based on transaction type
         if (txType === 'WITHDRAWAL') {
           signedQtyNumber = -Math.abs(qtyNumber!);
+        } else if (txType === 'RECONCILIATION') {
+          signedQtyNumber = qtyNumber!;
         } else {
           signedQtyNumber = Math.abs(qtyNumber!);
         }
@@ -1131,7 +1167,7 @@ export function LedgerForm({
         )}
 
         {/* Non-trade asset + quantity */}
-        {!isTradeType && !isTransferType && (
+        {!isTradeType && !isTransferType && !isReconciliationType && (
           <>
             <div className="space-y-2">
               <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">

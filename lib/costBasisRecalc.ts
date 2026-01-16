@@ -128,6 +128,22 @@ function buildTransferKey(tx: RecalcTransaction): string {
   return `${tx.asset_id}|${dateKey}|${qtyNumber}|${reference}`;
 }
 
+function applyReconciliationTransaction(
+  positions: Map<string, CostBasisPosition>,
+  tx: RecalcTransaction,
+): void {
+  const position = getOrCreatePosition(positions, tx);
+  const quantity = toNumber(tx.quantity) ?? 0;
+
+  position.quantity += quantity;
+
+  // Match holdings.ts behavior
+  if (Math.abs(position.quantity) <= 1e-12) {
+    position.quantity = 0;
+    position.costBasis = 0;
+  }
+}
+
 function applyNonTransferTransaction(
   positions: Map<string, CostBasisPosition>,
   tx: RecalcTransaction,
@@ -219,6 +235,11 @@ export function recalcCostBasis(
           position.costBasis = Math.max(Math.abs(resetValue), 0);
         }
       }
+      continue;
+    }
+
+    if (tx.tx_type === 'RECONCILIATION') {
+      applyReconciliationTransaction(positions, tx);
       continue;
     }
 

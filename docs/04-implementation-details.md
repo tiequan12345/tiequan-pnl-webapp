@@ -66,6 +66,13 @@ All core phases (0-6) are complete with the following key features implemented:
 - **Backup System**: Automated SQLite backups to S3 with configurable schedule
 - **Transfer Transaction Type**: Move assets between accounts with cost basis preservation
 
+### ✅ Phase 7 – Ledger Reconciliation
+- **RECONCILIATION Transaction Type**: Adjust quantities without affecting cost basis
+- **Batch Reconciliation API**: Preview and commit true-ups across accounts/assets
+- **Settings UI**: `ReconciliationCard` for batch true-up workflows
+- **Auto-Zero Logic**: `LedgerForm` support for zeroing out entire accounts with one click
+- **Deterministic Playback**: Transaction engine sorting by `date_time` then `id`
+
 ## Issue Resolution
 
 ### Issue 1: Holdings Valuation (Cost Basis & PnL) ✅
@@ -173,6 +180,17 @@ All core phases (0-6) are complete with the following key features implemented:
 - **State Management**: Uses `onMouseDown` and `onMouseEnter` events to track standard drag gestures.
 - **Visual Feedback**: Dragged rows invoke a `cursor-grabbing` state and immediate visual highlighting.
 - **Compatibility**: Retains existing checkbox and Shift-click behavior alongside the new drag gesture.
+
+### Feature 13: Ledger Reconciliation (Impermanent Loss & True-Ups) ✅
+**Problem**: Impermanent loss from LP positions or other external factors causes ledger quantities to drift from actual wallet balances. Previous transfer/trade logic required equal-and-opposite value, which IL violates.
+
+**Solution**: Implemented `RECONCILIATION` transaction type:
+- **Quantity-Only**: Adjusts holdings counts without affecting cost basis. If quantity becomes zero, cost basis is also zeroed.
+- **Idempotent API**: `/api/ledger/reconcile` supports preview/commit workflows with `external_reference` tracking.
+- **UI Tooling**: 
+  - Dedicated **Reconciliation Card** in Settings for batch multi-account true-ups.
+  - **Single-Click Zero-Out** in `LedgerForm`: Selecting Reconciliation type hides fields and zeros out the entire account balance upon submission.
+- **Use Case**: Allows precise quantity correction (e.g. +1.2 BTC, -2000 USDC) to match external reality without distorting historical cost.
 
 ## Technical Architecture
 
@@ -491,4 +509,13 @@ All core phases (0-6) are complete with the following key features implemented:
 - CDN configuration for static assets
 - Transfer validation performance with large account/asset datasets
 
-This implementation provides a complete, production-ready portfolio tracking application with all MVP requirements fulfilled, additional enterprise-grade features for reliability and maintainability, and comprehensive transfer functionality for cross-account asset movements.
+This implementation provides a complete, production-ready portfolio tracking application with all MVP requirements fulfilled, additional enterprise-grade features for reliability and maintainability, and comprehensive transfer and reconciliation functionality.
+
+---
+
+## 🛑 Pending & Technical Debt
+
+### Database Performance: Reconciliation Indexes
+- **Status**: ⚠️ Postponed
+- **Context**: Added `external_reference` and compound `[tx_type, external_reference, date_time]` indexes to the schema, but migration was skipped due to a local environment sync issue (missing legacy migrations).
+- **Action Required**: Once environment is synced, run `npx prisma migrate dev` to apply these indexes for optimal performance during large batch reconciliation deletions.

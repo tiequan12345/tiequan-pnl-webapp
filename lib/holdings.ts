@@ -156,7 +156,7 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
 
   const transactions = await prisma.ledgerTransaction.findMany({
     where,
-    orderBy: { date_time: 'asc' },
+    orderBy: [{ date_time: 'asc' }, { id: 'asc' }],
     include: {
       asset: {
         include: {
@@ -218,6 +218,19 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
         position.costBasisKnown = true;
         position.costBasis = Math.max(Math.abs(resetValue), 0);
       }
+      positions.set(key, position);
+      continue;
+    }
+
+    if (tx.tx_type === 'RECONCILIATION') {
+      position.quantity += quantity;
+
+      // Clean up dust and ghost basis
+      if (Math.abs(position.quantity) <= 1e-12) {
+        position.quantity = 0;
+        position.costBasis = 0;
+      }
+
       positions.set(key, position);
       continue;
     }
