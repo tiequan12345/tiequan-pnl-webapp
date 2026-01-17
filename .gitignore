@@ -160,3 +160,4 @@ dist/
 # SQLite database files
 *.sqlite
 *.db
+dev.db-*

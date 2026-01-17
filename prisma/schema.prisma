@@ -8,7 +8,7 @@ datasource db {
 }
 
 model Asset {
-  id                Int               @id @default(autoincrement())
+  id                Int      @id @default(autoincrement())
   symbol            String
   name              String
   type              String
@@ -17,8 +17,8 @@ model Asset {
   pricing_mode      String
   manual_price      Decimal?
   metadata_json     String?
-  created_at        DateTime          @default(now())
-  updated_at        DateTime          @updatedAt
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
 
   ledger_transactions LedgerTransaction[]
   price_latest        PriceLatest?
@@ -27,15 +27,15 @@ model Asset {
 }
 
 model Account {
-  id              Int                 @id @default(autoincrement())
+  id              Int      @id @default(autoincrement())
   name            String
   platform        String
   account_type    String
   chain_or_market String?
   status          String
   notes           String?
-  created_at      DateTime            @default(now())
-  updated_at      DateTime            @updatedAt
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
 
   ledger_transactions LedgerTransaction[]
 
@@ -43,19 +43,19 @@ model Account {
 }
 
 model LedgerTransaction {
-  id                 Int      @id @default(autoincrement())
-  date_time          DateTime
-  account_id         Int
-  asset_id           Int
-  quantity           Decimal
-  tx_type            String
-  external_reference String?
-  notes              String?
-  unit_price_in_base Decimal?
+  id                  Int      @id @default(autoincrement())
+  date_time           DateTime
+  account_id          Int
+  asset_id            Int
+  quantity            Decimal
+  tx_type             String
+  external_reference  String?
+  notes               String?
+  unit_price_in_base  Decimal?
   total_value_in_base Decimal?
-  fee_in_base        Decimal?
-  created_at         DateTime @default(now())
-  updated_at         DateTime @updatedAt
+  fee_in_base         Decimal?
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
 
   account Account @relation(fields: [account_id], references: [id])
   asset   Asset   @relation(fields: [asset_id], references: [id])
@@ -82,12 +82,12 @@ model Setting {
 }
 
 model PriceRefreshRun {
-  id         Int      @id @default(autoincrement())
-  started_at DateTime @default(now())
+  id         Int       @id @default(autoincrement())
+  started_at DateTime  @default(now())
   ended_at   DateTime?
-  status     String   // 'RUNNING', 'SUCCESS', 'FAILED', 'PARTIAL'
-  mode       String   // 'MANUAL', 'SCHEDULED'
-  metadata   String?  // JSON string for stats
+  status     String // 'RUNNING', 'SUCCESS', 'FAILED', 'PARTIAL'
+  mode       String // 'MANUAL', 'SCHEDULED'
+  metadata   String? // JSON string for stats
 
   @@index([started_at])
   @@index([status])
@@ -102,23 +102,23 @@ model PortfolioSnapshot {
 
   components PortfolioSnapshotComponent[]
 
-  @@index([snapshot_at])
   @@unique([snapshot_at])
+  @@index([snapshot_at])
 }
 
 model PortfolioSnapshotComponent {
-  id               Int      @id @default(autoincrement())
-  snapshot_id      Int
-  asset_id         Int
-  asset_symbol     String
-  asset_name       String
-  asset_type       String
+  id                Int      @id @default(autoincrement())
+  snapshot_id       Int
+  asset_id          Int
+  asset_symbol      String
+  asset_name        String
+  asset_type        String
   volatility_bucket String
-  account_id       Int
-  account_name     String
-  quantity         Decimal
-  price_in_base    Decimal?
-  market_value     Decimal?
+  account_id        Int
+  account_name      String
+  quantity          Decimal
+  price_in_base     Decimal?
+  market_value      Decimal?
 
   snapshot PortfolioSnapshot @relation(fields: [snapshot_id], references: [id], onDelete: Cascade)
 

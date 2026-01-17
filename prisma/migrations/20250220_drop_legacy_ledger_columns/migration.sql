@@ -1,0 +1,3 @@
+-- No-op migration to satisfy Prisma migration tracking
+-- This migration was previously applied to the database manually
+-- The actual changes are captured in subsequent migrations

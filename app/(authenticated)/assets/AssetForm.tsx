@@ -33,7 +33,7 @@ export function AssetForm({ mode, assetId, initialValues }: AssetFormProps) {
   const [name, setName] = useState(initialValues?.name ?? '');
   const [type, setType] = useState(initialValues?.type ?? ASSET_TYPES[0]);
   const [volatilityBucket, setVolatilityBucket] = useState(
-    initialValues?.volatility_bucket ?? VOLATILITY_BUCKETS[0],
+    initialValues?.volatility_bucket ?? 'VOLATILE',
   );
   const [pricingMode, setPricingMode] = useState(
     initialValues?.pricing_mode ?? PRICING_MODES[0],
