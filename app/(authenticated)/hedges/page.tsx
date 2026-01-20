@@ -31,9 +31,26 @@ function decimalToNumber(value: any): number {
 }
 
 export default async function HedgesPage() {
+  // 1. Get active assets first to filter reliably
+  // Fetching all and filtering in-memory to avoid potential type issues with 'status' in where clause
+  const allAssetsStatus = await prisma.asset.findMany({
+    select: {
+      id: true,
+      // @ts-ignore: status exists at runtime but types are missing
+      status: true
+    },
+  });
+  const activeAssetIds = allAssetsStatus
+    // @ts-ignore: status exists at runtime
+    .filter(a => a.status === 'ACTIVE')
+    .map(a => a.id);
+
   const [activeHedges, groupedHedges, groupedHoldings, settings] = await Promise.all([
     prisma.ledgerTransaction.findMany({
-      where: { tx_type: 'HEDGE' },
+      where: {
+        tx_type: 'HEDGE',
+        asset_id: { in: activeAssetIds },
+      },
       orderBy: { date_time: 'desc' },
       include: {
         account: { select: { name: true } },
@@ -52,7 +69,10 @@ export default async function HedgesPage() {
     }),
     prisma.ledgerTransaction.groupBy({
       by: ['asset_id'],
-      where: { tx_type: 'HEDGE' },
+      where: {
+        tx_type: 'HEDGE',
+        asset_id: { in: activeAssetIds },
+      },
       _sum: { quantity: true },
     }),
     // Get holdings by excluding HEDGE transactions
@@ -65,68 +85,72 @@ export default async function HedgesPage() {
   ]);
 
   const refreshIntervalMinutes = settings.priceAutoRefreshIntervalMinutes;
-  
+
   const allAssetIds = Array.from(new Set([
     ...groupedHedges.map(item => item.asset_id),
     ...groupedHoldings.map(item => item.asset_id)
   ]));
-  
+
   const assets = allAssetIds.length
     ? await prisma.asset.findMany({
-        where: { id: { in: allAssetIds } },
-        select: {
-          id: true,
-          symbol: true,
-          name: true,
-          volatility_bucket: true,
-          pricing_mode: true,
-          manual_price: true,
-          price_latest: true,
-        },
-      })
+      where: { id: { in: allAssetIds } },
+      select: {
+        id: true,
+        symbol: true,
+        name: true,
+        volatility_bucket: true,
+        pricing_mode: true,
+        manual_price: true,
+        price_latest: true,
+      },
+    })
     : [];
 
   const assetById = new Map(assets.map((asset) => [asset.id, asset]));
-  
+
   // Create maps for quick lookup
   const hedgeByAssetId = new Map<number, number>();
   for (const item of groupedHedges) {
-    hedgeByAssetId.set(item.asset_id, Number(item._sum.quantity?.toString() ?? '0'));
+    if (item._sum) {
+      hedgeByAssetId.set(item.asset_id, Number(item._sum.quantity?.toString() ?? '0'));
+    }
   }
-  
+
   const holdingsByAssetId = new Map<number, number>();
   for (const item of groupedHoldings) {
-    holdingsByAssetId.set(item.asset_id, Number(item._sum.quantity?.toString() ?? '0'));
+    if (item._sum) {
+      holdingsByAssetId.set(item.asset_id, Number(item._sum.quantity?.toString() ?? '0'));
+    }
   }
 
   const netExposureRows: NetExposureRow[] = allAssetIds
     .map((assetId) => {
       const asset = assetById.get(assetId);
       if (!asset) return null;
-      
+
       const holdings = holdingsByAssetId.get(assetId) || 0;
       const hedge = hedgeByAssetId.get(assetId) || 0;
       const netExposure = holdings + hedge; // holdings + (negative hedge)
-      
+
       // Only include assets that have meaningful net exposure
       if (Math.abs(netExposure) < 0.01) return null;
-      
+
       // Calculate price
       const latestPriceRecord = asset.price_latest ? {
         priceInBase: decimalToNumber(asset.price_latest.price_in_base),
         lastUpdated: asset.price_latest.last_updated,
       } : null;
-      
+
       const priceResolution = resolveAssetPrice({
         pricingMode: asset.pricing_mode as 'AUTO' | 'MANUAL',
         manualPrice: asset.manual_price ? decimalToNumber(asset.manual_price) : null,
         latestPrice: latestPriceRecord,
         refreshIntervalMinutes,
       });
-      
+
       const price = priceResolution.price && priceResolution.price > 0 ? priceResolution.price : null;
       const marketValue = price ? netExposure * price : null;
-      
+
       return {
         assetId: asset.id,
         assetSymbol: asset.symbol,
@@ -147,7 +171,7 @@ export default async function HedgesPage() {
 
   // Filter out CASH_LIKE assets from hedge transactions
   const volatileActiveHedges = activeHedges.filter(tx => tx.asset.volatility_bucket !== 'CASH_LIKE');
-  
+
   // Aggregate hedge transactions by asset
   const aggregatedHedgesByAsset = new Map<number, {
     assetId: number;
@@ -156,11 +180,11 @@ export default async function HedgesPage() {
     totalQuantity: number;
     asset: any; // Asset data for price resolution
   }>();
-  
+
   volatileActiveHedges.forEach((tx) => {
     const assetId = tx.asset.id;
     const existing = aggregatedHedgesByAsset.get(assetId);
-    
+
     if (existing) {
       existing.totalQuantity += Number(tx.quantity.toString());
     } else {
@@ -173,7 +197,7 @@ export default async function HedgesPage() {
       });
     }
   });
-  
+
   // Create aggregated hedge rows with price resolution
   const aggregatedHedgeRows: AggregatedHedgeRow[] = Array.from(aggregatedHedgesByAsset.values()).map((hedge) => {
     // Calculate price for this asset
@@ -181,17 +205,17 @@ export default async function HedgesPage() {
       priceInBase: decimalToNumber(hedge.asset.price_latest.price_in_base),
       lastUpdated: hedge.asset.price_latest.last_updated,
     } : null;
-    
+
     const priceResolution = resolveAssetPrice({
       pricingMode: hedge.asset.pricing_mode as 'AUTO' | 'MANUAL',
       manualPrice: hedge.asset.manual_price ? decimalToNumber(hedge.asset.manual_price) : null,
       latestPrice: latestPriceRecord,
       refreshIntervalMinutes,
     });
-    
+
     const price = priceResolution.price && priceResolution.price > 0 ? priceResolution.price : null;
     const totalMarketValue = price ? hedge.totalQuantity * price : null;
-    
+
     return {
       assetId: hedge.assetId,
       assetSymbol: hedge.assetSymbol,
@@ -201,8 +225,10 @@ export default async function HedgesPage() {
       price,
       totalMarketValue,
     };
-  }).sort((a, b) => a.assetSymbol.localeCompare(b.assetSymbol));
-  
+  })
+    .filter(row => row.totalMarketValue !== null && Math.abs(row.totalMarketValue) >= 500)
+    .sort((a, b) => a.assetSymbol.localeCompare(b.assetSymbol));
+
   // Keep the original hedge rows for reference (not used in the new UI)
   const hedgeRows: HedgeTableRow[] = volatileActiveHedges.map((tx) => {
     // Calculate price for this transaction
@@ -210,17 +236,17 @@ export default async function HedgesPage() {
       priceInBase: decimalToNumber(tx.asset.price_latest.price_in_base),
       lastUpdated: tx.asset.price_latest.last_updated,
     } : null;
-    
+
     const priceResolution = resolveAssetPrice({
       pricingMode: tx.asset.pricing_mode as 'AUTO' | 'MANUAL',
       manualPrice: tx.asset.manual_price ? decimalToNumber(tx.asset.manual_price) : null,
       latestPrice: latestPriceRecord,
       refreshIntervalMinutes,
     });
-    
+
     const price = priceResolution.price && priceResolution.price > 0 ? priceResolution.price : null;
     const marketValue = price ? Number(tx.quantity.toString()) * price : null;
-    
+
     return {
       id: tx.id,
       dateTime: tx.date_time.toISOString(),
@@ -249,7 +275,7 @@ export default async function HedgesPage() {
         <div className="border-b border-zinc-800 px-4 py-3">
           <h3 className="text-sm font-semibold text-zinc-100">Net Exposure by Asset</h3>
           <p className="text-xs text-zinc-500 mt-1">
-            Net exposure = holdings + hedge transactions, with price and market value for volatile assets. 
+            Net exposure = holdings + hedge transactions, with price and market value for volatile assets.
           </p>
         </div>
         <NetExposureTable rows={netExposureRows} />
