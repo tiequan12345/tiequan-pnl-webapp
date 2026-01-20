@@ -7,6 +7,7 @@ import { Card } from '../_components/ui/Card';
 export const ASSET_TYPES = ['CRYPTO', 'EQUITY', 'STABLE', 'NFT', 'OFFLINE', 'CASH', 'OTHER'] as const;
 export const VOLATILITY_BUCKETS = ['CASH_LIKE', 'VOLATILE'] as const;
 export const PRICING_MODES = ['AUTO', 'MANUAL'] as const;
+export const ASSET_STATUSES = ['ACTIVE', 'INACTIVE'] as const;
 
 export type AssetFormInitialValues = {
   symbol: string;
@@ -17,6 +18,7 @@ export type AssetFormInitialValues = {
   chain_or_market: string | null;
   manual_price: string | null;
   metadata_json: string | null;
+  status: string;
 };
 
 type AssetFormMode = 'create' | 'edit';
@@ -41,6 +43,7 @@ export function AssetForm({ mode, assetId, initialValues }: AssetFormProps) {
   const [chainOrMarket, setChainOrMarket] = useState(initialValues?.chain_or_market ?? '');
   const [manualPrice, setManualPrice] = useState(initialValues?.manual_price ?? '');
   const [metadataJson, setMetadataJson] = useState(initialValues?.metadata_json ?? '');
+  const [status, setStatus] = useState(initialValues?.status ?? ASSET_STATUSES[0]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -60,6 +63,7 @@ export function AssetForm({ mode, assetId, initialValues }: AssetFormProps) {
       chain_or_market: chainOrMarket.trim() || '',
       manual_price: manualPrice.trim() === '' ? null : manualPrice.trim(),
       metadata_json: metadataJson.trim() === '' ? null : metadataJson,
+      status,
     };
 
     try {
@@ -165,6 +169,23 @@ export function AssetForm({ mode, assetId, initialValues }: AssetFormProps) {
               className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
             >
               {PRICING_MODES.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+              Status
+            </label>
+            <select
+              value={status}
+              onChange={(event) => setStatus(event.target.value)}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            >
+              {ASSET_STATUSES.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>

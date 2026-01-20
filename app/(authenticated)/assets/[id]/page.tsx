@@ -34,6 +34,7 @@ export default async function EditAssetPage({ params }: EditAssetPageProps) {
     chain_or_market: asset.chain_or_market,
     manual_price: asset.manual_price ? asset.manual_price.toString() : null,
     metadata_json: asset.metadata_json,
+    status: asset.status,
   };
 
   return (

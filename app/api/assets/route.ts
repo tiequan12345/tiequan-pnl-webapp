@@ -15,6 +15,8 @@ const ALLOWED_VOLATILITY_BUCKETS = ['CASH_LIKE', 'VOLATILE'] as const;
 
 const ALLOWED_PRICING_MODES = ['AUTO', 'MANUAL'] as const;
 
+const ALLOWED_ASSET_STATUSES = ['ACTIVE', 'INACTIVE'] as const;
+
 type AssetPayload = {
   symbol?: string;
   name?: string;
@@ -24,6 +26,7 @@ type AssetPayload = {
   pricing_mode?: string;
   manual_price?: string | number | null;
   metadata_json?: string | null;
+  status?: string;
 };
 
 function isInAllowedList(value: string | undefined, list: readonly string[]): boolean {
@@ -34,7 +37,7 @@ function isInAllowedList(value: string | undefined, list: readonly string[]): bo
 }
 
 function validateAssetEnums(payload: AssetPayload): string | null {
-  const { type, volatility_bucket: volatilityBucket, pricing_mode: pricingMode } = payload;
+  const { type, volatility_bucket: volatilityBucket, pricing_mode: pricingMode, status } = payload;
 
   if (!isInAllowedList(type, ALLOWED_ASSET_TYPES)) {
     return 'Invalid asset type.';
@@ -46,6 +49,10 @@ function validateAssetEnums(payload: AssetPayload): string | null {
 
   if (!isInAllowedList(pricingMode, ALLOWED_PRICING_MODES)) {
     return 'Invalid pricing mode.';
+  }
+
+  if (status && !isInAllowedList(status, ALLOWED_ASSET_STATUSES)) {
+    return 'Invalid asset status.';
   }
 
   return null;
@@ -89,6 +96,7 @@ export async function GET() {
         pricing_mode: true,
         manual_price: true,
         metadata_json: true,
+        status: true,
         created_at: true,
         updated_at: true,
         _count: {
@@ -126,6 +134,7 @@ export async function POST(request: Request) {
     const volatilityBucket = body.volatility_bucket;
     const pricingMode = body.pricing_mode;
     const chainOrMarket = (body.chain_or_market ?? '').toString().trim();
+    const status = body.status ?? 'ACTIVE';
 
     if (!symbol || !name || !type || !volatilityBucket || !pricingMode) {
       return NextResponse.json(
@@ -176,6 +185,7 @@ export async function POST(request: Request) {
         pricing_mode: pricingMode as string,
         manual_price: manualPriceParsed === undefined ? undefined : manualPriceParsed,
         metadata_json: body.metadata_json ?? undefined,
+        status,
       },
     });
 
@@ -187,6 +197,7 @@ export async function POST(request: Request) {
       volatility_bucket: created.volatility_bucket,
       chain_or_market: created.chain_or_market,
       pricing_mode: created.pricing_mode,
+      status: created.status,
     });
   } catch {
     return NextResponse.json(

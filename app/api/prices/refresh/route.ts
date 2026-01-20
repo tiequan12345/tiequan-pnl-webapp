@@ -94,7 +94,7 @@ export async function POST(request: Request) {
 
   try {
     const assets = await prisma.asset.findMany({
-      where: { pricing_mode: 'AUTO' },
+      where: { pricing_mode: 'AUTO', status: 'ACTIVE' },
     });
 
     if (assets.length === 0) {

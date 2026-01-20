@@ -15,6 +15,8 @@ const ALLOWED_VOLATILITY_BUCKETS = ['CASH_LIKE', 'VOLATILE'] as const;
 
 const ALLOWED_PRICING_MODES = ['AUTO', 'MANUAL'] as const;
 
+const ALLOWED_ASSET_STATUSES = ['ACTIVE', 'INACTIVE'] as const;
+
 type RouteContext = {
   params: Promise<{
     id: string;
@@ -30,6 +32,7 @@ type AssetPayload = {
   pricing_mode?: string;
   manual_price?: string | number | null;
   metadata_json?: string | null;
+  status?: string;
 };
 
 function isInAllowedList(value: string | undefined, list: readonly string[]): boolean {
@@ -40,7 +43,7 @@ function isInAllowedList(value: string | undefined, list: readonly string[]): bo
 }
 
 function validateAssetEnums(payload: AssetPayload): string | null {
-  const { type, volatility_bucket: volatilityBucket, pricing_mode: pricingMode } = payload;
+  const { type, volatility_bucket: volatilityBucket, pricing_mode: pricingMode, status } = payload;
 
   if (!isInAllowedList(type, ALLOWED_ASSET_TYPES)) {
     return 'Invalid asset type.';
@@ -52,6 +55,10 @@ function validateAssetEnums(payload: AssetPayload): string | null {
 
   if (!isInAllowedList(pricingMode, ALLOWED_PRICING_MODES)) {
     return 'Invalid pricing mode.';
+  }
+
+  if (status && !isInAllowedList(status, ALLOWED_ASSET_STATUSES)) {
+    return 'Invalid asset status.';
   }
 
   return null;
@@ -120,6 +127,7 @@ export async function PUT(request: Request, context: RouteContext) {
     const volatilityBucket = body.volatility_bucket;
     const pricingMode = body.pricing_mode;
     const chainOrMarket = (body.chain_or_market ?? '').toString().trim();
+    const status = body.status ?? existing.status;
 
     if (!symbol || !name || !type || !volatilityBucket || !pricingMode) {
       return NextResponse.json(
@@ -174,6 +182,7 @@ export async function PUT(request: Request, context: RouteContext) {
         pricing_mode: pricingMode as string,
         manual_price: manualPriceParsed === undefined ? undefined : manualPriceParsed,
         metadata_json: body.metadata_json ?? undefined,
+        status,
       },
     });
 
@@ -185,6 +194,7 @@ export async function PUT(request: Request, context: RouteContext) {
       volatility_bucket: updated.volatility_bucket,
       chain_or_market: updated.chain_or_market,
       pricing_mode: updated.pricing_mode,
+      status: updated.status,
     });
   } catch {
     return NextResponse.json(

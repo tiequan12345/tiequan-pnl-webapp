@@ -2,13 +2,33 @@ import Link from 'next/link';
 import { prisma } from '@/lib/db';
 import { Card } from '../_components/ui/Card';
 import { AssetsTable, type AssetRow } from './AssetsTable';
+import { AssetsFilters } from './AssetsFilters';
+import { consolidateHoldingsByAsset, getHoldings } from '@/lib/holdings';
 
-export default async function AssetsPage() {
+type AssetsPageProps = {
+  searchParams: Promise<{
+    status?: string;
+  }>;
+};
+
+export default async function AssetsPage(props: AssetsPageProps) {
+  const searchParams = await props.searchParams;
+  const params = searchParams ?? {};
+  const statusFilter = params.status ?? 'ACTIVE';
+
   const assets = await prisma.asset.findMany({
     orderBy: { symbol: 'asc' },
   });
 
-  const rows: AssetRow[] = assets.map((asset) => ({
+  const holdings = await getHoldings();
+  const consolidated = consolidateHoldingsByAsset(holdings.rows);
+  const marketValueMap = new Map<number, number | null>(
+    consolidated.map((row) => [row.assetId, row.marketValue ?? null]),
+  );
+
+  const filteredAssets = assets.filter((asset) => asset.status === statusFilter);
+
+  const rows: AssetRow[] = filteredAssets.map((asset) => ({
     id: asset.id,
     symbol: asset.symbol,
     name: asset.name,
@@ -18,6 +38,8 @@ export default async function AssetsPage() {
     pricingMode: asset.pricing_mode,
     manualPrice: asset.manual_price ? asset.manual_price.toString() : null,
     manualPriceValue: asset.manual_price ? Number(asset.manual_price.toString()) : null,
+    status: asset.status,
+    marketValue: marketValueMap.get(asset.id) ?? null,
   }));
 
   return (
@@ -32,8 +54,14 @@ export default async function AssetsPage() {
         </Link>
       </div>
 
+      <div className="text-zinc-400 text-sm">
+        Assets are the individual tokens, equities, or instruments that you track across accounts.
+      </div>
+
+      <AssetsFilters currentStatus={statusFilter} />
+
       <Card className="p-0">
-        <AssetsTable rows={rows} />
+        <AssetsTable rows={rows} statusFilter={statusFilter} />
       </Card>
     </div>
   );

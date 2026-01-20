@@ -17,6 +17,7 @@ model Asset {
   pricing_mode      String
   manual_price      Decimal?
   metadata_json     String?
+  status            String   @default("ACTIVE")
   created_at        DateTime @default(now())
   updated_at        DateTime @updatedAt
 
