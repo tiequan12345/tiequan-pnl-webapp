@@ -8,6 +8,7 @@ import { HoldingsAllocationCharts } from '../_components/charts/HoldingsAllocati
 import {
   consolidateHoldingsByAsset,
   getHoldings,
+  summarizeHoldings,
   type HoldingRow,
 } from '@/lib/holdings';
 import { getAppSettings } from '@/lib/settings';
@@ -19,6 +20,7 @@ type HoldingsPageProps = {
     assetIds?: string;
     assetTypes?: string;
     volatilityBuckets?: string;
+    hideSmall?: string;
   }>;
 };
 
@@ -58,6 +60,7 @@ export default async function HoldingsPage(props: HoldingsPageProps) {
   const assetIds = parseNumberList(params.assetIds);
   const assetTypes = parseStringList(params.assetTypes);
   const volatilityBuckets = parseStringList(params.volatilityBuckets);
+  const hideSmall = params.hideSmall === '0' || params.hideSmall === 'false' ? false : true;
 
   const [settings, holdings] = await Promise.all([
     getAppSettings(),
@@ -74,11 +77,17 @@ export default async function HoldingsPage(props: HoldingsPageProps) {
       ? consolidateHoldingsByAsset(holdings.rows)
       : holdings.rows;
 
+  const SMALL_VALUE_THRESHOLD = 100;
+  const visibleRows = hideSmall
+    ? rows.filter((row) => row.marketValue === null || Math.abs(row.marketValue) > SMALL_VALUE_THRESHOLD)
+    : rows;
+  const visibleSummary = hideSmall ? summarizeHoldings(visibleRows) : holdings.summary;
+
   const baseCurrency = settings.baseCurrency;
-  const totalValue = holdings.summary.totalValue;
-  const lastUpdated = holdings.summary.updatedAt;
-  const totalCostBasis = holdings.summary.totalCostBasis;
-  const totalUnrealizedPnl = holdings.summary.totalUnrealizedPnl;
+  const totalValue = visibleSummary.totalValue;
+  const lastUpdated = visibleSummary.updatedAt;
+  const totalCostBasis = visibleSummary.totalCostBasis;
+  const totalUnrealizedPnl = visibleSummary.totalUnrealizedPnl;
   const valuationReady =
     totalCostBasis !== null && totalUnrealizedPnl !== null;
   const pnlPercent =
@@ -106,6 +115,7 @@ export default async function HoldingsPage(props: HoldingsPageProps) {
           currentAssetIds={assetIds}
           currentAssetTypes={assetTypes}
           currentVolatilityBuckets={volatilityBuckets}
+          currentHideSmall={hideSmall}
         />
       </Suspense>
 
@@ -166,13 +176,13 @@ export default async function HoldingsPage(props: HoldingsPageProps) {
       </div>
 
       <HoldingsAllocationCharts
-        summary={holdings.summary}
+        summary={visibleSummary}
         baseCurrency={baseCurrency}
       />
 
       <Card className="p-0">
         <HoldingsList
-          rows={rows}
+          rows={visibleRows}
           baseCurrency={baseCurrency}
           showRefreshButton
         />

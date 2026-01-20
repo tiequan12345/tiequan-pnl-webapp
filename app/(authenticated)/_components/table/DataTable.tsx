@@ -1,6 +1,8 @@
 'use client';
 
 import { useMemo, useState, type ReactNode, useEffect, useRef, useCallback } from 'react';
+import { ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react';
+
 
 type SortDirection = 'asc' | 'desc';
 
@@ -356,17 +358,17 @@ export function DataTable<T>({
                     {column.sortable ? (
                       <button
                         type="button"
-                        className="flex items-center gap-1 text-zinc-300 hover:text-white"
+                        className="flex items-center gap-1 text-zinc-300 hover:text-white transition-colors group/btn"
                         onClick={() => handleSortToggle(column)}
                       >
                         <span>{column.header}</span>
-                        <span className="text-[10px] leading-none text-zinc-500">
-                          {sortDir === 'asc'
-                            ? '▲'
-                            : sortDir === 'desc'
-                              ? '▼'
-                              : '↕'}
-                        </span>
+                        {sortDir === 'asc' ? (
+                          <ArrowUp className="w-3.5 h-3.5 text-blue-400" />
+                        ) : sortDir === 'desc' ? (
+                          <ArrowDown className="w-3.5 h-3.5 text-blue-400" />
+                        ) : (
+                          <ChevronsUpDown className="w-3.5 h-3.5 text-zinc-600 opacity-0 transition-opacity group-hover/btn:opacity-100" />
+                        )}
                       </button>
                     ) : (
                       column.header
@@ -486,6 +488,6 @@ export function DataTable<T>({
           )}
         </table>
       </div>
-    </div>
+    </div >
   );
 }

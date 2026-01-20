@@ -19,8 +19,12 @@ export function HoldingsList({
     filterFn: (row: HoldingRow, query: string) => {
       const normalized = query.trim().toLowerCase();
       if (!normalized) return true;
-      const haystack = `${row.assetSymbol ?? ''} ${row.assetName ?? ''} ${row.accountName ?? ''}`.toLowerCase();
-      return haystack.includes(normalized);
+      const assetHaystack = `${row.assetSymbol ?? ''} ${row.assetName ?? ''}`.toLowerCase();
+      if (assetHaystack.includes(normalized)) {
+        return true;
+      }
+      const accountHaystack = `${row.accountName ?? ''}`.toLowerCase();
+      return accountHaystack.includes(normalized);
     },
   };
 

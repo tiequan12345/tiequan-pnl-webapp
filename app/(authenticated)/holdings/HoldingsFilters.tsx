@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { ASSET_TYPES, VOLATILITY_BUCKETS } from '../assets/AssetForm';
 import { AccountMultiSelect } from './AccountMultiSelect';
+import { AssetMultiSelect } from './AssetMultiSelect';
 
 type HoldingsFiltersProps = {
   currentView?: string;
@@ -12,6 +13,7 @@ type HoldingsFiltersProps = {
   currentAssetIds?: number[];
   currentAssetTypes?: string[];
   currentVolatilityBuckets?: string[];
+  currentHideSmall?: boolean;
   hideViewToggle?: boolean;
 };
 
@@ -24,6 +26,9 @@ type Asset = {
   id: number;
   symbol: string;
   name: string;
+  _count?: {
+    ledger_transactions: number;
+  };
 };
 
 export function HoldingsFilters({
@@ -32,6 +37,7 @@ export function HoldingsFilters({
   currentAssetIds = [],
   currentAssetTypes = [],
   currentVolatilityBuckets = [],
+  currentHideSmall = true,
   hideViewToggle = false,
 }: HoldingsFiltersProps) {
   const router = useRouter();
@@ -39,6 +45,7 @@ export function HoldingsFilters({
   const pathname = usePathname();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [topAssets, setTopAssets] = useState<Asset[]>([]);
+  const [allAssets, setAllAssets] = useState<Asset[]>([]);
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>(
     currentAccountIds.map(id => String(id))
   );
@@ -48,9 +55,10 @@ export function HoldingsFilters({
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [accountsRes, topAssetsRes] = await Promise.all([
+        const [accountsRes, topAssetsRes, allAssetsRes] = await Promise.all([
           fetch('/api/accounts'),
-          fetch('/api/assets/top')
+          fetch('/api/assets/top'),
+          fetch('/api/assets')
         ]);
 
         if (accountsRes.ok) {
@@ -61,6 +69,19 @@ export function HoldingsFilters({
         if (topAssetsRes.ok) {
           const data = await topAssetsRes.json();
           setTopAssets(data);
+        }
+
+        if (allAssetsRes.ok) {
+          const data = await allAssetsRes.json();
+          const sortedAssets = data.sort((a: Asset, b: Asset) => {
+            const countA = a._count?.ledger_transactions ?? 0;
+            const countB = b._count?.ledger_transactions ?? 0;
+            if (countB !== countA) {
+              return countB - countA;
+            }
+            return a.symbol.localeCompare(b.symbol);
+          });
+          setAllAssets(sortedAssets);
         }
       } catch (error) {
         console.error('Failed to fetch filter data:', error);
@@ -83,27 +104,38 @@ export function HoldingsFilters({
     assetIds?: number[];
     assetTypes?: string[];
     volatilityBuckets?: string[];
+    hideSmall?: boolean;
   }) => {
     const params = new URLSearchParams();
 
-    if (updates.view && updates.view !== 'per-account') {
-      params.set('view', updates.view);
+    const view = updates.view ?? currentView;
+    if (view && view !== 'per-account') {
+      params.set('view', view);
     }
 
-    if (updates.accountIds && updates.accountIds.length > 0) {
-      params.set('accountIds', updates.accountIds.join(','));
+    const accountIds = updates.accountIds ?? currentAccountIds;
+    if (accountIds && accountIds.length > 0) {
+      params.set('accountIds', accountIds.join(','));
     }
 
-    if (updates.assetIds && updates.assetIds.length > 0) {
-      params.set('assetIds', updates.assetIds.join(','));
+    const assetIds = updates.assetIds ?? currentAssetIds;
+    if (assetIds && assetIds.length > 0) {
+      params.set('assetIds', assetIds.join(','));
     }
 
-    if (updates.assetTypes && updates.assetTypes.length > 0) {
-      params.set('assetTypes', updates.assetTypes.join(','));
+    const assetTypes = updates.assetTypes ?? currentAssetTypes;
+    if (assetTypes && assetTypes.length > 0) {
+      params.set('assetTypes', assetTypes.join(','));
     }
 
-    if (updates.volatilityBuckets && updates.volatilityBuckets.length > 0) {
-      params.set('volatilityBuckets', updates.volatilityBuckets.join(','));
+    const volatilityBuckets = updates.volatilityBuckets ?? currentVolatilityBuckets;
+    if (volatilityBuckets && volatilityBuckets.length > 0) {
+      params.set('volatilityBuckets', volatilityBuckets.join(','));
+    }
+
+    const resolvedHideSmall = updates.hideSmall ?? currentHideSmall;
+    if (!resolvedHideSmall) {
+      params.set('hideSmall', '0');
     }
 
     const queryString = params.toString();
@@ -131,11 +163,7 @@ export function HoldingsFilters({
       : [...currentAssetTypes, assetType];
 
     return buildUrl({
-      view: currentView,
-      accountIds: currentAccountIds,
-      assetIds: currentAssetIds,
       assetTypes: newAssetTypes,
-      volatilityBuckets: currentVolatilityBuckets,
     });
   };
 
@@ -145,11 +173,7 @@ export function HoldingsFilters({
       : [...currentAssetIds, assetId];
 
     return buildUrl({
-      view: currentView,
-      accountIds: currentAccountIds,
       assetIds: newAssetIds,
-      assetTypes: currentAssetTypes,
-      volatilityBuckets: currentVolatilityBuckets,
     });
   };
 
@@ -159,12 +183,12 @@ export function HoldingsFilters({
       : [...currentVolatilityBuckets, volatilityBucket];
 
     return buildUrl({
-      view: currentView,
-      accountIds: currentAccountIds,
-      assetIds: currentAssetIds,
-      assetTypes: currentAssetTypes,
       volatilityBuckets: newVolatilityBuckets,
     });
+  };
+
+  const updateHideSmall = (hideSmall: boolean) => {
+    router.push(buildUrl({ hideSmall }));
   };
 
   return (
@@ -173,22 +197,22 @@ export function HoldingsFilters({
         <>
           {/* View Toggle */}
           <div className="flex items-center gap-4">
-            <span className="text-sm font-medium text-zinc-400">View:</span>
-            <div className="inline-flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-lg p-1">
+            <span className="text-sm font-medium text-zinc-500 min-w-[80px]">View:</span>
+            <div className="inline-flex items-center gap-2 bg-zinc-900/50 border border-zinc-800/50 rounded-lg p-1">
               <Link
-                href={buildUrl({ view: 'per-account', accountIds: currentAccountIds, assetTypes: currentAssetTypes, volatilityBuckets: currentVolatilityBuckets })}
-                className={`px-3 py-1.5 text-sm rounded-md transition ${currentView === 'per-account'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-zinc-300 hover:text-white'
+                href={buildUrl({ view: 'per-account' })}
+                className={`px-4 py-1.5 text-sm font-medium rounded-md transition duration-200 ${currentView === 'per-account'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
+                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
                   }`}
               >
                 Per Account
               </Link>
               <Link
-                href={buildUrl({ view: 'consolidated', accountIds: currentAccountIds, assetTypes: currentAssetTypes, volatilityBuckets: currentVolatilityBuckets })}
-                className={`px-3 py-1.5 text-sm rounded-md transition ${currentView === 'consolidated'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-zinc-300 hover:text-white'
+                href={buildUrl({ view: 'consolidated' })}
+                className={`px-4 py-1.5 text-sm font-medium rounded-md transition duration-200 ${currentView === 'consolidated'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
+                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
                   }`}
               >
                 Consolidated
@@ -215,18 +239,18 @@ export function HoldingsFilters({
       {/* Top Assets Filter */}
       {topAssets.length > 0 && (
         <div className="flex items-center gap-4">
-          <span className="text-sm font-medium text-zinc-400">Assets:</span>
+          <span className="text-sm font-medium text-zinc-500 min-w-[80px]">Assets:</span>
           <div className="flex flex-wrap gap-2">
             <Link
-              href={buildUrl({ view: currentView, accountIds: currentAccountIds, assetIds: [], assetTypes: currentAssetTypes, volatilityBuckets: currentVolatilityBuckets })}
-              className={`px-3 py-1.5 text-sm rounded-md transition ${currentAssetIds.length === 0
-                ? 'bg-emerald-600 text-white'
-                : 'text-zinc-300 hover:text-white border border-zinc-700'
+              href={buildUrl({ assetIds: [] })}
+              className={`px-3 py-1.5 text-sm font-medium rounded-md transition duration-200 ${currentAssetIds.length === 0
+                ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/20'
+                : 'text-zinc-400 hover:text-white border border-zinc-800 hover:border-zinc-700'
                 }`}
             >
               All Assets
             </Link>
-            {topAssets.map((asset) => (
+            {topAssets.slice(0, 4).map((asset) => (
               <Link
                 key={asset.id}
                 href={toggleAssetId(asset.id)}
@@ -239,19 +263,30 @@ export function HoldingsFilters({
                 {asset.symbol}
               </Link>
             ))}
+
+            <div className="border-l border-zinc-800 mx-1 h-6 self-center" />
+
+            <AssetMultiSelect
+              assets={allAssets}
+              selectedIds={currentAssetIds.map(String)}
+              onChange={(ids) => {
+                router.push(buildUrl({ assetIds: ids.map(Number) }));
+              }}
+              isLoading={isLoading}
+            />
           </div>
         </div>
       )}
 
       {/* Asset Type Filter */}
       <div className="flex items-center gap-4">
-        <span className="text-sm font-medium text-zinc-400">Type:</span>
+        <span className="text-sm font-medium text-zinc-500 min-w-[80px]">Type:</span>
         <div className="flex flex-wrap gap-2">
           <Link
-            href={buildUrl({ view: currentView, accountIds: currentAccountIds, assetIds: currentAssetIds, assetTypes: [], volatilityBuckets: currentVolatilityBuckets })}
-            className={`px-3 py-1.5 text-sm rounded-md transition ${currentAssetTypes.length === 0
-              ? 'bg-blue-600 text-white'
-              : 'text-zinc-300 hover:text-white border border-zinc-700'
+            href={buildUrl({ assetTypes: [] })}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md transition duration-200 ${currentAssetTypes.length === 0
+              ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
+              : 'text-zinc-400 hover:text-white border border-zinc-800 hover:border-zinc-700'
               }`}
           >
             All
@@ -273,13 +308,13 @@ export function HoldingsFilters({
 
       {/* Volatility Filter */}
       <div className="flex items-center gap-4">
-        <span className="text-sm font-medium text-zinc-400">Volatility:</span>
+        <span className="text-sm font-medium text-zinc-500 min-w-[80px]">Volatility:</span>
         <div className="flex flex-wrap gap-2">
           <Link
-            href={buildUrl({ view: currentView, accountIds: currentAccountIds, assetIds: currentAssetIds, assetTypes: currentAssetTypes, volatilityBuckets: [] })}
-            className={`px-3 py-1.5 text-sm rounded-md transition ${currentVolatilityBuckets.length === 0
-              ? 'bg-blue-600 text-white'
-              : 'text-zinc-300 hover:text-white border border-zinc-700'
+            href={buildUrl({ volatilityBuckets: [] })}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md transition duration-200 ${currentVolatilityBuckets.length === 0
+              ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
+              : 'text-zinc-400 hover:text-white border border-zinc-800 hover:border-zinc-700'
               }`}
           >
             All
@@ -296,6 +331,31 @@ export function HoldingsFilters({
               {volatilityBucket}
             </Link>
           ))}
+        </div>
+      </div>
+
+      {/* Dust Filter */}
+      <div className="flex items-center gap-4">
+        <span className="text-sm font-medium text-zinc-500 min-w-[80px]">Dust:</span>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href={buildUrl({ hideSmall: true })}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md transition duration-200 ${currentHideSmall
+              ? 'bg-zinc-700 text-white shadow-lg shadow-black/20'
+              : 'text-zinc-400 hover:text-white border border-zinc-800 hover:border-zinc-700'
+              }`}
+          >
+            Hide &lt;$100
+          </Link>
+          <Link
+            href={buildUrl({ hideSmall: false })}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md transition duration-200 ${!currentHideSmall
+              ? 'bg-zinc-700 text-white shadow-lg shadow-black/20'
+              : 'text-zinc-400 hover:text-white border border-zinc-800 hover:border-zinc-700'
+              }`}
+          >
+            Show All
+          </Link>
         </div>
       </div>
     </div>
