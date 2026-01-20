@@ -4,13 +4,14 @@ import { prisma } from '@/lib/db';
 import { AccountForm, AccountFormInitialValues } from '../AccountForm';
 
 type EditAccountPageProps = {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 };
 
 export default async function EditAccountPage({ params }: EditAccountPageProps) {
-  const id = Number(params.id);
+  const { id: idParam } = await params;
+  const id = Number(idParam);
 
   if (!Number.isFinite(id)) {
     notFound();

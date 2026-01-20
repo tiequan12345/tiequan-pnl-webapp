@@ -5,9 +5,9 @@ import { AccountsTable } from './AccountsTable';
 import { AccountsFilters } from './AccountsFilters';
 
 type AccountsPageProps = {
-  searchParams?: {
+  searchParams: Promise<{
     status?: string;
-  };
+  }>;
 };
 
 type AccountRow = {
@@ -20,7 +20,8 @@ type AccountRow = {
   notes: string | null;
 };
 
-export default async function AccountsPage({ searchParams }: AccountsPageProps) {
+export default async function AccountsPage(props: AccountsPageProps) {
+  const searchParams = await props.searchParams;
   const params = searchParams ?? {};
   const statusFilter = params.status ?? 'ACTIVE';
 
@@ -53,7 +54,7 @@ export default async function AccountsPage({ searchParams }: AccountsPageProps) 
           + Add Account
         </Link>
       </div>
-      
+
       <div className="text-zinc-400 text-sm">
         Accounts are logical locations where assets are held. These can be CEX, Brokerages, DeFi Projects, or anywhere else that makes sense
       </div>

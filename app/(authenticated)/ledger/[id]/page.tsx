@@ -7,13 +7,14 @@ import {
 } from '../LedgerForm';
 
 type EditLedgerPageProps = {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 };
 
 export default async function EditLedgerPage({ params }: EditLedgerPageProps) {
-  const id = Number(params.id);
+  const { id: idParam } = await params;
+  const id = Number(idParam);
 
   if (!Number.isFinite(id)) {
     notFound();

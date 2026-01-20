@@ -12,9 +12,9 @@ import {
 } from '@/lib/ledger';
 
 type RouteContext = {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 };
 
 type LedgerPayload = {
@@ -36,7 +36,8 @@ type ValuationFieldKey =
   | 'fee_in_base';
 
 export async function PUT(request: Request, context: RouteContext) {
-  const id = Number(context.params.id);
+  const { id: idParam } = await context.params;
+  const id = Number(idParam);
 
   if (!Number.isFinite(id)) {
     return NextResponse.json(
@@ -358,7 +359,8 @@ export async function PUT(request: Request, context: RouteContext) {
 }
 
 export async function DELETE(_request: Request, context: RouteContext) {
-  const id = Number(context.params.id);
+  const { id: idParam } = await context.params;
+  const id = Number(idParam);
 
   if (!Number.isFinite(id)) {
     return NextResponse.json(

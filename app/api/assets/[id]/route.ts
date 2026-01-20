@@ -16,9 +16,9 @@ const ALLOWED_VOLATILITY_BUCKETS = ['CASH_LIKE', 'VOLATILE'] as const;
 const ALLOWED_PRICING_MODES = ['AUTO', 'MANUAL'] as const;
 
 type RouteContext = {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 };
 
 type AssetPayload = {
@@ -83,7 +83,8 @@ function parseManualPrice(input: string | number | null | undefined): string | n
 }
 
 export async function PUT(request: Request, context: RouteContext) {
-  const id = Number(context.params.id);
+  const { id: idParam } = await context.params;
+  const id = Number(idParam);
 
   if (!Number.isFinite(id)) {
     return NextResponse.json(
@@ -194,7 +195,8 @@ export async function PUT(request: Request, context: RouteContext) {
 }
 
 export async function DELETE(_request: Request, context: RouteContext) {
-  const id = Number(context.params.id);
+  const { id: idParam } = await context.params;
+  const id = Number(idParam);
 
   if (!Number.isFinite(id)) {
     return NextResponse.json(

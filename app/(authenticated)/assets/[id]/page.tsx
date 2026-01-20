@@ -4,13 +4,14 @@ import { prisma } from '@/lib/db';
 import { AssetForm, AssetFormInitialValues } from '../AssetForm';
 
 type EditAssetPageProps = {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 };
 
 export default async function EditAssetPage({ params }: EditAssetPageProps) {
-  const id = Number(params.id);
+  const { id: idParam } = await params;
+  const id = Number(idParam);
 
   if (!Number.isFinite(id)) {
     notFound();

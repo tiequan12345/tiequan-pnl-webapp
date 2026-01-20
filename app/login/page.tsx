@@ -4,7 +4,7 @@ import React, { FormEvent, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Layers, Lock } from 'lucide-react';
 
-const LoginPage: React.FC = () => {
+const LoginForm: React.FC = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [password, setPassword] = useState('');
@@ -104,6 +104,14 @@ const LoginPage: React.FC = () => {
         </form>
       </div>
     </div>
+  );
+};
+
+const LoginPage: React.FC = () => {
+  return (
+    <React.Suspense fallback={null}>
+      <LoginForm />
+    </React.Suspense>
   );
 };
 

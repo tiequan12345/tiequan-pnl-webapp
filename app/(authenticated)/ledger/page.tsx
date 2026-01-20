@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { prisma } from '@/lib/db';
 import { Card } from '../_components/ui/Card';
 import { LedgerForm } from './LedgerForm';
@@ -6,7 +7,7 @@ import { LedgerPagination } from './LedgerPagination';
 import { LedgerTable, LedgerTableRow } from './LedgerTable';
 
 type LedgerPageProps = {
-  searchParams?: {
+  searchParams: Promise<{
     page?: string;
     pageSize?: string;
     dateFrom?: string;
@@ -14,7 +15,7 @@ type LedgerPageProps = {
     accountIds?: string;
     assetIds?: string;
     txTypes?: string;
-  };
+  }>;
 };
 
 function parseDateTime(input: string | undefined): Date | null {
@@ -28,7 +29,8 @@ function parseDateTime(input: string | undefined): Date | null {
   return date;
 }
 
-export default async function LedgerPage({ searchParams }: LedgerPageProps) {
+export default async function LedgerPage(props: LedgerPageProps) {
+  const searchParams = await props.searchParams;
   const params = searchParams ?? {};
 
   const pageParam = params.page;
@@ -220,11 +222,13 @@ export default async function LedgerPage({ searchParams }: LedgerPageProps) {
 
       <Card className="p-0">
         <div className="border-b border-zinc-800 px-4 py-3">
-          <LedgerFilters
-            accounts={accountsForSelect}
-            assets={assetsForSelect}
-            initialFilters={initialFilters}
-          />
+          <Suspense fallback={null}>
+            <LedgerFilters
+              accounts={accountsForSelect}
+              assets={assetsForSelect}
+              initialFilters={initialFilters}
+            />
+          </Suspense>
         </div>
 
         <div className="overflow-x-auto">
@@ -237,7 +241,9 @@ export default async function LedgerPage({ searchParams }: LedgerPageProps) {
               ? 'No transactions to display.'
               : `Showing ${rows.length} of ${totalItems} transactions`}
           </div>
-          <LedgerPagination page={page} totalPages={totalPages} />
+          <Suspense fallback={null}>
+            <LedgerPagination page={page} totalPages={totalPages} />
+          </Suspense>
         </div>
       </Card>
     </div>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import Link from 'next/link';
 import { Card } from '../_components/ui/Card';
 import { Badge } from '../_components/ui/Badge';
@@ -13,13 +13,13 @@ import {
 import { getAppSettings } from '@/lib/settings';
 
 type HoldingsPageProps = {
-  searchParams?: {
+  searchParams: Promise<{
     view?: string;
     accountIds?: string;
     assetIds?: string;
     assetTypes?: string;
     volatilityBuckets?: string;
-  };
+  }>;
 };
 
 function formatCurrency(value: number, currency: string) {
@@ -49,7 +49,8 @@ function parseStringList(value?: string) {
     .filter((item) => item.length > 0);
 }
 
-export default async function HoldingsPage({ searchParams }: HoldingsPageProps) {
+export default async function HoldingsPage(props: HoldingsPageProps) {
+  const searchParams = await props.searchParams;
   const params = searchParams ?? {};
   const viewMode = params.view === 'consolidated' ? 'consolidated' : 'per-account';
 
@@ -98,13 +99,15 @@ export default async function HoldingsPage({ searchParams }: HoldingsPageProps) 
         <h2 className="text-xl font-bold text-white">Holdings</h2>
       </div>
 
-      <HoldingsFilters
-        currentView={viewMode}
-        currentAccountIds={accountIds}
-        currentAssetIds={assetIds}
-        currentAssetTypes={assetTypes}
-        currentVolatilityBuckets={volatilityBuckets}
-      />
+      <Suspense fallback={null}>
+        <HoldingsFilters
+          currentView={viewMode}
+          currentAccountIds={accountIds}
+          currentAssetIds={assetIds}
+          currentAssetTypes={assetTypes}
+          currentVolatilityBuckets={volatilityBuckets}
+        />
+      </Suspense>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>

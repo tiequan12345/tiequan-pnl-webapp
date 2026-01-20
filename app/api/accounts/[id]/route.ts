@@ -14,9 +14,9 @@ const ALLOWED_ACCOUNT_TYPES = [
 const ALLOWED_ACCOUNT_STATUS = ['ACTIVE', 'INACTIVE'] as const;
 
 type RouteContext = {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 };
 
 type AccountPayload = {
@@ -50,7 +50,8 @@ function validateAccountEnums(payload: AccountPayload): string | null {
 }
 
 export async function PUT(request: Request, context: RouteContext) {
-  const id = Number(context.params.id);
+  const { id: idParam } = await context.params;
+  const id = Number(idParam);
 
   if (!Number.isFinite(id)) {
     return NextResponse.json(
@@ -137,7 +138,8 @@ export async function PUT(request: Request, context: RouteContext) {
 }
 
 export async function DELETE(request: Request, context: RouteContext) {
-  const id = Number(context.params.id);
+  const { id: idParam } = await context.params;
+  const id = Number(idParam);
 
   if (!Number.isFinite(id)) {
     return NextResponse.json(

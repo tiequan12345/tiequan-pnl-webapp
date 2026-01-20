@@ -5,9 +5,10 @@ import { fetchCryptoPrice, fetchEquityPrice } from '@/lib/pricing';
 
 export async function POST(
   _request: Request,
-  { params }: { params: { assetId: string } },
+  props: { params: Promise<{ assetId: string }> },
 ) {
-  const assetId = Number(params.assetId);
+  const { assetId: assetIdParam } = await props.params;
+  const assetId = Number(assetIdParam);
   if (!Number.isFinite(assetId)) {
     return NextResponse.json(
       { error: 'Invalid asset identifier.' },
