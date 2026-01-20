@@ -83,11 +83,14 @@ export default async function HoldingsPage(props: HoldingsPageProps) {
     : rows;
   const visibleSummary = hideSmall ? summarizeHoldings(visibleRows) : holdings.summary;
 
+  // Use the full summary for top-level metrics so "Dust" toggle doesn't skew valuation
+  const displaySummary = holdings.summary;
+
   const baseCurrency = settings.baseCurrency;
-  const totalValue = visibleSummary.totalValue;
-  const lastUpdated = visibleSummary.updatedAt;
-  const totalCostBasis = visibleSummary.totalCostBasis;
-  const totalUnrealizedPnl = visibleSummary.totalUnrealizedPnl;
+  const totalValue = displaySummary.totalValue;
+  const lastUpdated = displaySummary.updatedAt;
+  const totalCostBasis = displaySummary.totalCostBasis;
+  const totalUnrealizedPnl = displaySummary.totalUnrealizedPnl;
   const valuationReady =
     totalCostBasis !== null && totalUnrealizedPnl !== null;
   const pnlPercent =
