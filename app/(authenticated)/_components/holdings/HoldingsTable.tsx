@@ -365,6 +365,7 @@ export function HoldingsTable({
       defaultSort={{ columnId: 'marketValue', direction: 'desc' }}
       globalSearch={globalSearch}
       rowClassName={() => 'hover:bg-zinc-800/30'}
+      stickyHeader={true}
       toolbar={toolbar}
     />
   );

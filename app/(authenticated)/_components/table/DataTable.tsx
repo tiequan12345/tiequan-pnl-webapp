@@ -327,13 +327,16 @@ export function DataTable<T>({
         <table
           className={`w-full text-left text-sm text-zinc-400 ${tableClassName ?? ''}`}
         >
-          <thead
-            className={`bg-zinc-900/50 border-b border-zinc-800 text-xs uppercase tracking-wide ${stickyHeader ? 'sticky top-0 z-10' : ''
-              }`}
-          >
+          <thead className="border-b border-zinc-800 text-xs uppercase tracking-wide">
             <tr>
               {enableSelection && (
-                <th className={`w-10 px-4 py-3 font-medium ${dense ? 'px-3 py-2' : ''}`}>
+                <th
+                  className={`w-10 px-4 py-3 font-medium ${dense ? 'px-3 py-2' : ''
+                    } ${stickyHeader
+                      ? 'sticky top-0 z-10 bg-zinc-900'
+                      : 'bg-zinc-900/50'
+                    }`}
+                >
                   <input
                     ref={checkboxRef}
                     type="checkbox"
@@ -353,6 +356,9 @@ export function DataTable<T>({
                   <th
                     key={column.id}
                     className={`${padding} font-medium ${alignment} ${column.headerClassName ?? ''
+                      } ${stickyHeader
+                        ? 'sticky top-0 z-10 bg-zinc-900'
+                        : 'bg-zinc-900/50'
                       }`}
                   >
                     {column.sortable ? (
