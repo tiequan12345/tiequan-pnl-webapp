@@ -227,6 +227,7 @@ export function AssetsTable({ rows, statusFilter = 'ACTIVE' }: AssetsTableProps)
       selectedRowIds={selectedIds}
       onSelectionChange={(next) => setSelectedIds(new Set(next))}
       toolbar={toolbar}
+      stickyHeader
     />
   );
 }

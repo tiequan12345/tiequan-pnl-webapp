@@ -145,6 +145,7 @@ export function NetExposureTable({ rows }: NetExposureTableProps) {
       emptyMessage="No volatile hedge exposures yet. Add HEDGE transactions for volatile assets to see net exposure."
       rowClassName={() => 'hover:bg-zinc-800/30'}
       toolbar={toolbar}
+      stickyHeader
     />
   );
 }
@@ -261,6 +262,7 @@ export function HedgeTransactionsTable({ rows }: HedgeTransactionsTableProps) {
       emptyMessage="No volatile hedge transactions found. Add HEDGE entries for volatile assets in the ledger to see them here."
       rowClassName={() => 'hover:bg-zinc-800/30'}
       toolbar={toolbar}
+      stickyHeader
     />
   );
 }
@@ -361,6 +363,7 @@ export function AggregatedHedgesTable({ rows }: AggregatedHedgesTableProps) {
       emptyMessage="No volatile hedge transactions found. Add HEDGE entries for volatile assets in the ledger to see them here."
       rowClassName={() => 'hover:bg-zinc-800/30'}
       toolbar={toolbar}
+      stickyHeader
     />
   );
 }

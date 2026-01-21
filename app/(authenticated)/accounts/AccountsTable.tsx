@@ -83,6 +83,7 @@ export function AccountsTable({ rows }: AccountsTableProps) {
       globalSearch={{ placeholder: 'Search accounts' }}
       emptyMessage={'No accounts found. Use "Add Account" to create your first account.'}
       rowClassName={() => 'hover:bg-zinc-800/30'}
+      stickyHeader
     />
   );
 }

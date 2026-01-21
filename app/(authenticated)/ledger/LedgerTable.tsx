@@ -255,6 +255,7 @@ export function LedgerTable({ rows }: LedgerTableProps) {
         selectedRowIds={selectedIds}
         onSelectionChange={setSelectedIds}
         tableClassName="table-fixed w-full"
+        stickyHeader
       />
 
       {selectedIds.size > 0 && (
