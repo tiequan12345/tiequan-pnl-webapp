@@ -147,6 +147,47 @@ export function HoldingsTable({
   const { isPrivacyMode } = usePrivacy();
   const [refreshingAssetIds, setRefreshingAssetIds] = useState<number[]>([]);
 
+  const handleCostBasisReset = useCallback(
+    async (row: HoldingRow) => {
+      if (isPrivacyMode) {
+        return;
+      }
+
+      const input = prompt(
+        `Enter total ${baseCurrency} cost basis for ${row.assetSymbol} (leave blank to cancel).`,
+      );
+      if (!input) {
+        return;
+      }
+      const parsed = Number(input);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        alert('Invalid cost basis value.');
+        return;
+      }
+
+      const response = await fetch('/api/ledger/cost-basis-reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          asset_id: row.assetId,
+          date_time: new Date().toISOString(),
+          total_value_in_base: parsed.toString(),
+          external_reference: `MANUAL:${row.assetSymbol}`,
+          notes: 'Manual cost basis reset from Holdings',
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        alert(payload.error || 'Failed to set cost basis.');
+        return;
+      }
+
+      router.refresh();
+    },
+    [baseCurrency, isPrivacyMode, router],
+  );
+
   const handleRefreshAsset = useCallback(
     async (assetId: number) => {
       setRefreshingAssetIds((prev) =>
@@ -257,7 +298,7 @@ export function HoldingsTable({
               />
             )}
 
-            <span className="text-zinc-200 text-sm relative z-10 px-1">
+            <span className="text-zinc-200 text-sm relative px-1">
               {row.marketValue !== null && row.marketValue !== undefined
                 ? (isPrivacyMode ? '****' : formatCurrencyValue(row.marketValue, baseCurrency))
                 : 'Unpriced'}
@@ -289,11 +330,28 @@ export function HoldingsTable({
       id: 'totalCostBasis',
       header: 'Cost Basis',
       accessor: (row) => row.totalCostBasis ?? -Infinity,
-      cell: (row) => (
-        <span className="text-zinc-200 text-sm">
-          {isPrivacyMode ? '****' : formatCurrencyValue(row.totalCostBasis, baseCurrency, { fallback: '—' })}
-        </span>
-      ),
+      cell: (row) => {
+        if (row.totalCostBasis === null && row.accountId === 0) {
+          return (
+            <div className="flex items-center justify-end gap-2">
+              <span className="text-zinc-500 text-xs">Unknown</span>
+              <button
+                type="button"
+                onClick={() => handleCostBasisReset(row)}
+                className="px-2 py-1 text-xs rounded-md border border-blue-500/30 text-blue-300 bg-blue-500/10 hover:bg-blue-500/20"
+              >
+                Set Basis
+              </button>
+            </div>
+          );
+        }
+
+        return (
+          <span className="text-zinc-200 text-sm">
+            {isPrivacyMode ? '****' : formatCurrencyValue(row.totalCostBasis, baseCurrency, { fallback: '—' })}
+          </span>
+        );
+      },
       sortable: true,
       sortFn: (a, b) => (a.totalCostBasis ?? -Infinity) - (b.totalCostBasis ?? -Infinity),
       align: 'right',
