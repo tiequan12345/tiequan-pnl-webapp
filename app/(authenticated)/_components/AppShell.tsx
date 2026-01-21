@@ -13,6 +13,7 @@ import {
   LineChart,
   Eye,
   EyeOff,
+  Wrench,
 } from 'lucide-react';
 import { usePrivacy } from '../_contexts/PrivacyContext';
 
@@ -27,6 +28,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/holdings', label: 'Holdings', icon: PieChart },
   { href: '/pnl', label: 'PNL Over Time', icon: LineChart },
   { href: '/ledger', label: 'Ledger', icon: ArrowRightLeft },
+  { href: '/reconcile', label: 'Reconcile', icon: Wrench },
   { href: '/hedges', label: 'Hedges', icon: ShieldCheck },
   { href: '/assets', label: 'Assets', icon: Wallet },
   { href: '/accounts', label: 'Accounts', icon: Wallet },

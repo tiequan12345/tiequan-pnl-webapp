@@ -333,7 +333,7 @@ export function DataTable<T>({
                 <th
                   className={`w-10 px-4 py-3 font-medium ${dense ? 'px-3 py-2' : ''
                     } ${stickyHeader
-                      ? 'sticky top-0 z-10 bg-zinc-900'
+                      ? 'sticky top-0 z-20 bg-zinc-900'
                       : 'bg-zinc-900/50'
                     }`}
                 >
@@ -357,7 +357,7 @@ export function DataTable<T>({
                     key={column.id}
                     className={`${padding} font-medium ${alignment} ${column.headerClassName ?? ''
                       } ${stickyHeader
-                        ? 'sticky top-0 z-10 bg-zinc-900'
+                        ? 'sticky top-0 z-20 bg-zinc-900'
                         : 'bg-zinc-900/50'
                       }`}
                   >

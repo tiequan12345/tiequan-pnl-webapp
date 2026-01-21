@@ -10,8 +10,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:generate": "prisma generate",
     "backup": "node scripts/backup.js",
-    "backup-service": "node scripts/backup-service.js",
-    "phase1:cost-basis": "node scripts/btc-cost-basis-phase1.js"
+    "backup-service": "node scripts/backup-service.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.600.0",
