@@ -3,6 +3,13 @@ import { getAppSettings } from '@/lib/settings';
 import { resolveAssetPrice, type LatestPriceRecord } from '@/lib/pricing';
 import type { Prisma } from '@prisma/client';
 
+export type CostBasisStatus =
+  | 'KNOWN'
+  | 'UNKNOWN'
+  | 'TRANSFER_UNMATCHED'
+  | 'TRANSFER_AMBIGUOUS'
+  | 'TRANSFER_INVALID';
+
 export type HoldingRow = {
   assetId: number;
   assetSymbol: string;
@@ -22,6 +29,10 @@ export type HoldingRow = {
   marketValue: number | null;
   averageCost: number | null;
   totalCostBasis: number | null;
+  costBasisKnown: boolean;
+  costBasisStatus: CostBasisStatus;
+  transferDiagnosticKey: string | null;
+  transferDiagnosticLegIds: number[] | null;
   unrealizedPnl: number | null;
   unrealizedPnlPct: number | null;
 };
@@ -131,6 +142,60 @@ type LedgerTransactionWithRelations = Prisma.LedgerTransactionGetPayload<{
   };
 }>;
 
+type HoldingPosition = {
+  asset: LedgerTransactionWithRelations['asset'];
+  account: LedgerTransactionWithRelations['account'];
+  quantity: number;
+  costBasis: number;
+  costBasisKnown: boolean;
+  costBasisStatus: CostBasisStatus;
+  transferDiagnosticKey: string | null;
+  transferDiagnosticLegIds: number[] | null;
+};
+
+function buildPositionKey(assetId: number, accountId: number): string {
+  return `${assetId}-${accountId}`;
+}
+
+function buildTransferKey(tx: LedgerTransactionWithRelations): string {
+  const reference = (tx.external_reference ?? '').trim();
+  if (reference.startsWith('MATCH:')) {
+    return `${tx.asset_id}|${reference}`;
+  }
+  const qtyNumber = Math.abs(decimalToNumber(tx.quantity));
+  const dateKey = tx.date_time.toISOString();
+  return `${tx.asset_id}|${dateKey}|${qtyNumber}|${reference}`;
+}
+
+function isTransferStatus(status: CostBasisStatus): boolean {
+  return (
+    status === 'TRANSFER_UNMATCHED' ||
+    status === 'TRANSFER_AMBIGUOUS' ||
+    status === 'TRANSFER_INVALID'
+  );
+}
+
+function markCostBasisStatus(
+  position: HoldingPosition,
+  status: CostBasisStatus,
+  diagnostic?: { key: string; legIds: number[] },
+): void {
+  if (status === 'UNKNOWN') {
+    if (position.costBasisStatus === 'KNOWN') {
+      position.costBasisStatus = 'UNKNOWN';
+    }
+    return;
+  }
+
+  if (isTransferStatus(position.costBasisStatus)) {
+    return;
+  }
+
+  position.costBasisStatus = status;
+  position.transferDiagnosticKey = diagnostic?.key ?? null;
+  position.transferDiagnosticLegIds = diagnostic?.legIds ?? null;
+}
+
 export async function fetchHoldingRows(filters?: HoldingFilters): Promise<HoldingRow[]> {
   const settings = await getAppSettings();
   const refreshIntervalMinutes = settings.priceAutoRefreshIntervalMinutes;
@@ -171,16 +236,7 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
     return [];
   }
 
-  const positions = new Map<
-    string,
-    {
-      asset: LedgerTransactionWithRelations['asset'];
-      account: LedgerTransactionWithRelations['account'];
-      quantity: number;
-      costBasis: number;
-      costBasisKnown: boolean;
-    }
-  >();
+  const positions = new Map<string, HoldingPosition>();
 
   const isCashLikeAsset = (asset: LedgerTransactionWithRelations['asset']): boolean => {
     const type = (asset.type ?? '').toUpperCase();
@@ -196,44 +252,30 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
     );
   };
 
-  for (const tx of transactions) {
-    const key = `${tx.asset_id}-${tx.account_id}`;
-    const quantity = decimalToNumber(tx.quantity);
+  const getOrCreatePosition = (tx: LedgerTransactionWithRelations): HoldingPosition => {
+    const key = buildPositionKey(tx.asset_id, tx.account_id);
     const existing = positions.get(key);
-
-    const position =
-      existing ?? {
-        asset: tx.asset,
-        account: tx.account,
-        quantity: 0,
-        costBasis: 0,
-        costBasisKnown: true,
-      };
-
-    if (tx.tx_type === 'COST_BASIS_RESET') {
-      const resetValue = decimalToNullableNumber(tx.total_value_in_base);
-      if (resetValue === null) {
-        position.costBasisKnown = false;
-      } else {
-        position.costBasisKnown = true;
-        position.costBasis = Math.max(Math.abs(resetValue), 0);
-      }
-      positions.set(key, position);
-      continue;
+    if (existing) {
+      return existing;
     }
 
-    if (tx.tx_type === 'RECONCILIATION') {
-      position.quantity += quantity;
+    const position: HoldingPosition = {
+      asset: tx.asset,
+      account: tx.account,
+      quantity: 0,
+      costBasis: 0,
+      costBasisKnown: true,
+      costBasisStatus: 'KNOWN',
+      transferDiagnosticKey: null,
+      transferDiagnosticLegIds: null,
+    };
+    positions.set(key, position);
+    return position;
+  };
 
-      // Clean up dust and ghost basis
-      if (Math.abs(position.quantity) <= 1e-12) {
-        position.quantity = 0;
-        position.costBasis = 0;
-      }
-
-      positions.set(key, position);
-      continue;
-    }
+  const applyNonTransferTransaction = (tx: LedgerTransactionWithRelations): HoldingPosition => {
+    const position = getOrCreatePosition(tx);
+    const quantity = decimalToNumber(tx.quantity);
 
     if (isCashLikeAsset(tx.asset)) {
       // Cash-like assets are assumed to be 1:1 with the base currency, so we can infer cost basis
@@ -251,8 +293,7 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
         position.quantity += quantity;
       }
 
-      positions.set(key, position);
-      continue;
+      return position;
     }
 
     const txValue = getTransactionValue(
@@ -264,6 +305,7 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
     if (quantity > 0) {
       if (txValue === null) {
         position.costBasisKnown = false;
+        markCostBasisStatus(position, 'UNKNOWN');
       } else {
         position.costBasis += txValue;
       }
@@ -278,11 +320,160 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
         }
       } else {
         position.costBasisKnown = false;
+        markCostBasisStatus(position, 'UNKNOWN');
       }
       position.quantity += quantity;
     }
 
-    positions.set(key, position);
+    return position;
+  };
+
+  const transferGroups = new Map<string, LedgerTransactionWithRelations[]>();
+  for (const tx of transactions) {
+    if (tx.tx_type !== 'TRANSFER') {
+      continue;
+    }
+    const key = buildTransferKey(tx);
+    const group = transferGroups.get(key) ?? [];
+    group.push(tx);
+    transferGroups.set(key, group);
+  }
+
+  const processedTransfers = new Set<string>();
+
+  for (const tx of transactions) {
+    if (tx.tx_type === 'COST_BASIS_RESET') {
+      const position = getOrCreatePosition(tx);
+      const resetValue = decimalToNullableNumber(tx.total_value_in_base);
+      if (resetValue === null) {
+        position.costBasisKnown = false;
+        position.costBasisStatus = 'UNKNOWN';
+      } else {
+        position.costBasisKnown = true;
+        position.costBasisStatus = 'KNOWN';
+        position.costBasis = Math.max(Math.abs(resetValue), 0);
+      }
+      position.transferDiagnosticKey = null;
+      position.transferDiagnosticLegIds = null;
+      continue;
+    }
+
+    if (tx.tx_type === 'RECONCILIATION') {
+      const position = getOrCreatePosition(tx);
+      const quantity = decimalToNumber(tx.quantity);
+      position.quantity += quantity;
+
+      // Clean up dust and ghost basis
+      if (Math.abs(position.quantity) <= 1e-12) {
+        position.quantity = 0;
+        position.costBasis = 0;
+      }
+
+      continue;
+    }
+
+    if (tx.tx_type !== 'TRANSFER') {
+      applyNonTransferTransaction(tx);
+      continue;
+    }
+
+    const transferKey = buildTransferKey(tx);
+    const group = transferGroups.get(transferKey);
+    if (!group) {
+      applyNonTransferTransaction(tx);
+      continue;
+    }
+
+    if (processedTransfers.has(transferKey)) {
+      continue;
+    }
+
+    processedTransfers.add(transferKey);
+
+    const legIds = group.map((leg) => leg.id);
+
+    if (group.length !== 2) {
+      const issue = group.length < 2 ? 'TRANSFER_UNMATCHED' : 'TRANSFER_AMBIGUOUS';
+      const diagnostic = { key: transferKey, legIds };
+      for (const leg of group) {
+        const position = applyNonTransferTransaction(leg);
+        if (!position.costBasisKnown && Math.abs(position.quantity) > 1e-12) {
+          markCostBasisStatus(position, issue, diagnostic);
+        }
+      }
+      continue;
+    }
+
+    const [legA, legB] = group;
+    const qtyA = decimalToNullableNumber(legA.quantity);
+    const qtyB = decimalToNullableNumber(legB.quantity);
+    const isManualMatch = (legA.external_reference || '').startsWith('MATCH:');
+
+    const quantitiesValid = qtyA !== null && qtyB !== null;
+    const signsDiffer = quantitiesValid && ((qtyA > 0 && qtyB < 0) || (qtyA < 0 && qtyB > 0));
+
+    const strictBalance =
+      quantitiesValid &&
+      !isManualMatch &&
+      (Math.abs(qtyA + qtyB) > 1e-9 || Math.abs(Math.abs(qtyA) - Math.abs(qtyB)) > 1e-9);
+
+    if (
+      !quantitiesValid ||
+      qtyA === 0 ||
+      qtyB === 0 ||
+      legA.asset_id !== legB.asset_id ||
+      legA.account_id === legB.account_id ||
+      !signsDiffer ||
+      strictBalance
+    ) {
+      const diagnostic = { key: transferKey, legIds };
+      for (const leg of group) {
+        const position = applyNonTransferTransaction(leg);
+        if (!position.costBasisKnown && Math.abs(position.quantity) > 1e-12) {
+          markCostBasisStatus(position, 'TRANSFER_INVALID', diagnostic);
+        }
+      }
+      continue;
+    }
+
+    const validQtyA = qtyA as number;
+    const sourceLeg = validQtyA < 0 ? legA : legB;
+    const destLeg = sourceLeg === legA ? legB : legA;
+    const transferQty = Math.abs(decimalToNumber(sourceLeg.quantity));
+
+    const sourcePosition = getOrCreatePosition(sourceLeg);
+    const destPosition = getOrCreatePosition(destLeg);
+
+    const sourceQtyBefore = sourcePosition.quantity;
+
+    sourcePosition.quantity += decimalToNumber(sourceLeg.quantity);
+    destPosition.quantity += decimalToNumber(destLeg.quantity);
+
+    if (!sourcePosition.costBasisKnown || sourceQtyBefore <= 0) {
+      sourcePosition.costBasisKnown = sourcePosition.costBasisKnown && sourceQtyBefore > 0;
+      if (!sourcePosition.costBasisKnown) {
+        markCostBasisStatus(sourcePosition, 'UNKNOWN');
+      }
+      destPosition.costBasisKnown = false;
+      markCostBasisStatus(destPosition, 'UNKNOWN');
+      continue;
+    }
+
+    const averageCost = sourcePosition.costBasis / sourceQtyBefore;
+    const movedBasis = averageCost * transferQty;
+
+    if (!Number.isFinite(movedBasis)) {
+      destPosition.costBasisKnown = false;
+      markCostBasisStatus(destPosition, 'UNKNOWN');
+      continue;
+    }
+
+    sourcePosition.costBasis -= movedBasis;
+    if (sourcePosition.costBasis < 0) {
+      sourcePosition.costBasis = 0;
+    }
+
+    destPosition.costBasis += movedBasis;
   }
 
   const rows: HoldingRow[] = [];
@@ -304,6 +495,7 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
     const marketValue = price !== null ? quantity * price : null;
 
     const totalCostBasis = position.costBasisKnown ? Math.max(position.costBasis, 0) : null;
+    const costBasisStatus = position.costBasisKnown ? 'KNOWN' : position.costBasisStatus;
     const averageCost =
       totalCostBasis !== null && Math.abs(quantity) > 0
         ? totalCostBasis / Math.abs(quantity)
@@ -336,6 +528,10 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
       marketValue,
       averageCost,
       totalCostBasis,
+      costBasisKnown: position.costBasisKnown,
+      costBasisStatus,
+      transferDiagnosticKey: position.transferDiagnosticKey,
+      transferDiagnosticLegIds: position.transferDiagnosticLegIds,
       unrealizedPnl,
       unrealizedPnlPct,
     });
@@ -438,6 +634,20 @@ export function consolidateHoldingsByAsset(rows: HoldingRow[]): HoldingRow[] {
       ? relevantRows.reduce((sum, row) => sum + (row.totalCostBasis ?? 0), 0)
       : null;
 
+    const consolidatedCostBasisKnown = relevantRows.every((row) => row.costBasisKnown);
+    const transferIssueRow = relevantRows.find((row) =>
+      row.costBasisStatus === 'TRANSFER_UNMATCHED' ||
+      row.costBasisStatus === 'TRANSFER_AMBIGUOUS' ||
+      row.costBasisStatus === 'TRANSFER_INVALID',
+    );
+    const consolidatedCostBasisStatus = transferIssueRow
+      ? transferIssueRow.costBasisStatus
+      : consolidatedCostBasisKnown
+        ? 'KNOWN'
+        : 'UNKNOWN';
+    const consolidatedTransferKey = transferIssueRow?.transferDiagnosticKey ?? null;
+    const consolidatedTransferLegIds = transferIssueRow?.transferDiagnosticLegIds ?? null;
+
     const allUnrealizedKnown = relevantRows.every((row) => row.unrealizedPnl !== null);
     const aggregatedUnrealizedPnl = allUnrealizedKnown
       ? relevantRows.reduce((sum, row) => sum + (row.unrealizedPnl ?? 0), 0)
@@ -468,6 +678,10 @@ export function consolidateHoldingsByAsset(rows: HoldingRow[]): HoldingRow[] {
       marketValue: hasPricedRow ? totalMarketValue : null,
       averageCost: consolidatedAverageCost,
       totalCostBasis: aggregatedCostBasis,
+      costBasisKnown: consolidatedCostBasisKnown,
+      costBasisStatus: consolidatedCostBasisStatus,
+      transferDiagnosticKey: consolidatedTransferKey,
+      transferDiagnosticLegIds: consolidatedTransferLegIds,
       unrealizedPnl: aggregatedUnrealizedPnl,
       unrealizedPnlPct: consolidatedUnrealizedPct,
     });
