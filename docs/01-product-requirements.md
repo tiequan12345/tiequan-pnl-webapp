@@ -101,6 +101,9 @@ UI / UX Baseline and Aesthetic Constraints:
 - fee_in_base (Decimal, nullable)
 - created_at, updated_at
 
+Notes:
+- For DEPOSIT, YIELD, and trade-like entries, unit price or total value is required (use explicit `0` for zero-cost basis).
+
 ### prices_latest
 - id (PK)
 - asset_id (FK → assets.id, unique)
@@ -242,5 +245,6 @@ All core phases (0-6) are complete with the following key features:
 - **CSV Import**: Full import workflow with mapping, validation, and inline entity creation
 - **Backup System**: Automated SQLite backups to S3 with configurable schedule
 - **Rate Limiting**: CoinGecko API rate limiting with batch processing and monitoring
+- **Valuation Guardrails**: API/UI require explicit valuation for DEPOSIT, YIELD, and trade-like entries (zero cost basis must be `0`).
 
 The application is fully functional for single-user portfolio tracking with all MVP requirements implemented.

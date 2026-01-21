@@ -87,6 +87,9 @@ Restore accurate BTC (and other asset) cost basis after transfers, align runtime
 - Recompute cost basis for all accounts and assets.
 - Persist new COST_BASIS_RESET entries as of a known cutoff.
 
+### 1B. Backfill missing valuation data
+- Use `scripts/repair-null-yield-valuation.js` to set missing totals for YIELD/DEPOSIT rows when source pricing is absent.
+
 ### 2. Verify end‑to‑end holdings output
 - Compare output against recalculated resets and expected average costs.
 - Validate that holdings view now reflects propagated transfer basis.
@@ -104,6 +107,7 @@ Restore accurate BTC (and other asset) cost basis after transfers, align runtime
 ### 1. Automated health checks
 - Alert when holdings contain non‑zero quantity with unknown cost basis.
 - Alert when transfers remain unmatched or fee mismatched above tolerance.
+- Enforce valuation-required transaction types to prevent null basis entries (zero cost basis must be explicit).
 
 ### 2. Recalc scheduling strategy
 - Option A: Run recalc after bulk import/transfer events.

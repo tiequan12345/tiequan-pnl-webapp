@@ -35,6 +35,29 @@ type ValuationFieldKey =
   | 'total_value_in_base'
   | 'fee_in_base';
 
+const VALUATION_REQUIRED_TX_TYPES: (typeof ALLOWED_TX_TYPES)[number][] = [
+  'DEPOSIT',
+  'YIELD',
+  'TRADE',
+  'NFT_TRADE',
+  'OFFLINE_TRADE',
+  'HEDGE',
+];
+
+function requiresValuation(txType: (typeof ALLOWED_TX_TYPES)[number]) {
+  return VALUATION_REQUIRED_TX_TYPES.includes(txType);
+}
+
+function hasLedgerValuation(
+  unitPrice: string | number | null | undefined,
+  totalValue: string | number | null | undefined,
+) {
+  return (
+    decimalValueToNumber(unitPrice) !== null ||
+    decimalValueToNumber(totalValue) !== null
+  );
+}
+
 export async function PUT(request: Request, context: RouteContext) {
   const { id: idParam } = await context.params;
   const id = Number(idParam);
@@ -311,6 +334,15 @@ export async function PUT(request: Request, context: RouteContext) {
         ? derivedValuations.total_value_in_base
         : parsedValuations.total_value_in_base;
 
+    const nextUnitPrice =
+      unitPriceFinal !== undefined
+        ? unitPriceFinal
+        : existing.unit_price_in_base?.toString() ?? null;
+    const nextTotalValue =
+      totalValueFinal !== undefined
+        ? totalValueFinal
+        : existing.total_value_in_base?.toString() ?? null;
+
     if (unitPriceFinal !== undefined) {
       updateData.unit_price_in_base = unitPriceFinal;
     }
@@ -321,15 +353,18 @@ export async function PUT(request: Request, context: RouteContext) {
       updateData.fee_in_base = parsedValuations.fee_in_base;
     }
 
+    if (requiresValuation(txType) && !hasLedgerValuation(nextUnitPrice, nextTotalValue)) {
+      return NextResponse.json(
+        { error: 'unit_price_in_base or total_value_in_base is required for this transaction type.' },
+        { status: 400 },
+      );
+    }
+
     if (
       !isLedgerValuationConsistent(
         decimalValueToNumber(quantityParsed)!,
-        unitPriceFinal !== undefined
-          ? unitPriceFinal
-          : existing.unit_price_in_base?.toString() ?? null,
-        totalValueFinal !== undefined
-          ? totalValueFinal
-          : existing.total_value_in_base?.toString() ?? null,
+        nextUnitPrice,
+        nextTotalValue,
       )
     ) {
       return NextResponse.json(

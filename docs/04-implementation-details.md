@@ -41,6 +41,7 @@ All core phases (0-6) are complete with the following key features implemented:
 - Holdings API with PnL calculations
 - Price refresh functionality with manual and auto pricing
 - Valuation fields: `unit_price_in_base`, `total_value_in_base`, `fee_in_base`
+- Valuation guardrails: DEPOSIT, YIELD, and trade-like entries require unit price or total value (zero cost basis must be explicit)
 
 ### ✅ Phase 4 – Dashboard
 - Live portfolio totals and allocations
@@ -172,6 +173,14 @@ All core phases (0-6) are complete with the following key features implemented:
   - Cost basis engine respects `MATCH:` prefix to force-group legs even if quantities differ (handling fee discrepancies).
 - **Separate Logic**: Converts legs to independent `DEPOSIT` / `WITHDRAWAL` entries.
 
+### Issue 11B: Missing Valuation Guardrails ✅
+**Problem**: Users could create DEPOSIT/YIELD/trade entries with null valuation fields, which silently poisoned cost basis and propagated "Unknown" status.
+
+**Solution**:
+- API validation requires `unit_price_in_base` or `total_value_in_base` for DEPOSIT, YIELD, and trade-like entries.
+- `LedgerForm` enforces valuation input and adds a "Zero cost basis" toggle for DEPOSIT/YIELD.
+- Repair script `scripts/repair-null-yield-valuation.js` backfills missing totals when needed.
+
 ### Feature 12: Enhanced Ledger Selection (Drag-to-Select) ✅
 **Problem**: Selecting multiple contiguous rows in the ledger required repeated clicking or precise Shift-clicking, which could be cumbersome for large ranges.
 
@@ -286,6 +295,7 @@ All core phases (0-6) are complete with the following key features implemented:
 - `PUT /api/ledger/:id` - Update existing transactions
 - `DELETE /api/ledger/:id` - Remove transactions
 - `POST /api/ledger/cost-basis-recalc` - Recompute cost basis by replaying ledger transactions and persist results as COST_BASIS_RESET rows.
+  - Valuation required for DEPOSIT, YIELD, and trade-like entries (unit price or total value; zero must be explicit).
   - Request body: `{ "as_of": "ISO-8601", "mode": "PURE|HONOR_RESETS", "external_reference": "string", "notes": "string" }`
   - Modes:
     - `PURE` ignores existing COST_BASIS_RESET records.

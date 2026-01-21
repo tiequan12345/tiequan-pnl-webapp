@@ -31,6 +31,8 @@ type TxType = LedgerTxType;
 
 const TRADE_TYPES: TxType[] = ['TRADE', 'NFT_TRADE', 'OFFLINE_TRADE', 'HEDGE'];
 const TRANSFER_TYPES: TxType[] = ['TRANSFER'];
+const VALUATION_REQUIRED_TYPES: TxType[] = ['DEPOSIT', 'YIELD', ...TRADE_TYPES];
+const ZERO_COST_BASIS_TYPES: TxType[] = ['DEPOSIT', 'YIELD'];
 
 type ValuationFieldKey =
   | 'unit_price_in_base'
@@ -189,6 +191,19 @@ export function LedgerForm({
   const [unitPriceTouched, setUnitPriceTouched] = useState<boolean>(false);
   const [totalValueTouched, setTotalValueTouched] = useState<boolean>(false);
   const [applyResetToAllAccounts, setApplyResetToAllAccounts] = useState<boolean>(false);
+  const [zeroCostBasis, setZeroCostBasis] = useState<boolean>(() => {
+    if (!initialValues?.tx_type) {
+      return false;
+    }
+    const initialTxType = initialValues.tx_type.toUpperCase() as TxType;
+    if (!ZERO_COST_BASIS_TYPES.includes(initialTxType)) {
+      return false;
+    }
+    return (
+      initialValues.unit_price_in_base === '0' ||
+      initialValues.total_value_in_base === '0'
+    );
+  });
 
   const [assetInId, setAssetInId] = useState<string>(() => {
     if (assets.length > 0) {
@@ -280,6 +295,13 @@ export function LedgerForm({
   const isTransferType = TRANSFER_TYPES.includes(txType);
   const isCostBasisReset = txType === 'COST_BASIS_RESET';
   const isReconciliationType = txType === 'RECONCILIATION' && !isEditMode;
+  const isValuationRequired = VALUATION_REQUIRED_TYPES.includes(txType) && !isCostBasisReset;
+  const canZeroCostBasis =
+    ZERO_COST_BASIS_TYPES.includes(txType) &&
+    !isCostBasisReset &&
+    !isTransferType &&
+    !isTradeType &&
+    !isReconciliationType;
 
   useEffect(() => {
     if (isCostBasisReset) {
@@ -312,6 +334,12 @@ export function LedgerForm({
       }
     }
   }, [isCostBasisReset, quantity, unitPrice, totalValue, unitPriceTouched, totalValueTouched]);
+
+  useEffect(() => {
+    if (!canZeroCostBasis && zeroCostBasis) {
+      setZeroCostBasis(false);
+    }
+  }, [canZeroCostBasis, zeroCostBasis]);
 
   useEffect(() => {
     // Transfer-specific valuation auto-derivation
@@ -430,6 +458,46 @@ export function LedgerForm({
       external_reference: trimmedExternalRef || null,
       notes: trimmedNotes || null,
     };
+  };
+
+  const validateValuationRequirement = (
+    unitValue: string,
+    totalValueInput: string,
+    label: string,
+  ) => {
+    const unitParsed = parseLedgerDecimal(unitValue);
+    const totalParsed = parseLedgerDecimal(totalValueInput);
+
+    if (unitParsed === null || totalParsed === null) {
+      return `${label}: Unit price or total value must be a valid number.`;
+    }
+
+    const hasValuation =
+      (unitParsed !== undefined && unitParsed !== null) ||
+      (totalParsed !== undefined && totalParsed !== null);
+
+    if (!hasValuation) {
+      return `${label}: Unit price or total value is required.`;
+    }
+
+    return null;
+  };
+
+  const handleZeroCostBasisChange = (checked: boolean) => {
+    setZeroCostBasis(checked);
+    if (checked) {
+      setUnitPrice('0');
+      setTotalValue('0');
+      setUnitPriceTouched(true);
+      setTotalValueTouched(true);
+    } else {
+      if (unitPrice === '0') {
+        setUnitPrice('');
+      }
+      if (totalValue === '0') {
+        setTotalValue('');
+      }
+    }
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -561,6 +629,19 @@ export function LedgerForm({
             return;
           }
           // targetQuantity is already set to quantity string
+        }
+
+        if (!isTransferType && isValuationRequired) {
+          const valuationError = validateValuationRequirement(
+            targetValuations.unitPrice,
+            targetValuations.totalValue,
+            'Valuation',
+          );
+          if (valuationError) {
+            setError(valuationError);
+            setSubmitting(false);
+            return;
+          }
         }
 
         const basePayload = buildCommonPayload({
@@ -738,6 +819,30 @@ export function LedgerForm({
           return;
         }
 
+        if (isValuationRequired) {
+          const assetInError = validateValuationRequirement(
+            assetInUnitPrice,
+            assetInTotalValue,
+            'Asset In valuation',
+          );
+          if (assetInError) {
+            setError(assetInError);
+            setSubmitting(false);
+            return;
+          }
+
+          const assetOutError = validateValuationRequirement(
+            assetOutUnitPrice,
+            assetOutTotalValue,
+            'Asset Out valuation',
+          );
+          if (assetOutError) {
+            setError(assetOutError);
+            setSubmitting(false);
+            return;
+          }
+        }
+
         const payload = buildCommonPayload({
           assetId: assetInNumeric, // This will be ignored for multi-leg trades
           quantity: '0', // This will be ignored for multi-leg trades
@@ -837,6 +942,19 @@ export function LedgerForm({
         setError('Asset is required.');
         setSubmitting(false);
         return;
+      }
+
+      if (isValuationRequired) {
+        const valuationError = validateValuationRequirement(
+          unitPrice,
+          totalValue,
+          'Valuation',
+        );
+        if (valuationError) {
+          setError(valuationError);
+          setSubmitting(false);
+          return;
+        }
       }
 
       if (isCostBasisReset && applyResetToAllAccounts) {
@@ -1225,7 +1343,9 @@ export function LedgerForm({
                 <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
                   Valuation (base currency)
                 </label>
-                <span className="text-xs text-zinc-500">Optional</span>
+                <span className="text-xs text-zinc-500">
+                  {isValuationRequired ? 'Required' : 'Optional'}
+                </span>
               </div>
               {isCostBasisReset && !isEditMode && (
                 <label className="flex items-center gap-2 text-xs text-zinc-400 mb-2">
@@ -1236,6 +1356,17 @@ export function LedgerForm({
                     className="h-4 w-4 rounded border-zinc-700 bg-zinc-950 text-blue-500 focus:ring-blue-500"
                   />
                   Apply reset across all accounts holding this asset (allocates by quantity at time T)
+                </label>
+              )}
+              {canZeroCostBasis && (
+                <label className="flex items-center gap-2 text-xs text-zinc-400 mb-2">
+                  <input
+                    type="checkbox"
+                    checked={zeroCostBasis}
+                    onChange={(event) => handleZeroCostBasisChange(event.target.checked)}
+                    className="h-4 w-4 rounded border-zinc-700 bg-zinc-950 text-blue-500 focus:ring-blue-500"
+                  />
+                  Zero cost basis (set unit price and total value to 0)
                 </label>
               )}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -1257,7 +1388,13 @@ export function LedgerForm({
                       }
                     }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    placeholder={isCostBasisReset ? 'e.g. 45000 (per unit)' : 'Optional'}
+                    placeholder={
+                      isCostBasisReset
+                        ? 'e.g. 45000 (per unit)'
+                        : isValuationRequired
+                          ? 'Required'
+                          : 'Optional'
+                    }
                   />
                 </div>
                 <div className="space-y-2">
@@ -1279,7 +1416,11 @@ export function LedgerForm({
                     }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     placeholder={
-                      isCostBasisReset ? 'e.g. 45000 (total) or leave blank to derive from unit price' : 'Optional'
+                      isCostBasisReset
+                        ? 'e.g. 45000 (total) or leave blank to derive from unit price'
+                        : isValuationRequired
+                          ? 'Required'
+                          : 'Optional'
                     }
                   />
                 </div>
@@ -1386,7 +1527,9 @@ export function LedgerForm({
                 <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
                   Asset In valuation
                 </label>
-                <span className="text-xs text-zinc-500">Optional</span>
+                <span className="text-xs text-zinc-500">
+                  {isValuationRequired ? 'Required' : 'Optional'}
+                </span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="space-y-2">
@@ -1407,7 +1550,7 @@ export function LedgerForm({
                       }
                     }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    placeholder="Optional"
+                    placeholder={isValuationRequired ? 'Required' : 'Optional'}
                   />
                 </div>
                 <div className="space-y-2">
@@ -1428,7 +1571,7 @@ export function LedgerForm({
                       }
                     }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    placeholder="Optional"
+                    placeholder={isValuationRequired ? 'Required' : 'Optional'}
                   />
                 </div>
                 <div className="space-y-2">
@@ -1457,7 +1600,9 @@ export function LedgerForm({
                 <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
                   Asset Out valuation
                 </label>
-                <span className="text-xs text-zinc-500">Optional</span>
+                <span className="text-xs text-zinc-500">
+                  {isValuationRequired ? 'Required' : 'Optional'}
+                </span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="space-y-2">
@@ -1478,7 +1623,7 @@ export function LedgerForm({
                       }
                     }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    placeholder="Optional"
+                    placeholder={isValuationRequired ? 'Required' : 'Optional'}
                   />
                 </div>
                 <div className="space-y-2">
@@ -1499,7 +1644,7 @@ export function LedgerForm({
                       }
                     }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    placeholder="Optional"
+                    placeholder={isValuationRequired ? 'Required' : 'Optional'}
                   />
                 </div>
                 <div className="space-y-2">

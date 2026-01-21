@@ -121,7 +121,7 @@ The application uses SQLite with Prisma ORM. The database schema includes:
 
 - **Asset**: Cryptocurrency and equity holdings
 - **Account**: Trading accounts and platforms
-- **LedgerTransaction**: Transaction history (signed quantities) plus optional valuation fields for cost basis (`unit_price_in_base`, `total_value_in_base`, `fee_in_base`). `COST_BASIS_RESET` entries (quantity `0`) anchor cost basis as-of a timestamp, and CASH/STABLE assets are treated as 1:1 with the base currency so their cost basis can be inferred directly from quantity.
+- **LedgerTransaction**: Transaction history (signed quantities) plus valuation fields for cost basis (`unit_price_in_base`, `total_value_in_base`, `fee_in_base`). For DEPOSIT, YIELD, and trade-like entries, unit price or total value is required (use explicit `0` for zero-cost basis). `COST_BASIS_RESET` entries (quantity `0`) anchor cost basis as-of a timestamp, and CASH/STABLE assets are treated as 1:1 with the base currency so their cost basis can be inferred directly from quantity.
 - **PriceLatest**: Latest price cache for assets
 - **Setting**: Application configuration
 - **PortfolioSnapshot**: History of tensile snapshots (timestamp, base currency, total value) plus denormalized components for asset/account breakdowns (see `PortfolioSnapshotComponent`).
@@ -319,6 +319,11 @@ Replays the ledger to recompute cost basis (transfer-aware) and persists results
 **Diagnostics:**
 - Transfer pairing issues are returned in `diagnostics` and logged server-side for review.
 
+### Ledger Valuation Requirements
+
+- `DEPOSIT`, `YIELD`, `TRADE`, `NFT_TRADE`, `OFFLINE_TRADE`, and `HEDGE` require either `unit_price_in_base` or `total_value_in_base`.
+- Zero-cost basis must be explicit (`0`), not `null`.
+
 ## CoinGecko Refresh Lifecycle
 
 The application implements a robust price refresh system with rate limiting and error handling.
@@ -475,6 +480,13 @@ pnpm run start        # Start production server
 pnpm run lint         # Run ESLint
 pnpm run prisma:generate  # Generate Prisma client
 pnpm run prisma:migrate   # Run database migrations
+```
+
+### Maintenance Scripts
+
+```bash
+node scripts/repair-null-yield-valuation.js           # Dry-run: report YIELD/DEPOSIT rows missing total_value_in_base
+node scripts/repair-null-yield-valuation.js --apply   # Backfill missing totals (and unit price when absent)
 ```
 
 ## Deployment
