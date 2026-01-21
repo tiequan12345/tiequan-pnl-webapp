@@ -197,7 +197,7 @@ export default async function LedgerPage(props: LedgerPageProps) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-white">Ledger</h2>
+        <h2 className="text-3xl md:text-4xl font-semibold text-white tracking-tight">Ledger</h2>
         <div className="text-xs text-zinc-500">
           {totalItems === 0
             ? 'No transactions yet'
@@ -205,10 +205,10 @@ export default async function LedgerPage(props: LedgerPageProps) {
         </div>
       </div>
 
-      <Card>
+      <Card className="rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl">
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-zinc-100">
+            <h3 className="text-xs uppercase tracking-wider text-zinc-400 font-semibold">
               Add Transaction
             </h3>
           </div>
@@ -220,8 +220,8 @@ export default async function LedgerPage(props: LedgerPageProps) {
         </div>
       </Card>
 
-      <Card className="p-0">
-        <div className="border-b border-zinc-800 px-4 py-3">
+      <Card className="p-0 rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl">
+        <div className="border-b border-white/5 px-4 py-3">
           <Suspense fallback={null}>
             <LedgerFilters
               accounts={accountsForSelect}
@@ -235,7 +235,7 @@ export default async function LedgerPage(props: LedgerPageProps) {
           <LedgerTable rows={rows} />
         </div>
 
-        <div className="flex items-center justify-between px-4 py-3 border-t border-zinc-800 text-xs text-zinc-500">
+        <div className="flex items-center justify-between px-4 py-3 border-t border-white/5 text-xs text-zinc-500">
           <div>
             {totalItems === 0
               ? 'No transactions to display.'

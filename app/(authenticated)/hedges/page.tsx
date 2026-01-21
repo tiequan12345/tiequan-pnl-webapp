@@ -31,25 +31,10 @@ function decimalToNumber(value: any): number {
 }
 
 export default async function HedgesPage() {
-  // 1. Get active assets first to filter reliably
-  // Fetching all and filtering in-memory to avoid potential type issues with 'status' in where clause
-  const allAssetsStatus = await prisma.asset.findMany({
-    select: {
-      id: true,
-      // @ts-ignore: status exists at runtime but types are missing
-      status: true
-    },
-  });
-  const activeAssetIds = allAssetsStatus
-    // @ts-ignore: status exists at runtime
-    .filter(a => a.status === 'ACTIVE')
-    .map(a => a.id);
-
   const [activeHedges, groupedHedges, groupedHoldings, settings] = await Promise.all([
     prisma.ledgerTransaction.findMany({
       where: {
         tx_type: 'HEDGE',
-        asset_id: { in: activeAssetIds },
       },
       orderBy: { date_time: 'desc' },
       include: {
@@ -71,7 +56,6 @@ export default async function HedgesPage() {
       by: ['asset_id'],
       where: {
         tx_type: 'HEDGE',
-        asset_id: { in: activeAssetIds },
       },
       _sum: { quantity: true },
     }),
@@ -263,7 +247,7 @@ export default async function HedgesPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-white">Hedges</h2>
+        <h2 className="text-3xl md:text-4xl font-semibold text-white tracking-tight">Hedges</h2>
         <div className="text-xs text-zinc-500">
           {hedgeRows.length === 0
             ? 'No volatile hedge transactions yet'
@@ -271,9 +255,9 @@ export default async function HedgesPage() {
         </div>
       </div>
 
-      <Card>
-        <div className="border-b border-zinc-800 px-4 py-3">
-          <h3 className="text-sm font-semibold text-zinc-100">Net Exposure by Asset</h3>
+      <Card className="rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl">
+        <div className="border-b border-white/5 px-4 py-3">
+          <h3 className="text-xs uppercase tracking-wider text-zinc-400 font-semibold">Net Exposure by Asset</h3>
           <p className="text-xs text-zinc-500 mt-1">
             Net exposure = holdings + hedge transactions, with price and market value for volatile assets.
           </p>
@@ -281,9 +265,9 @@ export default async function HedgesPage() {
         <NetExposureTable rows={netExposureRows} />
       </Card>
 
-      <Card className="p-0">
-        <div className="border-b border-zinc-800 px-4 py-3">
-          <h3 className="text-sm font-semibold text-zinc-100">Active Hedges</h3>
+      <Card className="p-0 rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl">
+        <div className="border-b border-white/5 px-4 py-3">
+          <h3 className="text-xs uppercase tracking-wider text-zinc-400 font-semibold">Active Hedges</h3>
           <p className="text-xs text-zinc-500 mt-1">
             Aggregated hedge positions by asset, showing total quantity and market value across all accounts. CASH_LIKE assets excluded.
           </p>

@@ -26,29 +26,35 @@ export default async function AssetsPage(props: AssetsPageProps) {
     consolidated.map((row) => [row.assetId, row.marketValue ?? null]),
   );
 
-  const filteredAssets = assets.filter((asset) => asset.status === statusFilter);
+  const filteredAssets = assets.filter((asset) => {
+    const status = (asset as { status?: string }).status ?? 'ACTIVE';
+    return status === statusFilter;
+  });
 
-  const rows: AssetRow[] = filteredAssets.map((asset) => ({
-    id: asset.id,
-    symbol: asset.symbol,
-    name: asset.name,
-    type: asset.type,
-    volatilityBucket: asset.volatility_bucket,
-    chainOrMarket: asset.chain_or_market,
-    pricingMode: asset.pricing_mode,
-    manualPrice: asset.manual_price ? asset.manual_price.toString() : null,
-    manualPriceValue: asset.manual_price ? Number(asset.manual_price.toString()) : null,
-    status: asset.status,
-    marketValue: marketValueMap.get(asset.id) ?? null,
-  }));
+  const rows: AssetRow[] = filteredAssets.map((asset) => {
+    const status = (asset as { status?: string }).status ?? 'ACTIVE';
+    return {
+      id: asset.id,
+      symbol: asset.symbol,
+      name: asset.name,
+      type: asset.type,
+      volatilityBucket: asset.volatility_bucket,
+      chainOrMarket: asset.chain_or_market,
+      pricingMode: asset.pricing_mode,
+      manualPrice: asset.manual_price ? asset.manual_price.toString() : null,
+      manualPriceValue: asset.manual_price ? Number(asset.manual_price.toString()) : null,
+      status,
+      marketValue: marketValueMap.get(asset.id) ?? null,
+    };
+  });
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-white">Assets</h2>
+        <h2 className="text-3xl md:text-4xl font-semibold text-white tracking-tight">Assets</h2>
         <Link
           href="/assets/new"
-          className="text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-lg border border-zinc-700 transition-colors"
+          className="text-xs uppercase tracking-wider bg-zinc-900/50 hover:bg-zinc-900/70 text-zinc-200 px-3 py-2 rounded-full border border-white/5 transition-colors"
         >
           + Add Asset
         </Link>
@@ -60,7 +66,7 @@ export default async function AssetsPage(props: AssetsPageProps) {
 
       <AssetsFilters currentStatus={statusFilter} />
 
-      <Card className="p-0">
+      <Card className="p-0 rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl">
         <AssetsTable rows={rows} statusFilter={statusFilter} />
       </Card>
     </div>

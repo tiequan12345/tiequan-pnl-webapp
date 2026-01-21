@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 
 import { Card } from '../_components/ui/Card';
 import { UnmatchedDiagnosticsViewer, type EnrichedDiagnostic } from './_components/UnmatchedDiagnosticsViewer';
-import { ReconciliationCard } from './_components/ReconciliationCard';
 
 type SettingsState = {
   baseCurrency: string;
@@ -206,11 +205,11 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Settings</h1>
+      <h1 className="text-3xl md:text-4xl font-semibold text-white tracking-tight">Settings</h1>
 
-      <Card className="space-y-4">
+      <Card className="space-y-4 rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">General</h2>
+          <h2 className="text-xs uppercase tracking-wider text-zinc-400 font-semibold">General</h2>
           {loading && <span className="text-sm text-zinc-500">Loading…</span>}
         </div>
         {error && (
@@ -285,16 +284,16 @@ export default function SettingsPage() {
             type="button"
             onClick={handleSave}
             disabled={!canSave}
-            className="text-sm px-3 py-2 rounded-lg border border-blue-500/40 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-700/60 text-white font-medium transition-colors"
+            className="text-xs uppercase tracking-wider px-4 py-2 rounded-full border border-white/5 bg-zinc-900/50 hover:bg-zinc-900/70 hover:border-blue-400/60 disabled:opacity-60 text-zinc-200 font-semibold transition-colors"
           >
             Save Settings
           </button>
         </div>
       </Card>
 
-      <Card className="space-y-3">
+      <Card className="space-y-3 rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Manual Price Refresh</h2>
+          <h2 className="text-xs uppercase tracking-wider text-zinc-400 font-semibold">Manual Price Refresh</h2>
           {refreshStatus && <span className="text-sm text-zinc-400">{refreshStatus}</span>}
         </div>
         <p className="text-sm text-zinc-400">
@@ -303,15 +302,15 @@ export default function SettingsPage() {
         <button
           type="button"
           onClick={handleManualRefresh}
-          className="text-sm px-3 py-2 rounded-lg border border-blue-500/40 bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors"
+          className="text-xs uppercase tracking-wider px-4 py-2 rounded-full border border-white/5 bg-zinc-900/50 hover:bg-zinc-900/70 hover:border-blue-400/60 text-zinc-200 font-semibold transition-colors"
         >
           Refresh Prices Now
         </button>
       </Card>
 
-      <Card className="space-y-3">
+      <Card className="space-y-3 rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Cost Basis Recalculation</h2>
+          <h2 className="text-xs uppercase tracking-wider text-zinc-400 font-semibold">Cost Basis Recalculation</h2>
           {recalcStatus && <span className="text-sm text-zinc-400">{recalcStatus}</span>}
         </div>
         <p className="text-sm text-zinc-400">
@@ -379,22 +378,20 @@ export default function SettingsPage() {
           type="button"
           onClick={handleCostBasisRecalc}
           disabled={recalcSubmitting}
-          className="text-sm px-3 py-2 rounded-lg border border-amber-500/40 bg-amber-600 hover:bg-amber-500 disabled:bg-amber-700/60 text-white font-medium transition-colors"
+          className="text-xs uppercase tracking-wider px-4 py-2 rounded-full border border-white/5 bg-zinc-900/50 hover:bg-zinc-900/70 hover:border-blue-400/60 disabled:opacity-60 text-zinc-200 font-semibold transition-colors"
         >
           {recalcSubmitting ? 'Recalculating...' : 'Recalculate Cost Basis'}
         </button>
       </Card>
 
-      <ReconciliationCard />
-
-      <Card className="space-y-3">
-        <h2 className="text-lg font-semibold">System Health</h2>
+      <Card className="space-y-3 rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl">
+        <h2 className="text-xs uppercase tracking-wider text-zinc-400 font-semibold">System Health</h2>
         <p className="text-sm text-zinc-400">
           Monitor the health and status of the price refresh system.
         </p>
         <div className="flex flex-wrap gap-3">
           <a
-            className="text-sm px-3 py-2 rounded-lg border border-green-500/40 bg-green-600 hover:bg-green-500 text-white font-medium transition-colors"
+            className="text-xs uppercase tracking-wider px-4 py-2 rounded-full border border-white/5 bg-zinc-900/50 hover:bg-zinc-900/70 hover:border-blue-400/60 text-zinc-200 font-semibold transition-colors"
             href="/api/prices/health"
             target="_blank"
             rel="noopener noreferrer"
@@ -402,7 +399,7 @@ export default function SettingsPage() {
             Check System Health
           </a>
           <a
-            className="text-sm px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 transition-colors"
+            className="text-xs uppercase tracking-wider px-4 py-2 rounded-full border border-white/5 bg-zinc-900/50 hover:bg-zinc-900/70 hover:border-blue-400/60 text-zinc-200 font-semibold transition-colors"
             href="/api/prices/rate-limit"
             target="_blank"
             rel="noopener noreferrer"
@@ -412,30 +409,30 @@ export default function SettingsPage() {
         </div>
       </Card>
 
-      <Card className="space-y-3">
-        <h2 className="text-lg font-semibold">Exports</h2>
+      <Card className="space-y-3 rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl">
+        <h2 className="text-xs uppercase tracking-wider text-zinc-400 font-semibold">Exports</h2>
         <p className="text-sm text-zinc-400">Download your data as CSV or the raw SQLite database.</p>
         <div className="flex flex-wrap gap-3">
           <a
-            className="text-sm px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 transition-colors"
+            className="text-xs uppercase tracking-wider px-4 py-2 rounded-full border border-white/5 bg-zinc-900/50 hover:bg-zinc-900/70 hover:border-blue-400/60 text-zinc-200 font-semibold transition-colors"
             href="/api/export/assets"
           >
             Export Assets CSV
           </a>
           <a
-            className="text-sm px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 transition-colors"
+            className="text-xs uppercase tracking-wider px-4 py-2 rounded-full border border-white/5 bg-zinc-900/50 hover:bg-zinc-900/70 hover:border-blue-400/60 text-zinc-200 font-semibold transition-colors"
             href="/api/export/accounts"
           >
             Export Accounts CSV
           </a>
           <a
-            className="text-sm px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 transition-colors"
+            className="text-xs uppercase tracking-wider px-4 py-2 rounded-full border border-white/5 bg-zinc-900/50 hover:bg-zinc-900/70 hover:border-blue-400/60 text-zinc-200 font-semibold transition-colors"
             href="/api/export/ledger"
           >
             Export Ledger CSV
           </a>
           <a
-            className="text-sm px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 transition-colors"
+            className="text-xs uppercase tracking-wider px-4 py-2 rounded-full border border-white/5 bg-zinc-900/50 hover:bg-zinc-900/70 hover:border-blue-400/60 text-zinc-200 font-semibold transition-colors"
             href="/api/export/db"
           >
             Download SQLite DB

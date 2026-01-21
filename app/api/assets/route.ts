@@ -96,7 +96,6 @@ export async function GET() {
         pricing_mode: true,
         manual_price: true,
         metadata_json: true,
-        status: true,
         created_at: true,
         updated_at: true,
         _count: {
@@ -134,7 +133,6 @@ export async function POST(request: Request) {
     const volatilityBucket = body.volatility_bucket;
     const pricingMode = body.pricing_mode;
     const chainOrMarket = (body.chain_or_market ?? '').toString().trim();
-    const status = body.status ?? 'ACTIVE';
 
     if (!symbol || !name || !type || !volatilityBucket || !pricingMode) {
       return NextResponse.json(
@@ -185,7 +183,6 @@ export async function POST(request: Request) {
         pricing_mode: pricingMode as string,
         manual_price: manualPriceParsed === undefined ? undefined : manualPriceParsed,
         metadata_json: body.metadata_json ?? undefined,
-        status,
       },
     });
 
@@ -197,7 +194,6 @@ export async function POST(request: Request) {
       volatility_bucket: created.volatility_bucket,
       chain_or_market: created.chain_or_market,
       pricing_mode: created.pricing_mode,
-      status: created.status,
     });
   } catch {
     return NextResponse.json(

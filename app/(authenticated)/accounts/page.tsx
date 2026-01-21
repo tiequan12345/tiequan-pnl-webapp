@@ -46,10 +46,10 @@ export default async function AccountsPage(props: AccountsPageProps) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-white">Accounts</h2>
+        <h2 className="text-3xl md:text-4xl font-semibold text-white tracking-tight">Accounts</h2>
         <Link
           href="/accounts/new"
-          className="text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-lg border border-zinc-700 transition-colors"
+          className="text-xs uppercase tracking-wider bg-zinc-900/50 hover:bg-zinc-900/70 text-zinc-200 px-3 py-2 rounded-full border border-white/5 transition-colors"
         >
           + Add Account
         </Link>
@@ -61,7 +61,7 @@ export default async function AccountsPage(props: AccountsPageProps) {
 
       <AccountsFilters currentStatus={statusFilter} />
 
-      <Card className="p-0">
+      <Card className="p-0 rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl">
         <AccountsTable rows={rows} />
       </Card>
     </div>

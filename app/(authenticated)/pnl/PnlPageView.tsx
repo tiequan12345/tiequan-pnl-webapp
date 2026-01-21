@@ -203,7 +203,7 @@ export default function PnlPageView() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">PNL Over Time</h1>
+          <h1 className="text-3xl md:text-4xl font-semibold text-white tracking-tight">PNL Over Time</h1>
           <p className="text-sm text-zinc-400">
             USD-denominated snapshots · {points.length} data points
           </p>
@@ -224,11 +224,11 @@ export default function PnlPageView() {
         />
       </div>
 
-      <Card>
+      <Card className="rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-xs uppercase tracking-wider text-zinc-500">Latest Snapshot</p>
-            <p className="text-3xl font-bold text-white">
+            <p className="text-xs uppercase tracking-wider text-zinc-400 font-semibold">Latest Snapshot</p>
+            <p className="text-3xl font-semibold text-white">
               {formatCurrency(latestValue, baseCurrency)}
             </p>
             <p className="text-sm text-zinc-400">{snapshotLabel}</p>
@@ -263,8 +263,8 @@ export default function PnlPageView() {
       </Card>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <Card>
-          <p className="text-xs uppercase tracking-wider text-zinc-500">By Asset Type</p>
+        <Card className="rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl">
+          <p className="text-xs uppercase tracking-wider text-zinc-400 font-semibold">By Asset Type</p>
           {byTypeEntries.length === 0 ? (
             <p className="mt-3 text-sm text-zinc-500">No allocation data</p>
           ) : (
@@ -280,8 +280,8 @@ export default function PnlPageView() {
             </div>
           )}
         </Card>
-        <Card>
-          <p className="text-xs uppercase tracking-wider text-zinc-500">By Volatility</p>
+        <Card className="rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl">
+          <p className="text-xs uppercase tracking-wider text-zinc-400 font-semibold">By Volatility</p>
           {byVolatilityEntries.length === 0 ? (
             <p className="mt-3 text-sm text-zinc-500">No volatility data</p>
           ) : (
@@ -297,8 +297,8 @@ export default function PnlPageView() {
             </div>
           )}
         </Card>
-        <Card>
-          <p className="text-xs uppercase tracking-wider text-zinc-500">By Account</p>
+        <Card className="rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl">
+          <p className="text-xs uppercase tracking-wider text-zinc-400 font-semibold">By Account</p>
           {byAccountEntries.length === 0 ? (
             <p className="mt-3 text-sm text-zinc-500">No account data</p>
           ) : (

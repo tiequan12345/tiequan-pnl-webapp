@@ -127,8 +127,6 @@ export async function PUT(request: Request, context: RouteContext) {
     const volatilityBucket = body.volatility_bucket;
     const pricingMode = body.pricing_mode;
     const chainOrMarket = (body.chain_or_market ?? '').toString().trim();
-    const status = body.status ?? existing.status;
-
     if (!symbol || !name || !type || !volatilityBucket || !pricingMode) {
       return NextResponse.json(
         {
@@ -182,7 +180,6 @@ export async function PUT(request: Request, context: RouteContext) {
         pricing_mode: pricingMode as string,
         manual_price: manualPriceParsed === undefined ? undefined : manualPriceParsed,
         metadata_json: body.metadata_json ?? undefined,
-        status,
       },
     });
 
@@ -194,7 +191,6 @@ export async function PUT(request: Request, context: RouteContext) {
       volatility_bucket: updated.volatility_bucket,
       chain_or_market: updated.chain_or_market,
       pricing_mode: updated.pricing_mode,
-      status: updated.status,
     });
   } catch {
     return NextResponse.json(

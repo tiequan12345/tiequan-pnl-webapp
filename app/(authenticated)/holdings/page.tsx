@@ -92,7 +92,7 @@ export default async function HoldingsPage(props: HoldingsPageProps) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xs uppercase tracking-wider text-zinc-400 font-semibold">Holdings</h2>
+        <h2 className="text-3xl md:text-4xl font-semibold text-white tracking-tight">Holdings</h2>
       </div>
 
       <Suspense fallback={null}>
