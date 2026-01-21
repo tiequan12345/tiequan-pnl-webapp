@@ -1,4 +1,5 @@
 'use client';
+import { Plus, Upload } from 'lucide-react';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -443,24 +444,29 @@ export function DashboardView() {
           <h2 className="text-xs uppercase tracking-wider text-zinc-400 font-semibold mb-4">
             Quick Actions
           </h2>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-4">
             <button
               onClick={handleAddTrade}
-              className="flex flex-col items-center justify-center p-3 rounded-xl bg-zinc-900/50 hover:bg-zinc-900/70 transition text-xs text-zinc-200 gap-2 border border-white/5"
+              className="group relative overflow-hidden flex flex-col items-center justify-center p-4 rounded-xl border border-white/5 bg-zinc-900/50 hover:bg-zinc-800/50 hover:border-blue-500/30 transition-all duration-300"
             >
-              <span className="w-5 h-5 rounded-md bg-zinc-950/60 border border-white/5 flex items-center justify-center text-zinc-300">
-                +
-              </span>
-              Add Trade
+              <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              <div className="relative mb-3 p-3 rounded-full bg-blue-500/10 text-blue-400 group-hover:scale-110 group-hover:bg-blue-500/20 transition-all duration-300">
+                <Plus className="w-5 h-5" />
+              </div>
+              <span className="relative text-sm font-medium text-zinc-200 group-hover:text-blue-100 transition-colors">Add Trade</span>
+              <span className="relative text-[10px] uppercase tracking-wider text-zinc-500 mt-1 group-hover:text-zinc-400 transition-colors">Manual Entry</span>
             </button>
+
             <button
               onClick={handleImportCsv}
-              className="flex flex-col items-center justify-center p-3 rounded-xl bg-zinc-900/50 hover:bg-zinc-900/70 transition text-xs text-zinc-200 gap-2 border border-white/5"
+              className="group relative overflow-hidden flex flex-col items-center justify-center p-4 rounded-xl border border-white/5 bg-zinc-900/50 hover:bg-zinc-800/50 hover:border-emerald-500/30 transition-all duration-300"
             >
-              <span className="w-5 h-5 rounded-md bg-zinc-950/60 border border-white/5 flex items-center justify-center text-zinc-300">
-                ⬆
-              </span>
-              Import CSV
+              <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              <div className="relative mb-3 p-3 rounded-full bg-emerald-500/10 text-emerald-400 group-hover:scale-110 group-hover:bg-emerald-500/20 transition-all duration-300">
+                <Upload className="w-5 h-5" />
+              </div>
+              <span className="relative text-sm font-medium text-zinc-200 group-hover:text-emerald-100 transition-colors">Import CSV</span>
+              <span className="relative text-[10px] uppercase tracking-wider text-zinc-500 mt-1 group-hover:text-zinc-400 transition-colors">Bulk Upload</span>
             </button>
           </div>
         </Card>
