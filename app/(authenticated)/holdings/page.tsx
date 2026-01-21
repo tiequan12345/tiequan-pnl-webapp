@@ -92,7 +92,7 @@ export default async function HoldingsPage(props: HoldingsPageProps) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-white">Holdings</h2>
+        <h2 className="text-xs uppercase tracking-wider text-zinc-400 font-semibold">Holdings</h2>
       </div>
 
       <Suspense fallback={null}>
@@ -118,7 +118,7 @@ export default async function HoldingsPage(props: HoldingsPageProps) {
         baseCurrency={baseCurrency}
       />
 
-      <Card className="p-0">
+      <Card className="p-0 rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl">
         <HoldingsList
           rows={visibleRows}
           baseCurrency={baseCurrency}

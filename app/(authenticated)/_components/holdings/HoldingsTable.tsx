@@ -210,7 +210,7 @@ export function HoldingsTable({
       header: 'Quantity',
       accessor: (row) => row.quantity,
       cell: (row) => (
-        <span className="text-zinc-200 font-mono text-sm">{isPrivacyMode ? '****' : formatQuantity(row.quantity)}</span>
+        <span className="text-zinc-200 text-sm">{isPrivacyMode ? '****' : formatQuantity(row.quantity)}</span>
       ),
       sortable: true,
       sortFn: (a, b) => a.quantity - b.quantity,
@@ -222,7 +222,7 @@ export function HoldingsTable({
       header: 'Price',
       accessor: (row) => row.price ?? -Infinity,
       cell: (row) => (
-        <div className="font-mono text-sm">
+        <div className="text-sm">
           <PriceCell
             row={row}
             currency={baseCurrency}
@@ -257,7 +257,7 @@ export function HoldingsTable({
               />
             )}
 
-            <span className="text-zinc-200 font-mono text-sm relative z-10 px-1">
+            <span className="text-zinc-200 text-sm relative z-10 px-1">
               {row.marketValue !== null && row.marketValue !== undefined
                 ? (isPrivacyMode ? '****' : formatCurrencyValue(row.marketValue, baseCurrency))
                 : 'Unpriced'}
@@ -276,7 +276,7 @@ export function HoldingsTable({
       header: 'Avg Cost',
       accessor: (row) => row.averageCost ?? -Infinity,
       cell: (row) => (
-        <span className="text-zinc-200 font-mono text-sm">
+        <span className="text-zinc-200 text-sm">
           {isPrivacyMode ? '****' : formatCurrencyValue(row.averageCost, baseCurrency, { fallback: '—' })}
         </span>
       ),
@@ -290,7 +290,7 @@ export function HoldingsTable({
       header: 'Cost Basis',
       accessor: (row) => row.totalCostBasis ?? -Infinity,
       cell: (row) => (
-        <span className="text-zinc-200 font-mono text-sm">
+        <span className="text-zinc-200 text-sm">
           {isPrivacyMode ? '****' : formatCurrencyValue(row.totalCostBasis, baseCurrency, { fallback: '—' })}
         </span>
       ),
@@ -304,7 +304,7 @@ export function HoldingsTable({
       header: 'Unrealized PnL',
       accessor: (row) => row.unrealizedPnl ?? -Infinity,
       cell: (row) => (
-        <span className={`${formatPnlClass(row.unrealizedPnl)} font-mono text-sm`}>
+        <span className={`${formatPnlClass(row.unrealizedPnl)} text-sm`}>
           {isPrivacyMode ? '****' : formatPnlValue(row.unrealizedPnl, baseCurrency, { fallback: '—' })}
         </span>
       ),
@@ -320,12 +320,12 @@ export function HoldingsTable({
       accessor: (row) => row.unrealizedPnlPct ?? -Infinity,
       cell: (row) => {
         if (isPrivacyMode) {
-          return <span className={`${formatPnlClass(row.unrealizedPnlPct)} font-mono text-sm`}>****</span>;
+          return <span className={`${formatPnlClass(row.unrealizedPnlPct)} text-sm`}>****</span>;
         }
         const val = row.unrealizedPnlPct;
         const prefix = val && val > 0 ? '+' : '';
         return (
-          <span className={`${formatPnlClass(val)} font-mono text-sm`}>
+          <span className={`${formatPnlClass(val)} text-sm`}>
             {prefix}
             {val !== null && val !== undefined ? `${val.toFixed(2)}%` : '—'}
           </span>

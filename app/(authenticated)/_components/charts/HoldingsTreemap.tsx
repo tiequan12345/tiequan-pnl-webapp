@@ -53,9 +53,8 @@ const CustomContent = (props: any) => {
                 height={height}
                 style={{
                     fill: fillColor,
-                    stroke: '#18181b', // Zinc 950 (Background match for borders)
-                    strokeWidth: 2,
-                    strokeOpacity: 1,
+                    stroke: 'rgba(24,24,27,0.6)',
+                    strokeWidth: 0.5,
                 }}
             />
             {showText && (
@@ -64,10 +63,11 @@ const CustomContent = (props: any) => {
                     y={y + height / 2 - (showSubText ? 6 : 0)}
                     textAnchor="middle"
                     fill={textColor}
-                    fontSize={Math.min(width / 4, 14)}
+                    stroke="none"
+                    fontSize={Math.max(11, Math.min(width / 4, 14))}
                     fontWeight="700"
                     pointerEvents="none"
-                    style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}
+                    style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)', textRendering: 'optimizeLegibility' }}
                 >
                     {name}
                 </text>
@@ -78,10 +78,11 @@ const CustomContent = (props: any) => {
                     y={y + height / 2 + 8}
                     textAnchor="middle"
                     fill="rgba(255,255,255,0.9)"
+                    stroke="none"
                     fontSize={11}
                     fontWeight="500"
                     pointerEvents="none"
-                    style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}
+                    style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)', textRendering: 'optimizeLegibility' }}
                 >
                     {safePnlPct > 0 ? '+' : ''}{safePnlPct.toFixed(1)}%
                 </text>
@@ -174,7 +175,7 @@ export function HoldingsTreemap({ rows, baseCurrency }: HoldingsTreemapProps) {
                     data={data}
                     dataKey="size"
                     aspectRatio={4 / 3}
-                    stroke="#18181b"
+                    stroke="rgba(24,24,27,0.6)"
                     content={<CustomContent />}
                     animationDuration={500}
                 >

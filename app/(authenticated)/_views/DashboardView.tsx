@@ -371,14 +371,14 @@ export function DashboardView() {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="md:col-span-2 relative overflow-hidden">
+        <Card className="md:col-span-2 relative overflow-hidden rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl">
           <div className="relative z-10">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-zinc-400 text-sm font-medium">
+                <h2 className="text-xs uppercase tracking-wider text-zinc-400 font-semibold">
                   Total Portfolio Value
                 </h2>
-                <div className="mt-2 text-4xl font-bold text-white">
+                <div className="mt-3 text-6xl md:text-7xl font-bold tracking-tighter font-mono text-white">
                   {formatCurrency(totalValue, totalCurrency)}
                 </div>
                 {lastUpdated ? (
@@ -402,18 +402,18 @@ export function DashboardView() {
                 <button
                   onClick={handleRefresh}
                   disabled={refreshing}
-                  className="bg-zinc-900/60 text-zinc-200 px-3 py-1 rounded-lg border border-zinc-800 text-[11px] transition hover:border-blue-500 disabled:opacity-50"
+                  className="bg-zinc-900/50 text-zinc-200 px-3 py-1 rounded-full border border-white/5 text-[11px] uppercase tracking-wider transition hover:border-blue-400/60 disabled:opacity-50"
                 >
                   {refreshLabel}
                 </button>
               </div>
             </div>
-            <div className="mt-4 flex flex-col gap-1">
-              <span className="text-xs uppercase tracking-wide text-zinc-500">
+            <div className="mt-5 flex flex-col gap-1">
+              <span className="text-xs uppercase tracking-wider text-zinc-400 font-semibold">
                 Valuation
               </span>
               {valuationReady ? (
-                <div className={`text-xl font-semibold ${pnlClass}`}>
+                <div className={`text-2xl font-semibold ${pnlClass}`}>
                   {totalUnrealizedPnl > 0 ? '+' : ''}
                   {formatCurrency(totalUnrealizedPnl, totalCurrency)}
                   {pnlPercent !== null ? (
@@ -435,28 +435,29 @@ export function DashboardView() {
               <div className="mt-4 text-xs text-rose-300">{error}</div>
             )}
           </div>
-          <div className="absolute right-0 top-0 h-full w-1/2 bg-gradient-to-l from-blue-500/5 to-transparent pointer-events-none" />
+          <div className="pointer-events-none absolute -top-24 -right-16 h-56 w-56 rounded-full bg-blue-500/10 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-24 -left-12 h-64 w-64 rounded-full bg-emerald-500/10 blur-3xl" />
         </Card>
 
-        <Card>
-          <h2 className="text-zinc-400 text-sm font-medium mb-4">
+        <Card className="rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl">
+          <h2 className="text-xs uppercase tracking-wider text-zinc-400 font-semibold mb-4">
             Quick Actions
           </h2>
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={handleAddTrade}
-              className="flex flex-col items-center justify-center p-3 bg-zinc-800/50 hover:bg-zinc-800 rounded-lg transition text-xs text-zinc-300 gap-2 border border-zinc-700/50"
+              className="flex flex-col items-center justify-center p-3 rounded-xl bg-zinc-900/50 hover:bg-zinc-900/70 transition text-xs text-zinc-200 gap-2 border border-white/5"
             >
-              <span className="w-5 h-5 rounded-md bg-zinc-900/60 flex items-center justify-center text-zinc-400">
+              <span className="w-5 h-5 rounded-md bg-zinc-950/60 border border-white/5 flex items-center justify-center text-zinc-300">
                 +
               </span>
               Add Trade
             </button>
             <button
               onClick={handleImportCsv}
-              className="flex flex-col items-center justify-center p-3 bg-zinc-800/50 hover:bg-zinc-800 rounded-lg transition text-xs text-zinc-300 gap-2 border border-zinc-700/50"
+              className="flex flex-col items-center justify-center p-3 rounded-xl bg-zinc-900/50 hover:bg-zinc-900/70 transition text-xs text-zinc-200 gap-2 border border-white/5"
             >
-              <span className="w-5 h-5 rounded-md bg-zinc-900/60 flex items-center justify-center text-zinc-400">
+              <span className="w-5 h-5 rounded-md bg-zinc-950/60 border border-white/5 flex items-center justify-center text-zinc-300">
                 ⬆
               </span>
               Import CSV
@@ -467,17 +468,18 @@ export function DashboardView() {
 
       <HoldingsAllocationCharts
         summary={state.summary}
+        rows={state.rows}
         baseCurrency={totalCurrency}
         isPrivacyMode={isPrivacyMode}
       />
 
-      <Card>
+      <Card className="rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <p className="text-xs uppercase tracking-wider text-zinc-500">
+            <p className="text-xs uppercase tracking-wider text-zinc-400 font-semibold">
               PNL over time
             </p>
-            <div className="mt-1 text-3xl font-bold text-white">
+            <div className="mt-2 text-3xl font-semibold text-white">
               {formatCurrency(pnlLatestValue, totalCurrency)}
             </div>
             <div className="flex items-center gap-3 text-sm">
@@ -514,9 +516,9 @@ export function DashboardView() {
         )}
       </Card>
 
-      <Card>
+      <Card className="rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-zinc-100 font-semibold">Top Holdings</h3>
+          <h3 className="text-xs uppercase tracking-wider text-zinc-400 font-semibold">Top Holdings</h3>
           <button className="text-xs text-blue-400 hover:text-blue-300">
             View All
           </button>
@@ -539,9 +541,9 @@ export function DashboardView() {
         )}
       </Card>
 
-      <Card>
+      <Card className="rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-zinc-100 font-semibold">Recent Activity</h3>
+          <h3 className="text-xs uppercase tracking-wider text-zinc-400 font-semibold">Recent Activity</h3>
           <button
             onClick={handleAddTrade}
             className="text-xs text-blue-400 hover:text-blue-300"

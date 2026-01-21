@@ -45,6 +45,60 @@ type ChartData = {
   color: string;
 };
 
+const ROW_ZERO_THRESHOLD = 1e-9;
+
+function consolidateHoldingsForTreemap(rows: HoldingRow[]): HoldingRow[] {
+  const grouped = rows.reduce<Record<number, HoldingRow[]>>((acc, row) => {
+    acc[row.assetId] = acc[row.assetId] || [];
+    acc[row.assetId].push(row);
+    return acc;
+  }, {});
+
+  const consolidated: HoldingRow[] = [];
+
+  Object.values(grouped).forEach((assetRows) => {
+    if (assetRows.length === 0) return;
+
+    const reference = assetRows[0];
+    const totalQuantity = assetRows.reduce((sum, row) => sum + row.quantity, 0);
+    const totalMarketValue = assetRows.reduce((sum, row) => sum + (row.marketValue ?? 0), 0);
+
+    const meaningfulRows = assetRows.filter((row) => Math.abs(row.quantity) > ROW_ZERO_THRESHOLD);
+    const relevantRows = meaningfulRows.length > 0 ? meaningfulRows : assetRows;
+
+    const allCostBasisKnown = relevantRows.every((row) => row.totalCostBasis !== null);
+    const aggregatedCostBasis = allCostBasisKnown
+      ? relevantRows.reduce((sum, row) => sum + (row.totalCostBasis ?? 0), 0)
+      : null;
+
+    const allUnrealizedKnown = relevantRows.every((row) => row.unrealizedPnl !== null);
+    const aggregatedUnrealizedPnl = allUnrealizedKnown
+      ? relevantRows.reduce((sum, row) => sum + (row.unrealizedPnl ?? 0), 0)
+      : null;
+
+    const consolidatedUnrealizedPct =
+      aggregatedCostBasis !== null &&
+        aggregatedCostBasis !== 0 &&
+        aggregatedUnrealizedPnl !== null
+        ? (aggregatedUnrealizedPnl / aggregatedCostBasis) * 100
+        : null;
+
+    consolidated.push({
+      ...reference,
+      accountId: 0,
+      accountName: 'Consolidated',
+      quantity: totalQuantity,
+      marketValue: totalMarketValue,
+      totalCostBasis: aggregatedCostBasis,
+      unrealizedPnl: aggregatedUnrealizedPnl,
+      unrealizedPnlPct: consolidatedUnrealizedPct,
+    });
+  });
+
+  consolidated.sort((a, b) => (b.marketValue ?? 0) - (a.marketValue ?? 0));
+  return consolidated;
+}
+
 // Format large numbers cleanly for charts
 function formatCurrency(value: number, currency: string) {
   return new Intl.NumberFormat('en-US', {
@@ -109,14 +163,14 @@ function DonutChart({
 
   if (data.length === 0) {
     return (
-      <Card className="flex items-center justify-center min-h-[320px]">
+      <Card className="flex items-center justify-center min-h-[320px] rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl">
         <div className="text-zinc-500 text-sm">No {title.toLowerCase()} data</div>
       </Card>
     );
   }
 
   return (
-    <Card className="flex flex-col h-full min-h-[320px]">
+    <Card className="flex flex-col h-full min-h-[320px] rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl">
       <h3 className="text-zinc-400 text-xs font-semibold uppercase tracking-wider mb-6">
         {title}
       </h3>
@@ -216,10 +270,10 @@ function DonutChart({
 
 export function HoldingsAllocationCharts({
   summary,
-  rows,
+  rows = [],
   baseCurrency,
   isPrivacyMode: propPrivacyMode,
-}: HoldingsAllocationChartsProps & { rows: HoldingRow[] }) {
+}: HoldingsAllocationChartsProps & { rows?: HoldingRow[] }) {
   const { isPrivacyMode: contextPrivacyMode } = usePrivacy();
   const isPrivacyMode = propPrivacyMode ?? contextPrivacyMode;
   const [activeTab, setActiveTab] = useState<'composition' | 'performance'>('composition');
@@ -256,6 +310,8 @@ export function HoldingsAllocationCharts({
         color: VOLATILITY_COLOR_MAP[item.name] ?? VOLATILITY_COLORS[index % VOLATILITY_COLORS.length],
       }));
   }, [summary]);
+
+  const treemapRows = useMemo(() => consolidateHoldingsForTreemap(rows), [rows]);
 
   if (!mounted) return null;
 
@@ -315,7 +371,7 @@ export function HoldingsAllocationCharts({
             </p>
           </div>
           <div className="p-4 bg-zinc-950/30">
-            <HoldingsTreemap rows={rows} baseCurrency={baseCurrency} />
+            <HoldingsTreemap rows={treemapRows} baseCurrency={baseCurrency} />
           </div>
         </Card>
       )}
