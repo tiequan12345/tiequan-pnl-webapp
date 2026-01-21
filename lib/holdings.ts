@@ -8,7 +8,8 @@ export type CostBasisStatus =
   | 'UNKNOWN'
   | 'TRANSFER_UNMATCHED'
   | 'TRANSFER_AMBIGUOUS'
-  | 'TRANSFER_INVALID';
+  | 'TRANSFER_INVALID'
+  | 'TRANSFER_FEE_MISMATCH';
 
 export type HoldingRow = {
   assetId: number;
@@ -157,21 +158,38 @@ function buildPositionKey(assetId: number, accountId: number): string {
   return `${assetId}-${accountId}`;
 }
 
+const TRANSFER_MATCH_ABS_TOLERANCE = Number(
+  process.env.TRANSFER_MATCH_ABS_TOLERANCE ?? '1e-6',
+);
+const TRANSFER_MATCH_REL_TOLERANCE = Number(
+  process.env.TRANSFER_MATCH_REL_TOLERANCE ?? '0.01',
+);
+
+function getTransferMismatchInfo(sourceQtyAbs: number, destQtyAbs: number) {
+  const mismatchAbs = Math.abs(sourceQtyAbs - destQtyAbs);
+  const maxQty = Math.max(sourceQtyAbs, destQtyAbs, 0);
+  const mismatchRel = maxQty > 0 ? mismatchAbs / maxQty : 0;
+  const withinTolerance =
+    mismatchAbs <= TRANSFER_MATCH_ABS_TOLERANCE ||
+    mismatchRel <= TRANSFER_MATCH_REL_TOLERANCE;
+  return { mismatchAbs, mismatchRel, withinTolerance };
+}
+
 function buildTransferKey(tx: LedgerTransactionWithRelations): string {
   const reference = (tx.external_reference ?? '').trim();
   if (reference.startsWith('MATCH:')) {
     return `${tx.asset_id}|${reference}`;
   }
-  const qtyNumber = Math.abs(decimalToNumber(tx.quantity));
   const dateKey = tx.date_time.toISOString();
-  return `${tx.asset_id}|${dateKey}|${qtyNumber}|${reference}`;
+  return `${tx.asset_id}|${dateKey}|${reference}`;
 }
 
 function isTransferStatus(status: CostBasisStatus): boolean {
   return (
     status === 'TRANSFER_UNMATCHED' ||
     status === 'TRANSFER_AMBIGUOUS' ||
-    status === 'TRANSFER_INVALID'
+    status === 'TRANSFER_INVALID' ||
+    status === 'TRANSFER_FEE_MISMATCH'
   );
 }
 
@@ -412,19 +430,13 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
     const quantitiesValid = qtyA !== null && qtyB !== null;
     const signsDiffer = quantitiesValid && ((qtyA > 0 && qtyB < 0) || (qtyA < 0 && qtyB > 0));
 
-    const strictBalance =
-      quantitiesValid &&
-      !isManualMatch &&
-      (Math.abs(qtyA + qtyB) > 1e-9 || Math.abs(Math.abs(qtyA) - Math.abs(qtyB)) > 1e-9);
-
     if (
       !quantitiesValid ||
       qtyA === 0 ||
       qtyB === 0 ||
       legA.asset_id !== legB.asset_id ||
       legA.account_id === legB.account_id ||
-      !signsDiffer ||
-      strictBalance
+      !signsDiffer
     ) {
       const diagnostic = { key: transferKey, legIds };
       for (const leg of group) {
@@ -437,9 +449,29 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
     }
 
     const validQtyA = qtyA as number;
+    const validQtyB = qtyB as number;
     const sourceLeg = validQtyA < 0 ? legA : legB;
     const destLeg = sourceLeg === legA ? legB : legA;
-    const transferQty = Math.abs(decimalToNumber(sourceLeg.quantity));
+
+    const sourceQtyAbs = Math.abs(validQtyA < 0 ? validQtyA : validQtyB);
+    const destQtyAbs = Math.abs(validQtyA < 0 ? validQtyB : validQtyA);
+
+    const mismatchInfo = getTransferMismatchInfo(sourceQtyAbs, destQtyAbs);
+    const withinTolerance = isManualMatch ? true : mismatchInfo.withinTolerance;
+    const feeMismatch = !withinTolerance && destQtyAbs <= sourceQtyAbs;
+
+    if (!withinTolerance && destQtyAbs > sourceQtyAbs) {
+      const diagnostic = { key: transferKey, legIds };
+      for (const leg of group) {
+        const position = applyNonTransferTransaction(leg);
+        if (!position.costBasisKnown && Math.abs(position.quantity) > 1e-12) {
+          markCostBasisStatus(position, 'TRANSFER_INVALID', diagnostic);
+        }
+      }
+      continue;
+    }
+
+    const transferQty = Math.min(sourceQtyAbs, destQtyAbs);
 
     const sourcePosition = getOrCreatePosition(sourceLeg);
     const destPosition = getOrCreatePosition(destLeg);
@@ -461,19 +493,25 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
 
     const averageCost = sourcePosition.costBasis / sourceQtyBefore;
     const movedBasis = averageCost * transferQty;
+    const sourceReduction = averageCost * sourceQtyAbs;
 
-    if (!Number.isFinite(movedBasis)) {
+    if (!Number.isFinite(movedBasis) || !Number.isFinite(sourceReduction)) {
       destPosition.costBasisKnown = false;
       markCostBasisStatus(destPosition, 'UNKNOWN');
       continue;
     }
 
-    sourcePosition.costBasis -= movedBasis;
+    sourcePosition.costBasis -= sourceReduction;
     if (sourcePosition.costBasis < 0) {
       sourcePosition.costBasis = 0;
     }
 
     destPosition.costBasis += movedBasis;
+
+    if (feeMismatch) {
+      const diagnostic = { key: transferKey, legIds };
+      markCostBasisStatus(destPosition, 'TRANSFER_FEE_MISMATCH', diagnostic);
+    }
   }
 
   const rows: HoldingRow[] = [];
@@ -495,7 +533,7 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
     const marketValue = price !== null ? quantity * price : null;
 
     const totalCostBasis = position.costBasisKnown ? Math.max(position.costBasis, 0) : null;
-    const costBasisStatus = position.costBasisKnown ? 'KNOWN' : position.costBasisStatus;
+    const costBasisStatus = position.costBasisStatus;
     const averageCost =
       totalCostBasis !== null && Math.abs(quantity) > 0
         ? totalCostBasis / Math.abs(quantity)
@@ -638,7 +676,8 @@ export function consolidateHoldingsByAsset(rows: HoldingRow[]): HoldingRow[] {
     const transferIssueRow = relevantRows.find((row) =>
       row.costBasisStatus === 'TRANSFER_UNMATCHED' ||
       row.costBasisStatus === 'TRANSFER_AMBIGUOUS' ||
-      row.costBasisStatus === 'TRANSFER_INVALID',
+      row.costBasisStatus === 'TRANSFER_INVALID' ||
+      row.costBasisStatus === 'TRANSFER_FEE_MISMATCH',
     );
     const consolidatedCostBasisStatus = transferIssueRow
       ? transferIssueRow.costBasisStatus

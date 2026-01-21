@@ -81,14 +81,30 @@ function getTransactionValue(quantity, totalValue, unitPrice) {
   return null;
 }
 
+const TRANSFER_MATCH_ABS_TOLERANCE = Number(
+  process.env.TRANSFER_MATCH_ABS_TOLERANCE || '1e-6',
+);
+const TRANSFER_MATCH_REL_TOLERANCE = Number(
+  process.env.TRANSFER_MATCH_REL_TOLERANCE || '0.01',
+);
+
+function getTransferMismatchInfo(sourceQtyAbs, destQtyAbs) {
+  const mismatchAbs = Math.abs(sourceQtyAbs - destQtyAbs);
+  const maxQty = Math.max(sourceQtyAbs, destQtyAbs, 0);
+  const mismatchRel = maxQty > 0 ? mismatchAbs / maxQty : 0;
+  const withinTolerance =
+    mismatchAbs <= TRANSFER_MATCH_ABS_TOLERANCE ||
+    mismatchRel <= TRANSFER_MATCH_REL_TOLERANCE;
+  return { mismatchAbs, mismatchRel, withinTolerance };
+}
+
 function buildTransferKey(tx) {
   const reference = (tx.external_reference || '').trim();
   if (reference.startsWith('MATCH:')) {
     return `${tx.asset_id}|${reference}`;
   }
-  const qtyNumber = Math.abs(decimalToNumber(tx.quantity));
   const dateKey = tx.date_time.toISOString();
-  return `${tx.asset_id}|${dateKey}|${qtyNumber}|${reference}`;
+  return `${tx.asset_id}|${dateKey}|${reference}`;
 }
 
 function resolveTransferDiagnostics(transfers) {
@@ -122,21 +138,6 @@ function resolveTransferDiagnostics(transfers) {
 
     const quantitiesValid = qtyA !== null && qtyB !== null;
     const signsDiffer = quantitiesValid && ((qtyA > 0 && qtyB < 0) || (qtyA < 0 && qtyB > 0));
-    const strictBalance =
-      quantitiesValid &&
-      !isManualMatch &&
-      (Math.abs(qtyA + qtyB) > 1e-9 || Math.abs(Math.abs(qtyA) - Math.abs(qtyB)) > 1e-9);
-
-    if (strictBalance) {
-      mismatchCandidates.push({
-        key: transferKey,
-        assetId: legA.asset_id,
-        dateTime: legA.date_time.toISOString(),
-        legIds: group.map((leg) => leg.id),
-        qtyA,
-        qtyB,
-      });
-    }
 
     if (
       !quantitiesValid ||
@@ -144,8 +145,7 @@ function resolveTransferDiagnostics(transfers) {
       qtyB === 0 ||
       legA.asset_id !== legB.asset_id ||
       legA.account_id === legB.account_id ||
-      !signsDiffer ||
-      strictBalance
+      !signsDiffer
     ) {
       diagnostics.push({
         key: transferKey,
@@ -153,6 +153,47 @@ function resolveTransferDiagnostics(transfers) {
         dateTime: legA.date_time.toISOString(),
         issue: 'INVALID_LEGS',
         legIds: group.map((leg) => leg.id),
+      });
+      continue;
+    }
+
+    const validQtyA = qtyA;
+    const validQtyB = qtyB;
+
+    const sourceQtyAbs = Math.abs(validQtyA < 0 ? validQtyA : validQtyB);
+    const destQtyAbs = Math.abs(validQtyA < 0 ? validQtyB : validQtyA);
+
+    const mismatchInfo = getTransferMismatchInfo(sourceQtyAbs, destQtyAbs);
+    const withinTolerance = isManualMatch ? true : mismatchInfo.withinTolerance;
+
+    if (!withinTolerance && destQtyAbs > sourceQtyAbs) {
+      diagnostics.push({
+        key: transferKey,
+        assetId: legA.asset_id,
+        dateTime: legA.date_time.toISOString(),
+        issue: 'INVALID_LEGS',
+        legIds: group.map((leg) => leg.id),
+      });
+      continue;
+    }
+
+    if (!withinTolerance && destQtyAbs <= sourceQtyAbs) {
+      diagnostics.push({
+        key: transferKey,
+        assetId: legA.asset_id,
+        dateTime: legA.date_time.toISOString(),
+        issue: 'FEE_MISMATCH',
+        legIds: group.map((leg) => leg.id),
+      });
+      mismatchCandidates.push({
+        key: transferKey,
+        assetId: legA.asset_id,
+        dateTime: legA.date_time.toISOString(),
+        legIds: group.map((leg) => leg.id),
+        qtyA,
+        qtyB,
+        mismatchAbs: mismatchInfo.mismatchAbs,
+        mismatchRel: mismatchInfo.mismatchRel,
       });
     }
   }

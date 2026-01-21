@@ -33,7 +33,7 @@ export type TransferDiagnostic = {
   key: string;
   assetId: number;
   dateTime: string;
-  issue: 'UNMATCHED' | 'AMBIGUOUS' | 'INVALID_LEGS';
+  issue: 'UNMATCHED' | 'AMBIGUOUS' | 'INVALID_LEGS' | 'FEE_MISMATCH';
   legIds: number[];
 };
 
@@ -69,6 +69,23 @@ function isCashLikeAsset(asset: RecalcTransaction['asset']): boolean {
     symbol === 'USDT' ||
     symbol === 'USDC'
   );
+}
+
+const TRANSFER_MATCH_ABS_TOLERANCE = Number(
+  process.env.TRANSFER_MATCH_ABS_TOLERANCE ?? '1e-6',
+);
+const TRANSFER_MATCH_REL_TOLERANCE = Number(
+  process.env.TRANSFER_MATCH_REL_TOLERANCE ?? '0.01',
+);
+
+function getTransferMismatchInfo(sourceQtyAbs: number, destQtyAbs: number) {
+  const mismatchAbs = Math.abs(sourceQtyAbs - destQtyAbs);
+  const maxQty = Math.max(sourceQtyAbs, destQtyAbs, 0);
+  const mismatchRel = maxQty > 0 ? mismatchAbs / maxQty : 0;
+  const withinTolerance =
+    mismatchAbs <= TRANSFER_MATCH_ABS_TOLERANCE ||
+    mismatchRel <= TRANSFER_MATCH_REL_TOLERANCE;
+  return { mismatchAbs, mismatchRel, withinTolerance };
 }
 
 function getTransactionValue(
@@ -123,9 +140,8 @@ function buildTransferKey(tx: RecalcTransaction): string {
   if (reference.startsWith('MATCH:')) {
     return `${tx.asset_id}|${reference}`;
   }
-  const qtyNumber = Math.abs(toNumber(tx.quantity) ?? 0);
   const dateKey = tx.date_time.toISOString();
-  return `${tx.asset_id}|${dateKey}|${qtyNumber}|${reference}`;
+  return `${tx.asset_id}|${dateKey}|${reference}`;
 }
 
 function applyReconciliationTransaction(
@@ -279,23 +295,17 @@ export function recalcCostBasis(
     const qtyA = toNumber(legA.quantity);
     const qtyB = toNumber(legB.quantity);
 
-    // Refined validation:
     const isManualMatch = (legA.external_reference || '').startsWith('MATCH:');
 
     const quantitiesValid = qtyA !== null && qtyB !== null;
     const signsDiffer = quantitiesValid && ((qtyA > 0 && qtyB < 0) || (qtyA < 0 && qtyB > 0));
-
-    // Strict equality check for auto-matched items
-    const strictBalance = quantitiesValid && !isManualMatch &&
-      (Math.abs(qtyA + qtyB) > 1e-9 || Math.abs(Math.abs(qtyA) - Math.abs(qtyB)) > 1e-9);
 
     if (
       !quantitiesValid ||
       qtyA === 0 || qtyB === 0 ||
       legA.asset_id !== legB.asset_id ||
       legA.account_id === legB.account_id ||
-      !signsDiffer ||
-      strictBalance
+      !signsDiffer
     ) {
       diagnostics.push({
         key: transferKey,
@@ -310,14 +320,44 @@ export function recalcCostBasis(
       continue;
     }
 
-    // At this point, we know qtyA and qtyB are numbers.
     const validQtyA = qtyA as number;
-    // const validQtyB = qtyB as number;
+    const validQtyB = qtyB as number;
 
     const sourceLeg = validQtyA < 0 ? legA : legB;
     const destLeg = sourceLeg === legA ? legB : legA;
 
-    const transferQty = Math.abs(toNumber(sourceLeg.quantity) ?? 0);
+    const sourceQtyAbs = Math.abs(validQtyA < 0 ? validQtyA : validQtyB);
+    const destQtyAbs = Math.abs(validQtyA < 0 ? validQtyB : validQtyA);
+
+    const mismatchInfo = getTransferMismatchInfo(sourceQtyAbs, destQtyAbs);
+    const withinTolerance = isManualMatch ? true : mismatchInfo.withinTolerance;
+    const feeMismatch = !withinTolerance && destQtyAbs <= sourceQtyAbs;
+
+    if (!withinTolerance && destQtyAbs > sourceQtyAbs) {
+      diagnostics.push({
+        key: transferKey,
+        assetId: legA.asset_id,
+        dateTime: legA.date_time.toISOString(),
+        issue: 'INVALID_LEGS',
+        legIds: group.map((leg) => leg.id),
+      });
+      for (const leg of group) {
+        applyNonTransferTransaction(positions, leg);
+      }
+      continue;
+    }
+
+    if (feeMismatch) {
+      diagnostics.push({
+        key: transferKey,
+        assetId: legA.asset_id,
+        dateTime: legA.date_time.toISOString(),
+        issue: 'FEE_MISMATCH',
+        legIds: group.map((leg) => leg.id),
+      });
+    }
+
+    const transferQty = Math.min(sourceQtyAbs, destQtyAbs);
 
     const sourcePosition = getOrCreatePosition(positions, sourceLeg);
     const destPosition = getOrCreatePosition(positions, destLeg);
@@ -335,13 +375,14 @@ export function recalcCostBasis(
 
     const averageCost = sourcePosition.costBasis / sourceQtyBefore;
     const movedBasis = averageCost * transferQty;
+    const sourceReduction = averageCost * sourceQtyAbs;
 
-    if (!Number.isFinite(movedBasis)) {
+    if (!Number.isFinite(movedBasis) || !Number.isFinite(sourceReduction)) {
       destPosition.costBasisKnown = false;
       continue;
     }
 
-    sourcePosition.costBasis -= movedBasis;
+    sourcePosition.costBasis -= sourceReduction;
     if (sourcePosition.costBasis < 0) {
       sourcePosition.costBasis = 0;
     }
