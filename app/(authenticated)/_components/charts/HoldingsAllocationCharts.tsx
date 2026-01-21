@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   PieChart,
   Pie,
@@ -9,8 +9,9 @@ import {
   Sector,
 } from 'recharts';
 import { Card } from '../ui/Card';
-import type { HoldingsSummary } from '@/lib/holdings';
+import type { HoldingsSummary, HoldingRow } from '@/lib/holdings';
 import { usePrivacy } from '../../_contexts/PrivacyContext';
+import { HoldingsTreemap } from './HoldingsTreemap';
 const COLORS = [
   '#3b82f6', // Blue
   '#10b981', // Emerald
@@ -215,11 +216,18 @@ function DonutChart({
 
 export function HoldingsAllocationCharts({
   summary,
+  rows,
   baseCurrency,
   isPrivacyMode: propPrivacyMode,
-}: HoldingsAllocationChartsProps) {
+}: HoldingsAllocationChartsProps & { rows: HoldingRow[] }) {
   const { isPrivacyMode: contextPrivacyMode } = usePrivacy();
   const isPrivacyMode = propPrivacyMode ?? contextPrivacyMode;
+  const [activeTab, setActiveTab] = useState<'composition' | 'performance'>('composition');
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const allocationData = useMemo(() => {
     if (!summary?.byType) return [];
@@ -249,24 +257,68 @@ export function HoldingsAllocationCharts({
       }));
   }, [summary]);
 
+  if (!mounted) return null;
+
   if (allocationData.length === 0 && volatilityData.length === 0) {
     return null;
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <DonutChart
-        title="Allocation by Asset Type"
-        data={allocationData}
-        currency={baseCurrency}
-        isPrivacyMode={isPrivacyMode}
-      />
-      <DonutChart
-        title="Risk Profile (Volatility)"
-        data={volatilityData}
-        currency={baseCurrency}
-        isPrivacyMode={isPrivacyMode}
-      />
+    <div className="space-y-4">
+      {/* Toggle Header */}
+      <div className="flex justify-center">
+        <div className="bg-zinc-900/50 p-1 rounded-lg border border-white/5 inline-flex">
+          <button
+            onClick={() => setActiveTab('composition')}
+            className={`px-4 py-1.5 text-xs font-medium rounded-md transition-all ${activeTab === 'composition'
+              ? 'bg-zinc-700 text-white shadow-sm'
+              : 'text-zinc-400 hover:text-zinc-300'
+              }`}
+          >
+            Composition
+          </button>
+          <button
+            onClick={() => setActiveTab('performance')}
+            className={`px-4 py-1.5 text-xs font-medium rounded-md transition-all ${activeTab === 'performance'
+              ? 'bg-zinc-700 text-white shadow-sm'
+              : 'text-zinc-400 hover:text-zinc-300'
+              }`}
+          >
+            Performance (Heatmap)
+          </button>
+        </div>
+      </div>
+
+      {activeTab === 'composition' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <DonutChart
+            title="Allocation by Asset Type"
+            data={allocationData}
+            currency={baseCurrency}
+            isPrivacyMode={isPrivacyMode}
+          />
+          <DonutChart
+            title="Risk Profile (Volatility)"
+            data={volatilityData}
+            currency={baseCurrency}
+            isPrivacyMode={isPrivacyMode}
+          />
+        </div>
+      ) : (
+        <Card className="p-0 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300 border border-white/5 bg-zinc-900/40 backdrop-blur-sm">
+          <div className="p-4 border-b border-white/5 bg-zinc-900/50">
+            <h3 className="text-zinc-400 text-xs font-semibold uppercase tracking-wider">
+              Price Performance Heatmap
+            </h3>
+            <p className="text-zinc-500 text-[10px] mt-1">
+              Size represents position value. Color represents unrealized P&L %.
+            </p>
+          </div>
+          <div className="p-4 bg-zinc-950/30">
+            <HoldingsTreemap rows={rows} baseCurrency={baseCurrency} />
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

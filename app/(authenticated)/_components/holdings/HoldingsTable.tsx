@@ -173,6 +173,11 @@ export function HoldingsTable({
   const displayedRows =
     limit && limit > 0 ? rows.slice(0, Math.min(rows.length, limit)) : rows;
 
+  const maxMarketValue = displayedRows.reduce(
+    (max, row) => Math.max(max, row.marketValue ?? 0),
+    0,
+  );
+
   const columns: DataTableColumn<HoldingRow>[] = [
     {
       id: 'asset',
@@ -205,7 +210,7 @@ export function HoldingsTable({
       header: 'Quantity',
       accessor: (row) => row.quantity,
       cell: (row) => (
-        <span className="text-zinc-200">{isPrivacyMode ? '****' : formatQuantity(row.quantity)}</span>
+        <span className="text-zinc-200 font-mono text-sm">{isPrivacyMode ? '****' : formatQuantity(row.quantity)}</span>
       ),
       sortable: true,
       sortFn: (a, b) => a.quantity - b.quantity,
@@ -217,15 +222,17 @@ export function HoldingsTable({
       header: 'Price',
       accessor: (row) => row.price ?? -Infinity,
       cell: (row) => (
-        <PriceCell
-          row={row}
-          currency={baseCurrency}
-          showSourceBadges={showPriceSourceBadges}
-          priceFormatter={priceFormatter}
-          showRefreshButton={showRefreshButton}
-          isRefreshing={refreshingAssetIds.includes(row.assetId)}
-          onRefresh={handleRefreshAsset}
-        />
+        <div className="font-mono text-sm">
+          <PriceCell
+            row={row}
+            currency={baseCurrency}
+            showSourceBadges={showPriceSourceBadges}
+            priceFormatter={priceFormatter}
+            showRefreshButton={showRefreshButton}
+            isRefreshing={refreshingAssetIds.includes(row.assetId)}
+            onRefresh={handleRefreshAsset}
+          />
+        </div>
       ),
       sortable: true,
       sortFn: (a, b) => (a.price ?? -Infinity) - (b.price ?? -Infinity),
@@ -236,13 +243,28 @@ export function HoldingsTable({
       id: 'marketValue',
       header: 'Market Value',
       accessor: (row) => row.marketValue ?? -Infinity,
-      cell: (row) => (
-        <span className="text-zinc-200">
-          {row.marketValue !== null && row.marketValue !== undefined
-            ? (isPrivacyMode ? '****' : formatCurrencyValue(row.marketValue, baseCurrency))
-            : 'Unpriced'}
-        </span>
-      ),
+      cell: (row) => {
+        const value = row.marketValue ?? 0;
+        const widthPct = maxMarketValue > 0 ? Math.min((value / maxMarketValue) * 100, 100) : 0;
+
+        return (
+          <div className="relative flex justify-end">
+            {/* Data Bar Background */}
+            {widthPct > 0 && !isPrivacyMode && (
+              <div
+                className="absolute inset-y-0 right-0 h-full bg-emerald-500/10 rounded-sm"
+                style={{ width: `${widthPct}%`, height: '20px', top: '2px' }}
+              />
+            )}
+
+            <span className="text-zinc-200 font-mono text-sm relative z-10 px-1">
+              {row.marketValue !== null && row.marketValue !== undefined
+                ? (isPrivacyMode ? '****' : formatCurrencyValue(row.marketValue, baseCurrency))
+                : 'Unpriced'}
+            </span>
+          </div>
+        );
+      },
       sortable: true,
       sortFn: (a, b) =>
         (a.marketValue ?? -Infinity) - (b.marketValue ?? -Infinity),
@@ -254,7 +276,7 @@ export function HoldingsTable({
       header: 'Avg Cost',
       accessor: (row) => row.averageCost ?? -Infinity,
       cell: (row) => (
-        <span className="text-zinc-200">
+        <span className="text-zinc-200 font-mono text-sm">
           {isPrivacyMode ? '****' : formatCurrencyValue(row.averageCost, baseCurrency, { fallback: '—' })}
         </span>
       ),
@@ -268,7 +290,7 @@ export function HoldingsTable({
       header: 'Cost Basis',
       accessor: (row) => row.totalCostBasis ?? -Infinity,
       cell: (row) => (
-        <span className="text-zinc-200">
+        <span className="text-zinc-200 font-mono text-sm">
           {isPrivacyMode ? '****' : formatCurrencyValue(row.totalCostBasis, baseCurrency, { fallback: '—' })}
         </span>
       ),
@@ -282,7 +304,7 @@ export function HoldingsTable({
       header: 'Unrealized PnL',
       accessor: (row) => row.unrealizedPnl ?? -Infinity,
       cell: (row) => (
-        <span className={formatPnlClass(row.unrealizedPnl)}>
+        <span className={`${formatPnlClass(row.unrealizedPnl)} font-mono text-sm`}>
           {isPrivacyMode ? '****' : formatPnlValue(row.unrealizedPnl, baseCurrency, { fallback: '—' })}
         </span>
       ),
@@ -298,12 +320,12 @@ export function HoldingsTable({
       accessor: (row) => row.unrealizedPnlPct ?? -Infinity,
       cell: (row) => {
         if (isPrivacyMode) {
-          return <span className={formatPnlClass(row.unrealizedPnlPct)}>****</span>;
+          return <span className={`${formatPnlClass(row.unrealizedPnlPct)} font-mono text-sm`}>****</span>;
         }
         const val = row.unrealizedPnlPct;
         const prefix = val && val > 0 ? '+' : '';
         return (
-          <span className={formatPnlClass(val)}>
+          <span className={`${formatPnlClass(val)} font-mono text-sm`}>
             {prefix}
             {val !== null && val !== undefined ? `${val.toFixed(2)}%` : '—'}
           </span>

@@ -4,7 +4,7 @@ import { Card } from '../_components/ui/Card';
 import { Badge } from '../_components/ui/Badge';
 import { HoldingsList } from './HoldingsList';
 import { HoldingsFilters } from './HoldingsFilters';
-import { HoldingsSummaryCards } from './HoldingsSummaryCards';
+import { PortfolioHero } from '../_components/holdings/PortfolioHero';
 import { HoldingsAllocationCharts } from '../_components/charts/HoldingsAllocationCharts';
 import {
   consolidateHoldingsByAsset,
@@ -88,23 +88,6 @@ export default async function HoldingsPage(props: HoldingsPageProps) {
   const displaySummary = holdings.summary;
 
   const baseCurrency = settings.baseCurrency;
-  const totalValue = displaySummary.totalValue;
-  const lastUpdated = displaySummary.updatedAt;
-  const totalCostBasis = displaySummary.totalCostBasis;
-  const totalUnrealizedPnl = displaySummary.totalUnrealizedPnl;
-  const valuationReady =
-    totalCostBasis !== null && totalUnrealizedPnl !== null;
-  const pnlPercent =
-    valuationReady && totalCostBasis !== 0
-      ? (totalUnrealizedPnl / totalCostBasis) * 100
-      : null;
-  const pnlClass = valuationReady
-    ? totalUnrealizedPnl > 0
-      ? 'text-emerald-400'
-      : totalUnrealizedPnl < 0
-        ? 'text-rose-400'
-        : 'text-zinc-200'
-    : 'text-zinc-500';
 
   return (
     <div className="space-y-6">
@@ -123,7 +106,7 @@ export default async function HoldingsPage(props: HoldingsPageProps) {
         />
       </Suspense>
 
-      <HoldingsSummaryCards
+      <PortfolioHero
         summary={displaySummary}
         baseCurrency={baseCurrency}
         priceAutoRefreshIntervalMinutes={settings.priceAutoRefreshIntervalMinutes}
@@ -131,6 +114,7 @@ export default async function HoldingsPage(props: HoldingsPageProps) {
 
       <HoldingsAllocationCharts
         summary={visibleSummary}
+        rows={visibleRows}
         baseCurrency={baseCurrency}
       />
 
