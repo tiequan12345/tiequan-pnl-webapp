@@ -10,8 +10,7 @@ import {
 } from 'recharts';
 import { Card } from '../ui/Card';
 import type { HoldingsSummary } from '@/lib/holdings';
-
-// Best-in-class dark/neon palette
+import { usePrivacy } from '../../_contexts/PrivacyContext';
 const COLORS = [
   '#3b82f6', // Blue
   '#10b981', // Emerald
@@ -163,7 +162,7 @@ function DonutChart({
             </span>
             {activeItem && (
               <div className="text-xs text-zinc-400 font-medium bg-zinc-800/50 px-2 py-0.5 rounded-full mt-1">
-                {isPrivacyMode ? '**' : formatPercentage(activeItem.value, total)}
+                {formatPercentage(activeItem.value, total)}
               </div>
             )}
           </div>
@@ -181,8 +180,8 @@ function DonutChart({
                   onMouseEnter={() => setActiveIndex(index)}
                   onMouseLeave={() => setActiveIndex(undefined)}
                   className={`group flex items-center justify-between w-full p-2.5 rounded-lg transition-all duration-200 border border-transparent ${isActive
-                      ? 'bg-zinc-800/80 border-zinc-700/50 shadow-sm'
-                      : 'hover:bg-zinc-800/40 hover:border-zinc-800'
+                    ? 'bg-zinc-800/80 border-zinc-700/50 shadow-sm'
+                    : 'hover:bg-zinc-800/40 hover:border-zinc-800'
                     }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
@@ -199,7 +198,7 @@ function DonutChart({
                       {isPrivacyMode ? '****' : formatCurrency(item.value, currency)}
                     </span>
                     <span className="text-[10px] text-zinc-500 font-medium">
-                      {isPrivacyMode ? '**' : formatPercentage(item.value, total)}
+                      {formatPercentage(item.value, total)}
                     </span>
                   </div>
                 </button>
@@ -212,11 +211,16 @@ function DonutChart({
   );
 }
 
+
+
 export function HoldingsAllocationCharts({
   summary,
   baseCurrency,
-  isPrivacyMode,
+  isPrivacyMode: propPrivacyMode,
 }: HoldingsAllocationChartsProps) {
+  const { isPrivacyMode: contextPrivacyMode } = usePrivacy();
+  const isPrivacyMode = propPrivacyMode ?? contextPrivacyMode;
+
   const allocationData = useMemo(() => {
     if (!summary?.byType) return [];
     return Object.entries(summary.byType)

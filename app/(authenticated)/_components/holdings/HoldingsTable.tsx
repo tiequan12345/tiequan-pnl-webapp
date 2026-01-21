@@ -3,6 +3,7 @@
 import { useCallback, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { Badge } from '../ui/Badge';
+import { usePrivacy } from '../../_contexts/PrivacyContext';
 import type { HoldingRow } from '@/lib/holdings';
 import { DataTable, type DataTableColumn, type GlobalSearch } from '../table/DataTable';
 
@@ -91,10 +92,14 @@ function PriceCell({
   isRefreshing?: boolean;
   onRefresh?: (assetId: number) => void;
 }) {
+  const { isPrivacyMode } = usePrivacy();
+
   const formattedPrice = row.price
-    ? priceFormatter
-      ? priceFormatter(row.price, currency)
-      : defaultPriceFormatter(row.price)
+    ? isPrivacyMode
+      ? '****'
+      : priceFormatter
+        ? priceFormatter(row.price, currency)
+        : defaultPriceFormatter(row.price)
     : 'Unpriced';
 
   const needsRefresh = showRefreshButton && (!row.price || row.isStale);
@@ -139,6 +144,7 @@ export function HoldingsTable({
   toolbar,
 }: HoldingsTableProps) {
   const router = useRouter();
+  const { isPrivacyMode } = usePrivacy();
   const [refreshingAssetIds, setRefreshingAssetIds] = useState<number[]>([]);
 
   const handleRefreshAsset = useCallback(
@@ -199,7 +205,7 @@ export function HoldingsTable({
       header: 'Quantity',
       accessor: (row) => row.quantity,
       cell: (row) => (
-        <span className="text-zinc-200">{formatQuantity(row.quantity)}</span>
+        <span className="text-zinc-200">{isPrivacyMode ? '****' : formatQuantity(row.quantity)}</span>
       ),
       sortable: true,
       sortFn: (a, b) => a.quantity - b.quantity,
@@ -233,7 +239,7 @@ export function HoldingsTable({
       cell: (row) => (
         <span className="text-zinc-200">
           {row.marketValue !== null && row.marketValue !== undefined
-            ? formatCurrencyValue(row.marketValue, baseCurrency)
+            ? (isPrivacyMode ? '****' : formatCurrencyValue(row.marketValue, baseCurrency))
             : 'Unpriced'}
         </span>
       ),
@@ -249,7 +255,7 @@ export function HoldingsTable({
       accessor: (row) => row.averageCost ?? -Infinity,
       cell: (row) => (
         <span className="text-zinc-200">
-          {formatCurrencyValue(row.averageCost, baseCurrency, { fallback: '—' })}
+          {isPrivacyMode ? '****' : formatCurrencyValue(row.averageCost, baseCurrency, { fallback: '—' })}
         </span>
       ),
       sortable: true,
@@ -263,7 +269,7 @@ export function HoldingsTable({
       accessor: (row) => row.totalCostBasis ?? -Infinity,
       cell: (row) => (
         <span className="text-zinc-200">
-          {formatCurrencyValue(row.totalCostBasis, baseCurrency, { fallback: '—' })}
+          {isPrivacyMode ? '****' : formatCurrencyValue(row.totalCostBasis, baseCurrency, { fallback: '—' })}
         </span>
       ),
       sortable: true,
@@ -277,7 +283,7 @@ export function HoldingsTable({
       accessor: (row) => row.unrealizedPnl ?? -Infinity,
       cell: (row) => (
         <span className={formatPnlClass(row.unrealizedPnl)}>
-          {formatPnlValue(row.unrealizedPnl, baseCurrency, { fallback: '—' })}
+          {isPrivacyMode ? '****' : formatPnlValue(row.unrealizedPnl, baseCurrency, { fallback: '—' })}
         </span>
       ),
       sortable: true,
@@ -291,6 +297,9 @@ export function HoldingsTable({
       header: '%',
       accessor: (row) => row.unrealizedPnlPct ?? -Infinity,
       cell: (row) => {
+        if (isPrivacyMode) {
+          return <span className={formatPnlClass(row.unrealizedPnlPct)}>****</span>;
+        }
         const val = row.unrealizedPnlPct;
         const prefix = val && val > 0 ? '+' : '';
         return (

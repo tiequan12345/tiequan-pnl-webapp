@@ -264,7 +264,7 @@ export function DashboardView() {
   const totalCurrency = state.baseCurrency;
   const lastUpdated = state.summary?.autoUpdatedAt ?? null;
   const hasAutoAssets = state.summary?.hasAutoAssets ?? false;
-  
+
   const totalUnrealizedPnl = state.summary?.totalUnrealizedPnl ?? null;
   const totalCostBasis = state.summary?.totalCostBasis ?? null;
   const valuationReady =
@@ -280,13 +280,13 @@ export function DashboardView() {
         ? 'text-rose-400'
         : 'text-zinc-200'
     : 'text-zinc-500';
-  
+
   // Only show stale badge if there are AUTO assets and their prices are stale
   const pricesStale = hasAutoAssets && (!lastUpdated || isPriceStale(lastUpdated, state.refreshIntervalMinutes));
   const staleBadge = pricesStale ? <Badge type="red">Stale prices</Badge> : null;
-  
+
   // Show different messaging for manual-only portfolios
-  const priceStatusMessage = hasAutoAssets 
+  const priceStatusMessage = hasAutoAssets
     ? (pricesStale ? "Stale prices" : null)
     : "Manual pricing only";
   const refreshLabel = refreshing ? 'Refreshing…' : 'Refresh Prices';
@@ -387,8 +387,8 @@ export function DashboardView() {
                     {hasAutoAssets && state.refreshIntervalMinutes
                       ? ` · Refresh every ${state.refreshIntervalMinutes} min (scheduled hourly)`
                       : hasAutoAssets
-                      ? " · Scheduled hourly"
-                      : " · Manual pricing only"}
+                        ? " · Scheduled hourly"
+                        : " · Manual pricing only"}
                   </div>
                 ) : (
                   <div className="text-xs text-zinc-500 mt-1">
@@ -418,7 +418,7 @@ export function DashboardView() {
                   {formatCurrency(totalUnrealizedPnl, totalCurrency)}
                   {pnlPercent !== null ? (
                     <span className="text-xs ml-2 text-zinc-400">
-                      ({pnlPercent > 0 ? '+' : ''}{pnlPercent.toFixed(2)}%)
+                      ({isPrivacyMode ? '****' : (pnlPercent > 0 ? '+' : '') + pnlPercent.toFixed(2) + '%'})
                     </span>
                   ) : null}
                 </div>

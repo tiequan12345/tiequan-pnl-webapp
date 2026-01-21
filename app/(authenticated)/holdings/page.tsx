@@ -4,6 +4,7 @@ import { Card } from '../_components/ui/Card';
 import { Badge } from '../_components/ui/Badge';
 import { HoldingsList } from './HoldingsList';
 import { HoldingsFilters } from './HoldingsFilters';
+import { HoldingsSummaryCards } from './HoldingsSummaryCards';
 import { HoldingsAllocationCharts } from '../_components/charts/HoldingsAllocationCharts';
 import {
   consolidateHoldingsByAsset,
@@ -122,61 +123,11 @@ export default async function HoldingsPage(props: HoldingsPageProps) {
         />
       </Suspense>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <div className="text-sm text-zinc-400">Total Portfolio Value</div>
-          <div className="mt-2 text-3xl font-bold text-white">
-            {formatCurrency(totalValue, baseCurrency)}
-          </div>
-          <div className="mt-1 text-xs text-zinc-500">{baseCurrency}</div>
-        </Card>
-
-        <Card>
-          <div className="text-sm text-zinc-400">Last Price Update</div>
-          {lastUpdated ? (
-            <div className="mt-2 text-lg text-white">
-              {lastUpdated.toLocaleString()}
-            </div>
-          ) : (
-            <div className="mt-2 flex items-center gap-2 text-zinc-300">
-              <span>No prices</span>
-              <Badge type="orange">Needs update</Badge>
-            </div>
-          )}
-          <div className="mt-1 text-xs text-zinc-500">
-            Refresh Interval: {settings.priceAutoRefreshIntervalMinutes} min
-          </div>
-        </Card>
-
-        <Card>
-          <div className="text-sm text-zinc-400">Valuation</div>
-          {valuationReady ? (
-            <>
-              <div className={`mt-2 text-2xl font-bold ${pnlClass}`}>
-                {totalUnrealizedPnl > 0 ? '+' : ''}
-                {formatCurrency(totalUnrealizedPnl, baseCurrency)}
-                {pnlPercent !== null ? (
-                  <span className="text-xs ml-2 text-zinc-400">
-                    ({pnlPercent > 0 ? '+' : ''}{pnlPercent.toFixed(2)}%)
-                  </span>
-                ) : null}
-              </div>
-              <div className="mt-1 text-xs text-zinc-500">
-                Cost basis: {formatCurrency(totalCostBasis!, baseCurrency)}
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="mt-2 text-lg text-zinc-500 font-medium">
-                Valuation data pending
-              </div>
-              <div className="mt-1 text-xs text-zinc-500">
-                Unknown cost basis
-              </div>
-            </>
-          )}
-        </Card>
-      </div>
+      <HoldingsSummaryCards
+        summary={displaySummary}
+        baseCurrency={baseCurrency}
+        priceAutoRefreshIntervalMinutes={settings.priceAutoRefreshIntervalMinutes}
+      />
 
       <HoldingsAllocationCharts
         summary={visibleSummary}
