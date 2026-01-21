@@ -61,7 +61,7 @@ UI / UX Baseline and Aesthetic Constraints:
 6. View dashboard:
    - Total portfolio value, allocation by type and volatility bucket
    - Top holdings, recent transactions
-7. Configure base currency/timezone and export data as CSV/DB for backup
+7. Configure timezone and auto-refresh preferences (base currency is fixed to USD) and export data as CSV/DB for backup
 
 ## Data Model
 
@@ -93,7 +93,7 @@ UI / UX Baseline and Aesthetic Constraints:
 - account_id (FK → accounts.id)
 - asset_id (FK → assets.id)
 - quantity (decimal; **signed**; positive = asset quantity increases, negative = decreases)
-- tx_type (enum): DEPOSIT, WITHDRAWAL, TRADE, YIELD, NFT_TRADE, OFFLINE_TRADE, HEDGE, OTHER
+- tx_type (enum): DEPOSIT, WITHDRAWAL, TRADE, TRANSFER, YIELD, NFT_TRADE, OFFLINE_TRADE, HEDGE, RECONCILIATION, COST_BASIS_RESET, OTHER
 - external_reference (string, nullable)
 - notes (text, nullable)
 - unit_price_in_base (Decimal, nullable)
@@ -120,6 +120,7 @@ Required keys:
 - timezone (e.g., "America/Los_Angeles")
 - price_auto_refresh (e.g., "ON"/"OFF")
 - price_auto_refresh_interval_minutes (stringified int, optional)
+- price_refresh_endpoint (string, optional; default "/api/prices/refresh")
 
 ## Pages and Screens
 
@@ -146,7 +147,7 @@ Two modes: by account (grouped) and consolidated (single list)
 Columns: Asset, Account, Quantity, Average cost, Total cost basis, Current price, Market value, Unrealized PnL, PnL %
 
 ### Settings (/settings)
-Controls: Base currency, timezone selector, price refresh toggle/interval, "Refresh Prices Now" button, export buttons
+Controls: Base currency (fixed to USD), timezone selector, price refresh toggle/interval, price refresh endpoint, "Refresh Prices Now" button, cost basis recalculation tools, export buttons
 
 ## API Endpoints
 
@@ -165,15 +166,19 @@ All endpoints are authenticated unless noted otherwise.
 ### Ledger
 - GET /api/ledger – with pagination and filters
 - POST /api/ledger – create one or many transactions
-- POST /api/ledger/import/parse – accept CSV, return parsed rows
 - POST /api/ledger/import/commit – accept normalized rows, create transactions
+- POST /api/ledger/cost-basis-recalc – replay ledger and persist COST_BASIS_RESET entries
+- POST /api/ledger/cost-basis-reset – bulk cost basis reset allocations
+- POST /api/ledger/reconcile – preview/commit reconciliation adjustments
+- POST /api/ledger/resolve-transfer – resolve unmatched transfer legs
+- GET /api/ledger/transfer-issues – list unmatched transfer diagnostics
 
 ### Holdings
 - GET /api/holdings – with filters for account, asset type, volatility
 
 ### Pricing
-- POST /api/prices/refresh – refresh all auto-priced assets
-- POST /api/prices/refresh/[assetId] – refresh specific asset
+- POST /api/prices/refresh – refresh all auto-priced assets (public)
+- POST /api/prices/refresh/[assetId] – refresh specific asset (authenticated)
 - GET /api/prices/health – system health status (public)
 - GET /api/prices/rate-limit – current API usage (public)
 

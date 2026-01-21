@@ -93,7 +93,7 @@ Create a `.env.local` file in the root directory with the following variables:
 APP_PASSWORD=your-secure-password
 
 # Required: Database connection string (SQLite)
-DATABASE_URL="file:./dev.db"
+DATABASE_URL="file:prisma/dev.db"
 
 # Required: Finnhub API key for equity price fetching
 FINNHUB_API_KEY=your-finnhub-api-key
@@ -101,6 +101,14 @@ FINNHUB_API_KEY=your-finnhub-api-key
 # Required: CoinGecko API key for crypto price fetching
 # Get your free API key from: https://www.coingecko.com/en/api/documentation
 COINGECKO_API_KEY=your-coingecko-api-key
+
+# Optional: S3 backup configuration (required if you run backup scripts)
+S3_BUCKET_NAME=your-s3-bucket-name
+S3_REGION=us-east-1
+AWS_ACCESS_KEY_ID=your-aws-access-key-id
+AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
+BACKUP_SCHEDULE="0 2 * * *"
+BACKUP_RETENTION_DAYS=60
 ```
 
 ### Getting API Keys
@@ -154,7 +162,7 @@ The application uses a simple single-user authentication system:
 2. **API Call**: Form POSTs to `/api/login`
 3. **Validation**: Server compares password with `APP_PASSWORD`
 4. **Session Creation**: Sets `app_session` cookie on success
-5. **Middleware Protection**: All routes except `/login` and API endpoints require valid session
+5. **Middleware Protection**: All routes except `/login` and public API endpoints (`/api/login`, `/api/prices/refresh`, `/api/prices/health`, `/api/prices/rate-limit`) require a valid session
 6. **Redirect**: Unauthenticated users are redirected to `/login`
 
 ### Key Components
@@ -183,17 +191,34 @@ Refreshes prices for all assets with `AUTO` pricing mode.
 **Response:**
 ```json
 {
-  "success": true,
-  "message": "Price refresh completed",
-  "duration": 2500,
-  "results": {
-    "successful": ["BTC", "ETH"],
-    "failed": ["INVALID_ASSET"]
+  "refreshed": [1, 2],
+  "failed": [
+    {
+      "id": 3,
+      "symbol": "INVALID",
+      "type": "CRYPTO",
+      "error": "No price data returned from API"
+    }
+  ],
+  "rateLimitStats": {
+    "currentCalls": 1,
+    "maxCalls": 30,
+    "remainingCalls": 29,
+    "usagePercentage": 3,
+    "status": "healthy",
+    "timeWindowMs": 60000,
+    "nextAvailableSlot": 1700000000000
   },
-  "stats": {
-    "total": 10,
-    "successful": 8,
-    "failed": 2
+  "processed": {
+    "crypto": 2,
+    "equity": 0,
+    "total": 2
+  },
+  "summary": {
+    "successCount": 2,
+    "failureCount": 1,
+    "successRate": "66.7%",
+    "duration": "2500ms"
   }
 }
 ```
@@ -205,13 +230,8 @@ Refreshes price for a specific asset by ID.
 **Response:**
 ```json
 {
-  "success": true,
-  "message": "Price refreshed for asset 123",
-  "data": {
-    "assetId": 123,
-    "price": 45000.50,
-    "source": "coingecko"
-  }
+  "assetId": 123,
+  "refreshed": true
 }
 ```
 
@@ -222,21 +242,23 @@ Returns current rate limiting statistics and recommendations.
 **Response:**
 ```json
 {
-  "stats": {
-    "callsInLastMinute": 15,
-    "maxCallsPerMinute": 30,
-    "callsRemaining": 15,
-    "resetTime": 1640995200000,
-    "warningThreshold": 0.8
+  "success": true,
+  "data": {
+    "currentCalls": 5,
+    "maxCalls": 30,
+    "remainingCalls": 25,
+    "usagePercentage": 17,
+    "status": "healthy",
+    "timeWindowMs": 60000,
+    "nextAvailableSlot": 1700000000000,
+    "callHistory": [
+      { "timestamp": 1700000000000, "timeAgo": "5s ago" }
+    ],
+    "recommendations": [
+      "Rate limit usage is healthy."
+    ]
   },
-  "callHistory": [
-    { "timestamp": 1640995140000, "success": true },
-    { "timestamp": 1640995145000, "success": true }
-  ],
-  "recommendations": [
-    "Rate limit usage is normal",
-    "Consider batching requests to optimize API usage"
-  ]
+  "timestamp": "2025-12-31T23:59:59.999Z"
 }
 ```
 
@@ -248,9 +270,37 @@ Basic health check for pricing system.
 ```json
 {
   "status": "healthy",
-  "timestamp": "2023-12-31T23:59:59.999Z",
-  "database": "connected",
-  "rateLimiter": "operational"
+  "timestamp": "2025-12-31T23:59:59.999Z",
+  "responseTime": "120ms",
+  "metrics": {
+    "autoAssetsCount": 12,
+    "totalAssetsWithPrices": 12,
+    "recentUpdatesInLast2Hours": 10,
+    "priceUpdateCoverage": "83.3%"
+  },
+  "rateLimit": {
+    "currentCalls": 3,
+    "maxCalls": 30,
+    "remainingCalls": 27,
+    "usagePercentage": 10,
+    "status": "healthy",
+    "timeWindowMs": 60000,
+    "nextAvailableSlot": 1700000000000
+  },
+  "settings": {
+    "priceAutoRefresh": true,
+    "priceAutoRefreshIntervalMinutes": 60,
+    "priceRefreshEndpoint": "/api/prices/refresh"
+  },
+  "checks": {
+    "database": "connected",
+    "apiKeys": {
+      "coingecko": true,
+      "finnhub": true
+    },
+    "responseTime": "pass",
+    "rateLimit": "pass"
+  }
 }
 ```
 
@@ -504,9 +554,15 @@ node scripts/repair-null-yield-valuation.js --apply   # Backfill missing totals 
 Ensure all variables from `.env.example` are set in your hosting platform:
 
 - `APP_PASSWORD`
-- `DATABASE_URL` (hosting platform provides this automatically)
+- `DATABASE_URL`
 - `FINNHUB_API_KEY`
 - `COINGECKO_API_KEY`
+- `S3_BUCKET_NAME` (required if you run backups)
+- `S3_REGION`
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `BACKUP_SCHEDULE`
+- `BACKUP_RETENTION_DAYS`
  
 When running on your own server with PM2, point the process at `ecosystem.config.js` (provided in the repo). That file loads `.env` using `dotenv`, sets `cwd` to the repo root, and exposes the same vars the rest of the app expects, so you do not need to pass every env var manually to `pm2`.
 
@@ -519,7 +575,7 @@ For the price refresh workflow to function, configure these secrets in your GitH
 
 ### Database Considerations
 
-- **Production Database**: Vercel uses PostgreSQL for production
+- **Production Database**: The app uses SQLite in all environments; ensure your host provides a persistent file system or volume for the database file (Vercel's default filesystem is ephemeral)
 - **Migrations**: Run migrations during deployment
 - **Backups**: Set up regular database backups
 - **SQLite Path Resolution**: The server now normalizes `DATABASE_URL` by searching upward from both the current working directory and the compiled module directory for the repo root before resolving relative `file:` URLs, so refer to `prisma/dev.db` only relative to the project root and let the helper turn it into an absolute path.

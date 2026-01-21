@@ -1,154 +1,90 @@
-# BTC Cost Basis Remediation Plan
+# Cost Basis Remediation Guide
 
-## Purpose
-Restore accurate BTC (and other asset) cost basis after transfers, align runtime holdings with recalc logic, and prevent future drift. This plan addresses both the display/holdings pipeline and the transfer-matching logic used during recalculation.
+This guide explains how to repair or re-anchor cost basis using the built-in recalculation tooling. It is intended for someone running the app for the first time and needing to correct cost basis after imports, transfers, or historical data fixes.
 
-## Executive Summary of Root Causes
-1. **Holdings calculation ignores transfer pairing.** Incoming transfers with no valuation flip cost basis to unknown, even when source accounts have known basis.
-2. **Recalc transfer matching is too strict.** Transfers with small quantity mismatches (fees, slippage) are treated as invalid/unmatched, so basis is not moved.
-3. **Cost basis resets are time‑scoped.** After the last reset, additional transfers occur without a subsequent refresh, so drift accumulates.
+## What this does
 
-## Scope
-- **Assets:** Primarily BTC, but the same logic applies to any asset with transfers.
-- **Systems:** Holdings API / UI, cost basis recalculation job/endpoint, ledger transfer modeling.
-- **Data:** LedgerTransaction history, Cost Basis Reset entries, Holdings view results.
+- Replays the ledger and writes **COST_BASIS_RESET** entries.
+- Preserves quantities while re-anchoring cost basis to a specific point in time.
+- Helps resolve "unknown cost basis" positions created by missing valuations or transfer mismatches.
 
-## Guiding Principles
-- Preserve historical accuracy (no silent overwrites without audit trail).
-- Make transfer cost basis propagation deterministic and auditable.
-- Align runtime holdings logic with recalc logic to prevent divergence.
-- Prefer robust matching in the presence of fees.
+The base currency is fixed to **USD**, so all valuations are in USD.
 
----
+## When to run it
 
-## Phase 1 — Triage & Impact Assessment (1–2 days)
-**Goal:** Confirm breadth, quantify impact, and identify which transfers are failing.
+Run a cost basis recalculation when you:
+- Import historical data or large CSVs.
+- Fix or backfill missing valuation fields (`unit_price_in_base` / `total_value_in_base`).
+- Resolve transfer pairing issues.
+- Notice holdings with **unknown cost basis** even though trades/transfers should have known values.
 
-### 1. Inventory affected accounts and assets
-- Enumerate accounts with non‑zero BTC holdings and missing/unknown cost basis.
-- Identify destination accounts that received BTC via transfer after the last cost basis reset.
+## Before you start
 
-### 2. Categorize transfer anomalies
-- Transfers with exact matching quantities (should propagate basis) vs. mismatched quantities (likely fee‑impacted).
-- Transfers without partner leg or with ambiguous matching.
+1. **Back up your database** (`/api/export/db` or the backup scripts).
+2. Ensure all required valuation fields are present for trade-like entries (DEPOSIT, YIELD, TRADE, NFT_TRADE, OFFLINE_TRADE, HEDGE). Zero cost basis must be explicit (`0`).
+3. Verify your timezone setting if you’re using the `as_of` field.
 
-### 3. Produce an internal impact report
-- List: destination account, transfer date, quantity, expected basis (from source), observed basis (current holdings).
-- Highlight material discrepancies for finance/tax implications.
+## Recommended workflow (UI)
 
-**Deliverable:** Impact matrix covering BTC (and top assets) with a ranked severity list.
+Go to **Settings → Cost Basis Recalculation** and follow these steps:
 
----
+1. **Select Mode**
+   - **PURE**: ignores existing resets and recomputes from the ledger.
+   - **HONOR_RESETS**: uses existing resets as anchors while replaying.
 
-## Phase 2 — Align Holdings Logic with Transfer Matching (2–4 days)
-**Goal:** Ensure runtime holdings matches transfer propagation used by recalc.
+2. **(Optional) As Of**
+   - Set a cutoff datetime if you want resets anchored up to a point in time.
+   - Leaving it empty recalculates through the full ledger.
 
-### 1. Standardize transfer matching rules
-- Define a single transfer pairing policy shared by holdings and recalc.
-- Confirm tolerance policy for small mismatches (fee/slippage).
-- Define how to treat partial matches and unmatched legs.
+3. **(Optional) External Reference / Notes**
+   - Helps you tag resets for audit or future filtering.
 
-### 2. Mirror transfer basis propagation in holdings
-- Holdings calculation must:
-  - Pair transfer legs reliably.
-  - Move basis from source to destination based on average cost at time of transfer.
-  - Preserve costBasisKnown flags correctly.
+4. **Run Recalculation**
+   - The UI returns counts and any transfer pairing diagnostics.
 
-### 3. Add diagnostic flags to holdings results
-- Flag rows where basis is unknown due to missing/mismatched transfer pairing.
-- Provide visibility for debugging without inspecting the ledger manually.
+## Resolving transfer diagnostics
 
-**Deliverable:** Unified transfer logic spec + updated holdings behavior (no code yet).
+If the recalculation reports transfer pairing issues, use the **Unmatched Diagnostics** panel in Settings:
 
----
+- **Match Together**: Forces two legs to pair (syncs timestamps and assigns a `MATCH:<uuid>` reference).
+- **Treat as Separate**: Converts to independent DEPOSIT/WITHDRAWAL entries to clear warnings.
 
-## Phase 3 — Relax Recalc Transfer Matching (2–3 days)
-**Goal:** Ensure the recalc engine handles realistic transfer mismatches.
+After resolving, run the recalculation again to verify diagnostics are cleared.
 
-### 1. Fee‑tolerant matching
-- Allow small absolute or relative differences between legs (configurable).
-- Prefer pairing by time window and reference, then allow tolerance in quantity.
+## API equivalents
 
-### 2. Support “fee leg” handling
-- If mismatch exceeds tolerance, classify as transfer + fee deduction rather than invalid.
-- Decide whether the fee is charged to the source or destination account in basis.
+All endpoints are authenticated.
 
-### 3. Reclassify transfer diagnostics
-- Distinguish “hard invalid” from “fee‑adjusted mismatch” for auditing.
+- **POST /api/ledger/cost-basis-recalc**
+  ```json
+  {
+    "mode": "PURE",
+    "as_of": "2025-12-31T23:59:59Z",
+    "external_reference": "RECALC:2025-12-31",
+    "notes": "End-of-year reset"
+  }
+  ```
 
-**Deliverable:** Revised transfer matching policy for recalc, including fee handling rules.
+- **POST /api/ledger/resolve-transfer**
+  ```json
+  {
+    "legIds": [123, 124],
+    "action": "MATCH"
+  }
+  ```
 
----
+- **GET /api/ledger/transfer-issues**
+  Lists transfer diagnostics to resolve before recalculation.
 
-## Phase 4 — Data Repair & Reconciliation (1–2 days)
-**Goal:** Backfill correct basis and validate results.
+## Tips and best practices
 
-### 1. Run full recalculation (after logic alignment)
-- Recompute cost basis for all accounts and assets.
-- Persist new COST_BASIS_RESET entries as of a known cutoff.
+- Run recalculation after large imports or schema fixes.
+- Add external references so resets are easy to identify.
+- Keep backups for audit purposes.
+- If cost basis remains unknown, check for missing valuation fields or unresolved transfer legs.
 
-### 1B. Backfill missing valuation data
-- Use `scripts/repair-null-yield-valuation.js` to set missing totals for YIELD/DEPOSIT rows when source pricing is absent.
+## Troubleshooting
 
-### 2. Verify end‑to‑end holdings output
-- Compare output against recalculated resets and expected average costs.
-- Validate that holdings view now reflects propagated transfer basis.
-
-### 3. Spot‑check known problematic transfers
-- Confirm accounts like EVM HW Wallet and Hydrex now show non‑zero cost basis reflecting inbound transfers.
-
-**Deliverable:** Reconciled dataset + validation checklist showing resolved discrepancies.
-
----
-
-## Phase 5 — Monitoring & Guardrails (1–2 days)
-**Goal:** Prevent recurrence and make anomalies visible.
-
-### 1. Automated health checks
-- Alert when holdings contain non‑zero quantity with unknown cost basis.
-- Alert when transfers remain unmatched or fee mismatched above tolerance.
-- Enforce valuation-required transaction types to prevent null basis entries (zero cost basis must be explicit).
-
-### 2. Recalc scheduling strategy
-- Option A: Run recalc after bulk import/transfer events.
-- Option B: Schedule periodic recalc (daily/weekly) for drift prevention.
-
-### 3. Audit report export
-- Generate a periodic transfer‑basis audit report for finance/tax review.
-
-**Deliverable:** Operational monitoring plan and alert thresholds.
-
----
-
-## Acceptance Criteria
-- Holdings view matches recalc outputs for all BTC accounts.
-- Transfers with small fee mismatches still propagate basis correctly.
-- No accounts show non‑zero BTC with unknown basis without an explicit diagnostic flag.
-- Recalc output is stable across repeated runs (idempotent).
-
----
-
-## Risks & Mitigations
-- **Risk:** Relaxed matching may pair incorrect transfers in high‑volume accounts.
-  - **Mitigation:** Require time‑window + reference alignment, and log diagnostic confidence.
-- **Risk:** Fee handling could distort basis if treated inconsistently.
-  - **Mitigation:** Define a canonical policy and document it in product/finance notes.
-- **Risk:** Retroactive basis changes affect historical P&L.
-  - **Mitigation:** Preserve old resets and record a new “recalc as of” cutoff.
-
----
-
-## Owners & Collaboration
-- **Ledger Logic Owner:** Backend/Finance Engineering
-- **Holdings UI Owner:** Frontend
-- **Data Verification:** Finance/Accounting
-- **Release Approval:** Senior Dev + Finance
-
----
-
-## Next Actions (Proposed Order)
-1. Validate anomaly list and quantify impact (Phase 1).
-2. Finalize transfer pairing policy (Phase 2 & 3).
-3. Implement logic alignment (Phase 2).
-4. Recalc cost basis and reconcile (Phase 4).
-5. Add monitoring and periodic audits (Phase 5).
+- **Recalc returns zero created**: Ensure holdings exist at or before the `as_of` date.
+- **Diagnostics won’t clear**: Resolve transfers, then rerun the recalculation.
+- **Unknown basis persists**: Ensure valuation fields are present and non-null; use `0` for explicit zero-cost basis.

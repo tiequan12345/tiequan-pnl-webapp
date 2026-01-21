@@ -16,7 +16,7 @@ All core phases (0-6) are complete with the following key features implemented:
 
 ### ✅ Phase 0 – Project Setup & Skeleton
 - Next.js App Router with authenticated layout under `app/(authenticated)/`
-- Prisma + SQLite configured with `DATABASE_URL="file:./dev.db"`
+- Prisma + SQLite configured with `DATABASE_URL="file:prisma/dev.db"`
 - Single-user auth via `APP_PASSWORD` environment variable
 - Authenticated routes `/`, `/assets`, `/accounts`, `/ledger`, `/holdings`, `/settings`
 

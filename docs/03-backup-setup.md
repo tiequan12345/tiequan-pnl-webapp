@@ -89,7 +89,7 @@ BACKUP_RETENTION_DAYS=60
 ## Installation
 
 ```bash
-npm install
+pnpm install
 ```
 
 The required dependencies are already added to `package.json`:
@@ -101,7 +101,7 @@ The required dependencies are already added to `package.json`:
 Run a manual backup to verify configuration:
 
 ```bash
-npm run backup
+pnpm run backup
 ```
 
 Check the logs in `logs/backup.log` for success/failure messages.
@@ -113,7 +113,7 @@ Check the logs in `logs/backup.log` for success/failure messages.
 Start the backup service:
 
 ```bash
-npm run backup-service
+pnpm run backup-service
 ```
 
 This will run the backup service in the foreground with scheduled backups.
@@ -128,7 +128,7 @@ This will run the backup service in the foreground with scheduled backups.
 2. **Add the backup schedule:**
    ```cron
    # Daily backup at 2 AM
-   0 2 * * * cd /path/to/your/project && npm run backup
+   0 2 * * * cd /path/to/your/project && pnpm run backup
    ```
 
 3. **Verify the cron job:**
@@ -146,13 +146,13 @@ If you're using PM2 for process management:
      apps: [
        {
          name: 'tiequan-pnl-webapp',
-         script: 'npm',
+         script: 'pnpm',
          args: 'start',
          // ... your existing config
        },
        {
          name: 'backup-service',
-         script: 'npm',
+         script: 'pnpm',
          args: 'run backup-service',
          watch: false,
          autorestart: true,
@@ -174,10 +174,10 @@ If you're using PM2 for process management:
 You can monitor backup status through the API:
 
 ```bash
-# Trigger manual backup (public endpoint - no auth required)
+# Trigger manual backup (requires auth unless /api/backup-public is added to PUBLIC_PATHS)
 curl -X POST http://localhost:1373/api/backup-public
 
-# View backup logs (public endpoint - no auth required)
+# View backup logs (requires auth unless /api/backup-public is added to PUBLIC_PATHS)
 curl http://localhost:1373/api/backup-public
 
 # Authenticated endpoint (requires login)
@@ -214,7 +214,7 @@ Common schedules:
 
 ## Backup Retention
 
-- Default retention: 30 days
+- Default retention: 60 days
 - Configure via `BACKUP_RETENTION_DAYS` environment variable
 - For production, consider implementing S3 lifecycle rules
 
@@ -239,7 +239,7 @@ Common schedules:
 
 Enable verbose logging by setting:
 ```bash
-DEBUG=backup npm run backup
+DEBUG=backup pnpm run backup
 ```
 
 ## Recovery Process

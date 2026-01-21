@@ -161,3 +161,7 @@ dist/
 *.sqlite
 *.db
 dev.db-*
+
+# Local reports and tooling
+reports/
+.claude/

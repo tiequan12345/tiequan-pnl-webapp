@@ -55,18 +55,34 @@ Returns detailed success/failure statistics
 **Response:**
 ```json
 {
-  "refreshed": [1, 7, 9, 11, 12, 14, 15, 17, 18, 23, 3, 19, 20, 21, 22],
-  "failed": [],
+  "refreshed": [1, 7, 9],
+  "failed": [
+    {
+      "id": 12,
+      "symbol": "INVALID",
+      "type": "CRYPTO",
+      "error": "No price data returned from API"
+    }
+  ],
   "rateLimitStats": {
     "currentCalls": 1,
     "maxCalls": 30,
     "remainingCalls": 29,
-    "timeWindowMs": 60000
+    "usagePercentage": 3,
+    "status": "healthy",
+    "timeWindowMs": 60000,
+    "nextAvailableSlot": 1700000000000
   },
   "processed": {
-    "crypto": 10,
-    "equity": 5,
-    "total": 15
+    "crypto": 3,
+    "equity": 0,
+    "total": 3
+  },
+  "summary": {
+    "successCount": 3,
+    "failureCount": 1,
+    "successRate": "75.0%",
+    "duration": "1800ms"
   }
 }
 ```
@@ -93,10 +109,19 @@ Usage recommendations
 {
   "success": true,
   "data": {
-    "currentCalls": 1,
+    "currentCalls": 5,
     "maxCalls": 30,
-    "remainingCalls": 29,
-    "timeWindowMs": 60000
+    "remainingCalls": 25,
+    "usagePercentage": 17,
+    "status": "healthy",
+    "timeWindowMs": 60000,
+    "nextAvailableSlot": 1700000000000,
+    "callHistory": [
+      { "timestamp": 1700000000000, "timeAgo": "5s ago" }
+    ],
+    "recommendations": [
+      "Rate limit usage is healthy."
+    ]
   },
   "timestamp": "2025-12-07T19:23:15.320Z"
 }
@@ -154,7 +179,7 @@ console.log(`Used ${stats.currentCalls}/${stats.maxCalls} calls`);
 - **Partial Success**: System continues processing even if some assets fail
 - **Detailed Error Reporting**: Each failed asset includes specific error details
 - **Graceful Degradation**: System continues operating with reduced functionality
-- **Status Codes**: 200 for full success, 207 for partial success
+- **Status Codes**: 200 when at least one asset refresh succeeds, 207 when all asset refreshes fail, 409 when a refresh is already in progress
 
 ### 4. Execution Tracking & Concurrency
 - **PriceRefreshRun Model**: All execution attempts tracked in database, including start/end times, status (`RUNNING`, `SUCCESS`, `PARTIAL`, `FAILED`), and JSON metadata for performance metrics
