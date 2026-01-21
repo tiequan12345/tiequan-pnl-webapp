@@ -1,6 +1,6 @@
 # TieQuan P&L Webapp
 
-![App screenshot](@app-example-012126.png)
+![App screenshot](./app-example-012126.png)
 
 A Next.js-based portfolio and P&L tracking application with automated price fetching, rate limiting, and robust authentication.
 
