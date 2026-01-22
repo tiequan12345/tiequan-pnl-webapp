@@ -460,7 +460,21 @@ export function LedgerForm({
     };
   };
 
-  const validateValuationRequirement = (
+  const hasValuationInput = (unitValue: string, totalValueInput: string) => {
+    const unitParsed = parseLedgerDecimal(unitValue);
+    const totalParsed = parseLedgerDecimal(totalValueInput);
+
+    if (unitParsed === null || totalParsed === null) {
+      return true;
+    }
+
+    return (
+      decimalValueToNumber(unitParsed ?? null) !== null ||
+      decimalValueToNumber(totalParsed ?? null) !== null
+    );
+  };
+
+  const validateValuationInputs = (
     unitValue: string,
     totalValueInput: string,
     label: string,
@@ -472,12 +486,58 @@ export function LedgerForm({
       return `${label}: Unit price or total value must be a valid number.`;
     }
 
-    const hasValuation =
-      (unitParsed !== undefined && unitParsed !== null) ||
-      (totalParsed !== undefined && totalParsed !== null);
+    return null;
+  };
 
-    if (!hasValuation) {
-      return `${label}: Unit price or total value is required.`;
+  const isCashLikeSymbol = (symbol?: string | null) => {
+    if (!symbol) {
+      return false;
+    }
+    const normalized = symbol.toUpperCase();
+    return normalized === 'USD' || normalized === 'USDT' || normalized === 'USDC';
+  };
+
+  const getValuationWarning = () => {
+    if (!isValuationRequired || isCostBasisReset) {
+      return null;
+    }
+
+    if (isTradeType) {
+      const inQtyNumber = parseFiniteNumberWithCommas(quantityIn);
+      const outQtyNumber = parseFiniteNumberWithCommas(quantityOut);
+      if (inQtyNumber === null || outQtyNumber === null) {
+        return null;
+      }
+
+      const assetById = new Map(assets.map((asset) => [asset.id, asset]));
+      const assetInSymbol = assetInId ? assetById.get(Number(assetInId))?.symbol : null;
+      const assetOutSymbol = assetOutId ? assetById.get(Number(assetOutId))?.symbol : null;
+      const hasCashLeg =
+        isCashLikeSymbol(assetInSymbol) || isCashLikeSymbol(assetOutSymbol);
+
+      const assetInHasValuation = hasValuationInput(
+        assetInUnitPrice,
+        assetInTotalValue,
+      );
+      const assetOutHasValuation = hasValuationInput(
+        assetOutUnitPrice,
+        assetOutTotalValue,
+      );
+
+      if (!assetInHasValuation && !assetOutHasValuation && !hasCashLeg) {
+        return 'Valuation is missing; cost basis may be unknown for this trade.';
+      }
+
+      return null;
+    }
+
+    const quantityNumber = parseFiniteNumberWithCommas(quantity);
+    if (quantityNumber === null) {
+      return null;
+    }
+
+    if (!hasValuationInput(unitPrice, totalValue)) {
+      return 'Valuation is missing; cost basis may be unknown for this transaction.';
     }
 
     return null;
@@ -631,8 +691,8 @@ export function LedgerForm({
           // targetQuantity is already set to quantity string
         }
 
-        if (!isTransferType && isValuationRequired) {
-          const valuationError = validateValuationRequirement(
+        if (!isTransferType) {
+          const valuationError = validateValuationInputs(
             targetValuations.unitPrice,
             targetValuations.totalValue,
             'Valuation',
@@ -819,28 +879,26 @@ export function LedgerForm({
           return;
         }
 
-        if (isValuationRequired) {
-          const assetInError = validateValuationRequirement(
-            assetInUnitPrice,
-            assetInTotalValue,
-            'Asset In valuation',
-          );
-          if (assetInError) {
-            setError(assetInError);
-            setSubmitting(false);
-            return;
-          }
+        const assetInError = validateValuationInputs(
+          assetInUnitPrice,
+          assetInTotalValue,
+          'Asset In valuation',
+        );
+        if (assetInError) {
+          setError(assetInError);
+          setSubmitting(false);
+          return;
+        }
 
-          const assetOutError = validateValuationRequirement(
-            assetOutUnitPrice,
-            assetOutTotalValue,
-            'Asset Out valuation',
-          );
-          if (assetOutError) {
-            setError(assetOutError);
-            setSubmitting(false);
-            return;
-          }
+        const assetOutError = validateValuationInputs(
+          assetOutUnitPrice,
+          assetOutTotalValue,
+          'Asset Out valuation',
+        );
+        if (assetOutError) {
+          setError(assetOutError);
+          setSubmitting(false);
+          return;
         }
 
         const payload = buildCommonPayload({
@@ -944,17 +1002,15 @@ export function LedgerForm({
         return;
       }
 
-      if (isValuationRequired) {
-        const valuationError = validateValuationRequirement(
-          unitPrice,
-          totalValue,
-          'Valuation',
-        );
-        if (valuationError) {
-          setError(valuationError);
-          setSubmitting(false);
-          return;
-        }
+      const valuationError = validateValuationInputs(
+        unitPrice,
+        totalValue,
+        'Valuation',
+      );
+      if (valuationError) {
+        setError(valuationError);
+        setSubmitting(false);
+        return;
       }
 
       if (isCostBasisReset && applyResetToAllAccounts) {
@@ -1076,6 +1132,8 @@ export function LedgerForm({
       setSubmitting(false);
     }
   };
+
+  const valuationWarning = getValuationWarning();
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -1344,7 +1402,7 @@ export function LedgerForm({
                   Valuation (base currency)
                 </label>
                 <span className="text-xs text-zinc-500">
-                  {isValuationRequired ? 'Required' : 'Optional'}
+                  {isValuationRequired ? 'Recommended' : 'Optional'}
                 </span>
               </div>
               {isCostBasisReset && !isEditMode && (
@@ -1392,7 +1450,7 @@ export function LedgerForm({
                       isCostBasisReset
                         ? 'e.g. 45000 (per unit)'
                         : isValuationRequired
-                          ? 'Required'
+                          ? 'Recommended'
                           : 'Optional'
                     }
                   />
@@ -1419,7 +1477,7 @@ export function LedgerForm({
                       isCostBasisReset
                         ? 'e.g. 45000 (total) or leave blank to derive from unit price'
                         : isValuationRequired
-                          ? 'Required'
+                          ? 'Recommended'
                           : 'Optional'
                     }
                   />
@@ -1528,7 +1586,7 @@ export function LedgerForm({
                   Asset In valuation
                 </label>
                 <span className="text-xs text-zinc-500">
-                  {isValuationRequired ? 'Required' : 'Optional'}
+                  {isValuationRequired ? 'Recommended' : 'Optional'}
                 </span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -1550,7 +1608,7 @@ export function LedgerForm({
                       }
                     }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    placeholder={isValuationRequired ? 'Required' : 'Optional'}
+                    placeholder={isValuationRequired ? 'Recommended' : 'Optional'}
                   />
                 </div>
                 <div className="space-y-2">
@@ -1571,7 +1629,7 @@ export function LedgerForm({
                       }
                     }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    placeholder={isValuationRequired ? 'Required' : 'Optional'}
+                    placeholder={isValuationRequired ? 'Recommended' : 'Optional'}
                   />
                 </div>
                 <div className="space-y-2">
@@ -1601,7 +1659,7 @@ export function LedgerForm({
                   Asset Out valuation
                 </label>
                 <span className="text-xs text-zinc-500">
-                  {isValuationRequired ? 'Required' : 'Optional'}
+                  {isValuationRequired ? 'Recommended' : 'Optional'}
                 </span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -1623,7 +1681,7 @@ export function LedgerForm({
                       }
                     }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    placeholder={isValuationRequired ? 'Required' : 'Optional'}
+                    placeholder={isValuationRequired ? 'Recommended' : 'Optional'}
                   />
                 </div>
                 <div className="space-y-2">
@@ -1644,7 +1702,7 @@ export function LedgerForm({
                       }
                     }}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    placeholder={isValuationRequired ? 'Required' : 'Optional'}
+                    placeholder={isValuationRequired ? 'Recommended' : 'Optional'}
                   />
                 </div>
                 <div className="space-y-2">
@@ -1698,6 +1756,12 @@ export function LedgerForm({
           />
         </div>
       </div>
+
+      {valuationWarning && (
+        <div className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/40 rounded-lg px-3 py-2">
+          {valuationWarning}
+        </div>
+      )}
 
       {error && (
         <div className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/40 rounded-lg px-3 py-2">

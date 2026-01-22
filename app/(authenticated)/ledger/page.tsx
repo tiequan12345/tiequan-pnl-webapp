@@ -146,6 +146,9 @@ export default async function LedgerPage(props: LedgerPageProps) {
 
   // Get assets with usage counts
   const assetsWithUsage = await prisma.asset.findMany({
+    where: {
+      status: 'ACTIVE',
+    },
     select: {
       id: true,
       symbol: true,
@@ -156,7 +159,10 @@ export default async function LedgerPage(props: LedgerPageProps) {
         },
       },
     },
-    orderBy: { symbol: 'asc' },
+    orderBy: [
+      { ledger_transactions: { _count: 'desc' } },
+      { symbol: 'asc' },
+    ],
   });
 
   const rows: LedgerTableRow[] = transactions.map((tx) => ({

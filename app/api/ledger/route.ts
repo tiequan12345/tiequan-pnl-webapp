@@ -69,29 +69,6 @@ function parseDateParam(input: string | undefined): Date | null {
   return parseLedgerDateTime(input);
 }
 
-const VALUATION_REQUIRED_TX_TYPES: (typeof ALLOWED_TX_TYPES)[number][] = [
-  'DEPOSIT',
-  'YIELD',
-  'TRADE',
-  'NFT_TRADE',
-  'OFFLINE_TRADE',
-  'HEDGE',
-];
-
-function requiresValuation(txType: (typeof ALLOWED_TX_TYPES)[number]) {
-  return VALUATION_REQUIRED_TX_TYPES.includes(txType);
-}
-
-function hasLedgerValuation(
-  unitPrice: string | number | null | undefined,
-  totalValue: string | number | null | undefined,
-) {
-  return (
-    decimalValueToNumber(unitPrice) !== null ||
-    decimalValueToNumber(totalValue) !== null
-  );
-}
-
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -693,14 +670,6 @@ export async function POST(request: Request) {
 
       for (let i = 0; i < validLegs.length; i++) {
         const leg = validLegs[i];
-        if (requiresValuation(txType) && !hasLedgerValuation(leg.unitPriceParsed, leg.totalValueParsed)) {
-          return NextResponse.json(
-            {
-              error: `Leg ${i + 1}: unit_price_in_base or total_value_in_base is required for ${txType} transactions.`,
-            },
-            { status: 400 },
-          );
-        }
         if (
           !isLedgerValuationConsistent(
             decimalValueToNumber(leg.quantityParsed)!,
@@ -907,13 +876,6 @@ export async function POST(request: Request) {
       derived.total_value_in_base !== undefined
         ? derived.total_value_in_base
         : totalValueParsed;
-
-    if (requiresValuation(txType) && !hasLedgerValuation(unitPriceFinal, totalValueFinal)) {
-      return NextResponse.json(
-        { error: 'unit_price_in_base or total_value_in_base is required for this transaction type.' },
-        { status: 400 },
-      );
-    }
 
     if (!isLedgerValuationConsistent(
       decimalValueToNumber(quantityParsed)!,
