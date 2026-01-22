@@ -96,6 +96,7 @@ export async function GET() {
         pricing_mode: true,
         manual_price: true,
         metadata_json: true,
+        status: true,
         created_at: true,
         updated_at: true,
         _count: {

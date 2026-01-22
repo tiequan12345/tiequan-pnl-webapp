@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
   Wallet,
@@ -14,6 +14,7 @@ import {
   Eye,
   EyeOff,
   Wrench,
+  RotateCw,
 } from 'lucide-react';
 import { usePrivacy } from '../_contexts/PrivacyContext';
 
@@ -37,7 +38,28 @@ const NAV_ITEMS: NavItem[] = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { isPrivacyMode, togglePrivacyMode } = usePrivacy();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefreshPrices = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      const response = await fetch('/api/prices/refresh', { method: 'POST' });
+      if (!response.ok) {
+        throw new Error('Failed to refresh prices');
+      }
+      router.refresh();
+      if (pathname === '/') {
+        window.location.reload();
+      }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const activeItem = NAV_ITEMS.find((item) => item.href === pathname);
   const activeLabel = activeItem?.label ?? 'Dashboard';
@@ -103,17 +125,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
             <div className="flex items-center gap-4">
               {(pathname === '/' || pathname.startsWith('/holdings')) && (
-                <button
-                  onClick={togglePrivacyMode}
-                  className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
-                  title={isPrivacyMode ? 'Disable Privacy Mode' : 'Enable Privacy Mode'}
-                >
-                  {isPrivacyMode ? (
-                    <EyeOff className="w-4 h-4" />
-                  ) : (
-                    <Eye className="w-4 h-4" />
-                  )}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleRefreshPrices}
+                    disabled={isRefreshing}
+                    className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors disabled:opacity-50"
+                    title="Refresh Prices"
+                  >
+                    <RotateCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                  </button>
+                  <button
+                    onClick={togglePrivacyMode}
+                    className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
+                    title={isPrivacyMode ? 'Disable Privacy Mode' : 'Enable Privacy Mode'}
+                  >
+                    {isPrivacyMode ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
               )}
 
               <div className="hidden md:flex items-center gap-2 text-xs text-zinc-500 bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800">

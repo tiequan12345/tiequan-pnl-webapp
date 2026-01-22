@@ -24,6 +24,15 @@ export type PnlAccountSummary = {
   value: number;
 };
 
+export type PnlAssetSummary = {
+  assetId: number;
+  symbol: string;
+  name: string;
+  type: string;
+  volatilityBucket: string;
+  value: number;
+};
+
 export type PnlSnapshotPoint = {
   snapshotId: number;
   snapshotAt: Date;
@@ -32,6 +41,7 @@ export type PnlSnapshotPoint = {
   byType: Record<string, number>;
   byVolatility: Record<string, number>;
   byAccount: Record<number, PnlAccountSummary>;
+  byAsset: Record<number, PnlAssetSummary>;
 };
 
 export type PnlSnapshotsResult = {
@@ -124,6 +134,7 @@ export async function createPortfolioSnapshot(
     byType: {},
     byVolatility: {},
     byAccount: {},
+    byAsset: {},
   };
 }
 
@@ -179,7 +190,7 @@ export async function fetchSnapshots(
       : {}),
   };
 
-  const [totals, typeGroups, volatilityGroups, accountGroups] =
+  const [totals, typeGroups, volatilityGroups, accountGroups, assetGroups] =
     await prisma.$transaction([
       prisma.portfolioSnapshotComponent.groupBy({
         by: ['snapshot_id'],
@@ -201,6 +212,19 @@ export async function fetchSnapshots(
       }),
       prisma.portfolioSnapshotComponent.groupBy({
         by: ['snapshot_id', 'account_id', 'account_name'],
+        _sum: { market_value: true },
+        where: componentWhere,
+        orderBy: { snapshot_id: 'asc' },
+      }),
+      prisma.portfolioSnapshotComponent.groupBy({
+        by: [
+          'snapshot_id',
+          'asset_id',
+          'asset_symbol',
+          'asset_name',
+          'asset_type',
+          'volatility_bucket',
+        ],
         _sum: { market_value: true },
         where: componentWhere,
         orderBy: { snapshot_id: 'asc' },
@@ -247,6 +271,23 @@ export async function fetchSnapshots(
     accountMap.set(snapshotId, current);
   }
 
+  const assetMap = new Map<number, Record<number, PnlAssetSummary>>();
+  for (const entry of assetGroups) {
+    const snapshotId = entry.snapshot_id;
+    const assetId = entry.asset_id;
+    if (!assetId) continue;
+    const current = assetMap.get(snapshotId) ?? {};
+    current[assetId] = {
+      assetId,
+      symbol: entry.asset_symbol ?? 'Unknown',
+      name: entry.asset_name ?? 'Unknown',
+      type: entry.asset_type ?? 'Unknown',
+      volatilityBucket: entry.volatility_bucket ?? 'Unknown',
+      value: decimalToNumber(entry._sum?.market_value || 0),
+    };
+    assetMap.set(snapshotId, current);
+  }
+
   const points: PnlSnapshotPoint[] = snapshots
     .map((snapshot) => ({
       snapshotId: snapshot.id,
@@ -256,6 +297,7 @@ export async function fetchSnapshots(
       byType: typeMap.get(snapshot.id) ?? {},
       byVolatility: volatilityMap.get(snapshot.id) ?? {},
       byAccount: accountMap.get(snapshot.id) ?? {},
+      byAsset: assetMap.get(snapshot.id) ?? {},
     }))
     .reverse();
 

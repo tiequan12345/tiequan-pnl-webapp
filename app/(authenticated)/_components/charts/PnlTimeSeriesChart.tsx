@@ -97,7 +97,7 @@ export function PnlTimeSeriesChart({
   return (
     <div className="w-full" style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={chartData} margin={{ top: 10, right: 0, left: -10, bottom: 0 }}>
+        <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 20 }}>
           <defs>
             <linearGradient id="pnlGradient" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#2563eb" stopOpacity={0.85} />
@@ -112,6 +112,8 @@ export function PnlTimeSeriesChart({
             axisLine={{ stroke: '#1f2937' }}
             tickLine={false}
             minTickGap={20}
+            interval="preserveStartEnd"
+            tickMargin={12}
           />
           <YAxis
             width={80}
@@ -122,6 +124,7 @@ export function PnlTimeSeriesChart({
             }
             axisLine={{ stroke: '#1f2937' }}
             tickLine={false}
+            tickMargin={10}
           />
           <Tooltip
             contentStyle={{

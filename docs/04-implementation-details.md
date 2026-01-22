@@ -178,6 +178,7 @@ All core phases (0-6) are complete with the following key features implemented:
 
 **Solution**:
 - API validation requires `unit_price_in_base` or `total_value_in_base` for DEPOSIT, YIELD, and trade-like entries.
+- CSV import commit now enforces the same valuation guardrails and requires `total_value_in_base` for COST_BASIS_RESET rows.
 - `LedgerForm` enforces valuation input and adds a "Zero cost basis" toggle for DEPOSIT/YIELD.
 - Repair script `scripts/repair-null-yield-valuation.js` backfills missing totals when needed.
 

@@ -35,6 +35,29 @@ type CommitResponse = {
   errors: RowError[];
 };
 
+const VALUATION_REQUIRED_TX_TYPES: (typeof ALLOWED_TX_TYPES)[number][] = [
+  'DEPOSIT',
+  'YIELD',
+  'TRADE',
+  'NFT_TRADE',
+  'OFFLINE_TRADE',
+  'HEDGE',
+];
+
+function requiresValuation(txType: (typeof ALLOWED_TX_TYPES)[number]) {
+  return VALUATION_REQUIRED_TX_TYPES.includes(txType);
+}
+
+function hasLedgerValuation(
+  unitPrice: string | number | null | undefined,
+  totalValue: string | number | null | undefined,
+) {
+  return (
+    decimalValueToNumber(unitPrice) !== null ||
+    decimalValueToNumber(totalValue) !== null
+  );
+}
+
 function toNumber(value: number | string | undefined): number | null {
   if (value === undefined) {
     return null;
@@ -151,6 +174,45 @@ export async function POST(request: Request) {
         });
       }
 
+      const requiresValuationForType = isAllowedTxType(txTypeRaw)
+        ? requiresValuation(txTypeRaw as (typeof ALLOWED_TX_TYPES)[number])
+        : false;
+      const valuationProvided = hasLedgerValuation(
+        unitPriceParsed ?? null,
+        totalValueParsed ?? null,
+      );
+      const isCostBasisReset = txTypeRaw === 'COST_BASIS_RESET';
+      const totalValueNumber = decimalValueToNumber(totalValueParsed ?? null);
+      const unitPriceNumber = decimalValueToNumber(unitPriceParsed ?? null);
+
+      if (requiresValuationForType && !valuationProvided) {
+        errors.push({
+          index,
+          message: `unit_price_in_base or total_value_in_base is required for ${txTypeRaw} transactions.`,
+        });
+      }
+
+      if (isCostBasisReset) {
+        if (totalValueNumber === null) {
+          errors.push({
+            index,
+            message: 'total_value_in_base is required for COST_BASIS_RESET rows.',
+          });
+        } else if (totalValueNumber < 0) {
+          errors.push({
+            index,
+            message: 'total_value_in_base must be a non-negative number for COST_BASIS_RESET rows.',
+          });
+        }
+
+        if (unitPriceNumber !== null && unitPriceNumber < 0) {
+          errors.push({
+            index,
+            message: 'unit_price_in_base must be a non-negative number for COST_BASIS_RESET rows.',
+          });
+        }
+      }
+
       if (
         quantityParsed !== null &&
         quantityParsed !== undefined &&
@@ -181,6 +243,11 @@ export async function POST(request: Request) {
         feeParsed !== null &&
         (accountId !== null || accountName) &&
         (assetId !== null || assetSymbol) &&
+        (!requiresValuationForType || valuationProvided) &&
+        (!isCostBasisReset ||
+          (totalValueNumber !== null &&
+            totalValueNumber >= 0 &&
+            (unitPriceNumber === null || unitPriceNumber >= 0))) &&
         (unitPriceParsed === undefined ||
           unitPriceParsed === null ||
           totalValueParsed === undefined ||

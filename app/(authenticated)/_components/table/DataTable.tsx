@@ -17,6 +17,8 @@ export type DataTableColumn<T> = {
   className?: string;
   headerClassName?: string;
   footer?: ReactNode | ((rows: T[]) => ReactNode);
+  disableUnsorted?: boolean;
+  defaultSortDirection?: SortDirection;
 };
 
 export type GlobalSearch<T> = {
@@ -139,10 +141,13 @@ export function DataTable<T>({
     if (!column.sortable) return;
     setSort((prev) => {
       if (!prev || prev.columnId !== column.id) {
-        return { columnId: column.id, direction: 'asc' };
+        return { columnId: column.id, direction: column.defaultSortDirection ?? 'asc' };
       }
       if (prev.direction === 'asc') {
         return { columnId: column.id, direction: 'desc' };
+      }
+      if (column.disableUnsorted) {
+        return { columnId: column.id, direction: 'asc' };
       }
       return null;
     });
