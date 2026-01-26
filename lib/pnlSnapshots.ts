@@ -30,7 +30,9 @@ export type PnlAssetSummary = {
   name: string;
   type: string;
   volatilityBucket: string;
-  value: number;
+  value: number; // market value
+  quantity: number;
+  price: number;
 };
 
 export type PnlSnapshotPoint = {
@@ -142,7 +144,7 @@ export async function fetchSnapshots(
   filters: PnlFilters = {},
 ): Promise<PnlSnapshotsResult> {
   const settings = await getAppSettings();
-  
+
   // If date filters are active and no limit is specified, we default to MAX_LIMIT
   // to ensure we capture the requested timeframe.
   // Otherwise (no date filters, no limit), we use DEFAULT_LIMIT for initial view.
@@ -154,7 +156,7 @@ export async function fetchSnapshots(
       : DEFAULT_LIMIT;
 
   const snapshotWhere: any = {};
-  
+
   if (filters.from || filters.to) {
     snapshotWhere.snapshot_at = {};
     if (filters.from) {
@@ -225,7 +227,8 @@ export async function fetchSnapshots(
           'asset_type',
           'volatility_bucket',
         ],
-        _sum: { market_value: true },
+        _sum: { market_value: true, quantity: true },
+        _max: { price_in_base: true },
         where: componentWhere,
         orderBy: { snapshot_id: 'asc' },
       }),
@@ -284,6 +287,8 @@ export async function fetchSnapshots(
       type: entry.asset_type ?? 'Unknown',
       volatilityBucket: entry.volatility_bucket ?? 'Unknown',
       value: decimalToNumber(entry._sum?.market_value || 0),
+      quantity: decimalToNumber(entry._sum?.quantity || 0),
+      price: decimalToNumber(entry._max?.price_in_base || 0),
     };
     assetMap.set(snapshotId, current);
   }

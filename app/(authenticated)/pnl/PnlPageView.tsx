@@ -15,6 +15,8 @@ type PnlAssetSummary = {
   type: string;
   volatilityBucket: string;
   value: number;
+  quantity: number;
+  price: number;
 };
 
 type PnlApiPoint = {
@@ -372,15 +374,17 @@ export default function PnlPageView() {
     return latestAssets
       .map<AssetChangeRow | null>((asset) => {
         const status = assetStatusMap[asset.assetId];
-        if (status === 'INACTIVE') {
+        const type = (asset.type ?? '').toUpperCase();
+        if (status === 'INACTIVE' || type === 'STABLE' || type === 'OFFLINE' || type === 'CASH') {
           return null;
         }
         const previous = earliestAssets[asset.assetId];
         const previousValue = previous?.value ?? null;
+        const previousPrice = previous?.price ?? null;
         const change = previousValue !== null ? asset.value - previousValue : null;
         const changePct =
-          previousValue !== null && previousValue !== 0
-            ? (change! / previousValue) * 100
+          previousPrice !== null && previousPrice !== 0
+            ? ((asset.price - previousPrice) / previousPrice) * 100
             : null;
         return {
           ...asset,
