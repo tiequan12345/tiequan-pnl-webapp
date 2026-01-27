@@ -291,6 +291,14 @@ export function LedgerForm({
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
+  const sortedAccounts = [...accounts].sort((a, b) => {
+    const usageDiff = (b.usageCount ?? 0) - (a.usageCount ?? 0);
+    if (usageDiff !== 0) {
+      return usageDiff;
+    }
+    return a.name.localeCompare(b.name);
+  });
+
   const isTradeType = !isEditMode && TRADE_TYPES.includes(txType);
   const isTransferType = TRANSFER_TYPES.includes(txType);
   const isCostBasisReset = txType === 'COST_BASIS_RESET';
@@ -1216,7 +1224,7 @@ export function LedgerForm({
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               >
                 <option value="">Select source account</option>
-                {accounts.map((account) => (
+                {sortedAccounts.map((account) => (
                   <option key={account.id} value={account.id}>
                     {account.name}
                   </option>
@@ -1234,7 +1242,7 @@ export function LedgerForm({
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               >
                 <option value="">Select destination account</option>
-                {accounts.map((account) => (
+                {sortedAccounts.map((account) => (
                   <option key={account.id} value={account.id}>
                     {account.name}
                   </option>
