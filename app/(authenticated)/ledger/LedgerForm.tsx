@@ -336,6 +336,16 @@ export function LedgerForm({
   }, [isCostBasisReset, quantity, unitPrice, totalValue, unitPriceTouched, totalValueTouched]);
 
   useEffect(() => {
+    if (!isEditMode && txType === 'YIELD') {
+      setZeroCostBasis(true);
+      setUnitPrice('0');
+      setTotalValue('0');
+      setUnitPriceTouched(true);
+      setTotalValueTouched(true);
+    }
+  }, [isEditMode, txType]);
+
+  useEffect(() => {
     if (!canZeroCostBasis && zeroCostBasis) {
       setZeroCostBasis(false);
     }
@@ -1580,167 +1590,176 @@ export function LedgerForm({
               />
             </div>
 
-            <div className="space-y-2 md:col-span-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
-                  Asset In valuation
-                </label>
-                <span className="text-xs text-zinc-500">
-                  {isValuationRequired ? 'Recommended' : 'Optional'}
-                </span>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <details className="md:col-span-2 rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+              <summary className="cursor-pointer text-xs font-medium text-zinc-400 uppercase tracking-wide">
+                Trade valuation details
+              </summary>
+              <div className="mt-3 space-y-4">
                 <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-wide text-zinc-500">
-                    Unit price
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={assetInUnitPrice}
-                    onChange={(event) => {
-                      setAssetInUnitPriceTouched(true);
-                      setAssetInUnitPrice(event.target.value);
-                    }}
-                    onBlur={(event) => {
-                      if (event.target.value) {
-                        setAssetInUnitPrice(shortenLedgerPrecision(event.target.value));
-                      }
-                    }}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    placeholder={isValuationRequired ? 'Recommended' : 'Optional'}
-                  />
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+                      Asset In valuation
+                    </label>
+                    <span className="text-xs text-zinc-500">
+                      {isValuationRequired ? 'Recommended' : 'Optional'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="space-y-2">
+                      <label className="text-[10px] uppercase tracking-wide text-zinc-500">
+                        Unit price
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={assetInUnitPrice}
+                        onChange={(event) => {
+                          setAssetInUnitPriceTouched(true);
+                          setAssetInUnitPrice(event.target.value);
+                        }}
+                        onBlur={(event) => {
+                          if (event.target.value) {
+                            setAssetInUnitPrice(shortenLedgerPrecision(event.target.value));
+                          }
+                        }}
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                        placeholder={isValuationRequired ? 'Recommended' : 'Optional'}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] uppercase tracking-wide text-zinc-500">
+                        Total value
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={assetInTotalValue}
+                        onChange={(event) => {
+                          setAssetInTotalValueTouched(true);
+                          setAssetInTotalValue(event.target.value);
+                        }}
+                        onBlur={(event) => {
+                          if (event.target.value) {
+                            setAssetInTotalValue(shortenLedgerPrecision(event.target.value));
+                          }
+                        }}
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                        placeholder={isValuationRequired ? 'Recommended' : 'Optional'}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] uppercase tracking-wide text-zinc-500">
+                        Fee
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={assetInFee}
+                        onChange={(event) => setAssetInFee(event.target.value)}
+                        onBlur={(event) => {
+                          if (event.target.value) {
+                            setAssetInFee(shortenLedgerPrecision(event.target.value));
+                          }
+                        }}
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                        placeholder="Optional"
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-wide text-zinc-500">
-                    Total value
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={assetInTotalValue}
-                    onChange={(event) => {
-                      setAssetInTotalValueTouched(true);
-                      setAssetInTotalValue(event.target.value);
-                    }}
-                    onBlur={(event) => {
-                      if (event.target.value) {
-                        setAssetInTotalValue(shortenLedgerPrecision(event.target.value));
-                      }
-                    }}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    placeholder={isValuationRequired ? 'Recommended' : 'Optional'}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-wide text-zinc-500">
-                    Fee
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={assetInFee}
-                    onChange={(event) => setAssetInFee(event.target.value)}
-                    onBlur={(event) => {
-                      if (event.target.value) {
-                        setAssetInFee(shortenLedgerPrecision(event.target.value));
-                      }
-                    }}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    placeholder="Optional"
-                  />
-                </div>
-              </div>
-            </div>
 
-            <div className="space-y-2 md:col-span-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
-                  Asset Out valuation
-                </label>
-                <span className="text-xs text-zinc-500">
-                  {isValuationRequired ? 'Recommended' : 'Optional'}
-                </span>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+                      Asset Out valuation
+                    </label>
+                    <span className="text-xs text-zinc-500">
+                      {isValuationRequired ? 'Recommended' : 'Optional'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="space-y-2">
+                      <label className="text-[10px] uppercase tracking-wide text-zinc-500">
+                        Unit price
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={assetOutUnitPrice}
+                        onChange={(event) => {
+                          setAssetOutUnitPriceTouched(true);
+                          setAssetOutUnitPrice(event.target.value);
+                        }}
+                        onBlur={(event) => {
+                          if (event.target.value) {
+                            setAssetOutUnitPrice(shortenLedgerPrecision(event.target.value));
+                          }
+                        }}
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                        placeholder={isValuationRequired ? 'Recommended' : 'Optional'}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] uppercase tracking-wide text-zinc-500">
+                        Total value
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={assetOutTotalValue}
+                        onChange={(event) => {
+                          setAssetOutTotalValueTouched(true);
+                          setAssetOutTotalValue(event.target.value);
+                        }}
+                        onBlur={(event) => {
+                          if (event.target.value) {
+                            setAssetOutTotalValue(shortenLedgerPrecision(event.target.value));
+                          }
+                        }}
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                        placeholder={isValuationRequired ? 'Recommended' : 'Optional'}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] uppercase tracking-wide text-zinc-500">
+                        Fee
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={assetOutFee}
+                        onChange={(event) => setAssetOutFee(event.target.value)}
+                        onBlur={(event) => {
+                          if (event.target.value) {
+                            setAssetOutFee(shortenLedgerPrecision(event.target.value));
+                          }
+                        }}
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                        placeholder="Optional"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-wide text-zinc-500">
-                    Unit price
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={assetOutUnitPrice}
-                    onChange={(event) => {
-                      setAssetOutUnitPriceTouched(true);
-                      setAssetOutUnitPrice(event.target.value);
-                    }}
-                    onBlur={(event) => {
-                      if (event.target.value) {
-                        setAssetOutUnitPrice(shortenLedgerPrecision(event.target.value));
-                      }
-                    }}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    placeholder={isValuationRequired ? 'Recommended' : 'Optional'}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-wide text-zinc-500">
-                    Total value
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={assetOutTotalValue}
-                    onChange={(event) => {
-                      setAssetOutTotalValueTouched(true);
-                      setAssetOutTotalValue(event.target.value);
-                    }}
-                    onBlur={(event) => {
-                      if (event.target.value) {
-                        setAssetOutTotalValue(shortenLedgerPrecision(event.target.value));
-                      }
-                    }}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    placeholder={isValuationRequired ? 'Recommended' : 'Optional'}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-wide text-zinc-500">
-                    Fee
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={assetOutFee}
-                    onChange={(event) => setAssetOutFee(event.target.value)}
-                    onBlur={(event) => {
-                      if (event.target.value) {
-                        setAssetOutFee(shortenLedgerPrecision(event.target.value));
-                      }
-                    }}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    placeholder="Optional"
-                  />
-                </div>
-              </div>
-            </div>
+            </details>
           </>
         )}
 
         {/* External Reference */}
-        <div className="space-y-2">
-          <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
-            External Reference
-          </label>
-          <input
-            type="text"
-            value={externalReference}
-            onChange={(event) => setExternalReference(event.target.value)}
-            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-            placeholder="Optional reference or ID"
-          />
-        </div>
+        <details className="md:col-span-2 rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+          <summary className="cursor-pointer text-xs font-medium text-zinc-400 uppercase tracking-wide">
+            External Reference (optional)
+          </summary>
+          <div className="mt-3">
+            <input
+              type="text"
+              value={externalReference}
+              onChange={(event) => setExternalReference(event.target.value)}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              placeholder="Optional reference or ID"
+            />
+          </div>
+        </details>
 
         {/* Notes */}
         <div className="space-y-2 md:col-span-2">
