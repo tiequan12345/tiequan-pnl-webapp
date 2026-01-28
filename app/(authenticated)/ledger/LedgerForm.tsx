@@ -1287,76 +1287,6 @@ export function LedgerForm({
               />
             </div>
 
-            <div className="space-y-2 md:col-span-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
-                  Transfer Valuation (base currency)
-                </label>
-                <span className="text-xs text-zinc-500">Optional</span>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-wide text-zinc-500">
-                    Unit price
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={transferUnitPrice}
-                    onChange={(event) => {
-                      setTransferUnitPriceTouched(true);
-                      setTransferUnitPrice(event.target.value);
-                    }}
-                    onBlur={(event) => {
-                      if (event.target.value) {
-                        setTransferUnitPrice(shortenLedgerPrecision(event.target.value));
-                      }
-                    }}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    placeholder="Optional"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-wide text-zinc-500">
-                    Total value
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={transferTotalValue}
-                    onChange={(event) => {
-                      setTransferTotalValueTouched(true);
-                      setTransferTotalValue(event.target.value);
-                    }}
-                    onBlur={(event) => {
-                      if (event.target.value) {
-                        setTransferTotalValue(shortenLedgerPrecision(event.target.value));
-                      }
-                    }}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    placeholder="Optional"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-wide text-zinc-500">
-                    Fee
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={transferFee}
-                    onChange={(event) => setTransferFee(event.target.value)}
-                    onBlur={(event) => {
-                      if (event.target.value) {
-                        setTransferFee(shortenLedgerPrecision(event.target.value));
-                      }
-                    }}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    placeholder="Optional"
-                  />
-                </div>
-              </div>
-            </div>
           </>
         )}
 
@@ -1768,6 +1698,76 @@ export function LedgerForm({
             />
           </div>
         </details>
+
+        {isTransferType && (
+          <details className="md:col-span-2 rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+            <summary className="cursor-pointer text-xs font-medium text-zinc-400 uppercase tracking-wide">
+              Transfer valuation (optional)
+            </summary>
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase tracking-wide text-zinc-500">
+                  Unit price
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={transferUnitPrice}
+                  onChange={(event) => {
+                    setTransferUnitPriceTouched(true);
+                    setTransferUnitPrice(event.target.value);
+                  }}
+                  onBlur={(event) => {
+                    if (event.target.value) {
+                      setTransferUnitPrice(shortenLedgerPrecision(event.target.value));
+                    }
+                  }}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  placeholder="Optional"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase tracking-wide text-zinc-500">
+                  Total value
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={transferTotalValue}
+                  onChange={(event) => {
+                    setTransferTotalValueTouched(true);
+                    setTransferTotalValue(event.target.value);
+                  }}
+                  onBlur={(event) => {
+                    if (event.target.value) {
+                      setTransferTotalValue(shortenLedgerPrecision(event.target.value));
+                    }
+                  }}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  placeholder="Optional"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase tracking-wide text-zinc-500">
+                  Fee
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={transferFee}
+                  onChange={(event) => setTransferFee(event.target.value)}
+                  onBlur={(event) => {
+                    if (event.target.value) {
+                      setTransferFee(shortenLedgerPrecision(event.target.value));
+                    }
+                  }}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  placeholder="Optional"
+                />
+              </div>
+            </div>
+          </details>
+        )}
 
         {/* Notes */}
         <div className="space-y-2 md:col-span-2">
