@@ -10,6 +10,7 @@ type PortfolioHeroProps = {
     summary: HoldingsSummary;
     baseCurrency: string;
     priceAutoRefreshIntervalMinutes: number;
+    className?: string;
 };
 
 // Helper for large value formatting
@@ -48,6 +49,7 @@ export function PortfolioHero({
     summary,
     baseCurrency,
     priceAutoRefreshIntervalMinutes,
+    className,
 }: PortfolioHeroProps) {
     const { isPrivacyMode } = usePrivacy();
     const [mounted, setMounted] = useState(false);
@@ -69,7 +71,7 @@ export function PortfolioHero({
     if (!mounted) return null;
 
     return (
-        <div className="relative w-full p-8 overflow-hidden rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl mb-8">
+        <div className={`relative w-full p-8 overflow-hidden rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl ${className ?? ''}`}>
             {/* Background Decor Elements - Subtle Gradients */}
             <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none" />
             <div className="absolute bottom-0 left-0 w-64 h-64 bg-emerald-500/5 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2 pointer-events-none" />

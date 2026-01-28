@@ -106,11 +106,40 @@ export default async function HoldingsPage(props: HoldingsPageProps) {
         />
       </Suspense>
 
-      <PortfolioHero
-        summary={displaySummary}
-        baseCurrency={baseCurrency}
-        priceAutoRefreshIntervalMinutes={settings.priceAutoRefreshIntervalMinutes}
-      />
+      <div className="flex flex-col lg:flex-row items-stretch gap-4">
+        <div className="w-full lg:w-[90%]">
+          <PortfolioHero
+            summary={displaySummary}
+            baseCurrency={baseCurrency}
+            priceAutoRefreshIntervalMinutes={settings.priceAutoRefreshIntervalMinutes}
+            className="h-full"
+          />
+        </div>
+        <div className="w-full lg:w-[10%] min-w-[160px]">
+          <a
+            href={`/api/export/holdings${viewMode === 'consolidated' ? '?view=consolidated' : ''}`}
+            className="group flex h-full min-h-[120px] flex-col items-center justify-center gap-3 rounded-2xl border border-white/10 bg-gradient-to-br from-zinc-900/70 to-zinc-950/90 px-4 py-6 text-zinc-200 shadow-lg transition hover:border-emerald-400/40 hover:text-white"
+          >
+            <span className="flex items-center justify-center w-11 h-11 rounded-full bg-emerald-500/10 text-emerald-300 group-hover:text-emerald-200 group-hover:bg-emerald-500/20 transition">
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                />
+              </svg>
+            </span>
+            <span className="text-sm font-semibold tracking-wide">Export CSV</span>
+            <span className="text-[11px] text-zinc-400 text-center">Full portfolio</span>
+          </a>
+        </div>
+      </div>
 
       <HoldingsAllocationCharts
         summary={visibleSummary}
