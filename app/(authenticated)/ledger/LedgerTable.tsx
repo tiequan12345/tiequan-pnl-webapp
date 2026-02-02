@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { DataTable, type DataTableColumn } from '../_components/table/DataTable';
 import { LedgerRowActions } from './LedgerRowActions';
@@ -52,8 +53,10 @@ export function LedgerTable({ rows }: LedgerTableProps) {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [accounts, setAccounts] = useState<{ id: number; name: string }[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     // Fetch accounts for the bulk edit modal
     const fetchAccounts = async () => {
       try {
@@ -258,8 +261,8 @@ export function LedgerTable({ rows }: LedgerTableProps) {
         stickyHeader
       />
 
-      {selectedIds.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-4 bg-zinc-900 border border-zinc-700 rounded-full px-6 py-3 shadow-2xl animate-in slide-in-from-bottom-4 duration-200">
+      {mounted && selectedIds.size > 0 && createPortal(
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 bg-zinc-900 border border-zinc-700 rounded-full px-6 py-3 shadow-2xl animate-in slide-in-from-bottom-4 duration-200">
           <span className="text-sm font-medium text-zinc-200 whitespace-nowrap">
             {selectedIds.size} selected
           </span>
@@ -284,7 +287,8 @@ export function LedgerTable({ rows }: LedgerTableProps) {
           >
             Cancel
           </button>
-        </div>
+        </div>,
+        document.body
       )}
 
       <LedgerBulkEditModal

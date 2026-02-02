@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { ALLOWED_TX_TYPES, type LedgerTxType } from '@/lib/ledger';
 
 type LedgerBulkEditModalProps = {
@@ -24,6 +25,7 @@ export function LedgerBulkEditModal({
     onConfirm,
 }: LedgerBulkEditModalProps) {
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [mounted, setMounted] = useState(false);
     const [updates, setUpdates] = useState<{
         date_time?: string;
         account_id?: string;
@@ -43,7 +45,11 @@ export function LedgerBulkEditModal({
         notes: false,
     });
 
-    if (!isOpen) return null;
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    if (!isOpen || !mounted) return null;
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -67,7 +73,7 @@ export function LedgerBulkEditModal({
         }
     };
 
-    return (
+    return createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
             <div className="w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl flex flex-col max-h-[90vh]">
                 <div className="p-6 border-b border-zinc-800">
@@ -188,6 +194,7 @@ export function LedgerBulkEditModal({
                     </button>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }
