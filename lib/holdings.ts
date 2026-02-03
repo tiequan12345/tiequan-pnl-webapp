@@ -270,6 +270,16 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
     );
   };
 
+  const getContractMultiplier = (asset: LedgerTransactionWithRelations['asset']): number => {
+    const type = (asset.type ?? '').toUpperCase();
+    // Equity/option contracts are quoted per-share but trade in 100-share contracts.
+    // TradeStation option symbols we import are per-contract quantities, so we scale valuation by 100.
+    if (type === 'OPTION') {
+      return 100;
+    }
+    return 1;
+  };
+
   const getOrCreatePosition = (tx: LedgerTransactionWithRelations): HoldingPosition => {
     const key = buildPositionKey(tx.asset_id, tx.account_id);
     const existing = positions.get(key);
@@ -314,34 +324,99 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
       return position;
     }
 
-    const txValue = getTransactionValue(
+    const multiplier = getContractMultiplier(tx.asset);
+
+    let txValue = getTransactionValue(
       tx.quantity,
       tx.total_value_in_base,
       tx.unit_price_in_base,
     );
 
+    // Options: valuation fields are per-share while quantity is in contracts.
+    // Convert to base-currency notional.
+    if (txValue !== null && multiplier !== 1) {
+      txValue *= multiplier;
+    }
+
+    const qtyBefore = position.quantity;
+
     if (quantity > 0) {
       if (txValue === null) {
         position.costBasisKnown = false;
         markCostBasisStatus(position, 'UNKNOWN');
-      } else {
-        position.costBasis += txValue;
+        position.quantity += quantity;
+        return position;
       }
-      position.quantity += quantity;
-    } else if (quantity < 0) {
-      const sellQuantity = Math.abs(quantity);
-      if (position.costBasisKnown && position.quantity > 0) {
-        const averageCost = position.quantity === 0 ? 0 : position.costBasis / position.quantity;
-        position.costBasis -= averageCost * sellQuantity;
-        if (position.costBasis < 0) {
-          position.costBasis = 0;
+
+      // If currently short, a buy is (partially) a buy-to-cover.
+      if (qtyBefore < 0 && position.costBasisKnown) {
+        const coverQty = Math.min(quantity, Math.abs(qtyBefore));
+        const avgCreditPerUnit = qtyBefore === 0 ? 0 : position.costBasis / qtyBefore; // (-basis)/(-qty) => +
+        position.costBasis += avgCreditPerUnit * coverQty;
+        position.quantity += coverQty;
+
+        const extraQty = quantity - coverQty;
+        if (extraQty > 0) {
+          const perUnit = txValue / quantity;
+          if (!Number.isFinite(perUnit)) {
+            position.costBasisKnown = false;
+            markCostBasisStatus(position, 'UNKNOWN');
+          } else {
+            position.costBasis += perUnit * extraQty;
+          }
+          position.quantity += extraQty;
         }
-      } else {
+
+        return position;
+      }
+
+      // Normal long add
+      position.costBasis += txValue;
+      position.quantity += quantity;
+      return position;
+    }
+
+    if (quantity < 0) {
+      const sellQtyAbs = Math.abs(quantity);
+
+      if (txValue === null) {
         position.costBasisKnown = false;
         markCostBasisStatus(position, 'UNKNOWN');
+        position.quantity += quantity;
+        return position;
       }
+
+      // If currently long, a sell reduces long basis; if it crosses zero, it also opens a short position.
+      if (qtyBefore > 0 && position.costBasisKnown) {
+        const sellFromLong = Math.min(sellQtyAbs, qtyBefore);
+        const averageCostPerUnit = qtyBefore === 0 ? 0 : position.costBasis / qtyBefore;
+        position.costBasis -= averageCostPerUnit * sellFromLong;
+
+        // Apply full quantity change
+        position.quantity += quantity;
+
+        // If we crossed from long to short, record credit basis for the short portion.
+        const shortOpened = sellQtyAbs - sellFromLong;
+        if (shortOpened > 0) {
+          const perUnit = txValue / sellQtyAbs;
+          if (!Number.isFinite(perUnit)) {
+            position.costBasisKnown = false;
+            markCostBasisStatus(position, 'UNKNOWN');
+          } else {
+            position.costBasis -= perUnit * shortOpened;
+          }
+        }
+
+        return position;
+      }
+
+      // Opening/increasing a short position: store credit as negative cost basis.
+      position.costBasis -= txValue;
       position.quantity += quantity;
+      return position;
     }
+
+    return position;
 
     return position;
   };
@@ -530,21 +605,32 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
     });
 
     const price = isValidPrice(priceResolution.price) ? priceResolution.price : null;
-    const marketValue = price !== null ? quantity * price : null;
+    const multiplier = getContractMultiplier(asset);
+    const marketValue = price !== null ? quantity * price * multiplier : null;
 
-    const totalCostBasis = position.costBasisKnown ? Math.max(position.costBasis, 0) : null;
+    const totalCostBasis = position.costBasisKnown ? position.costBasis : null;
     const costBasisStatus = position.costBasisStatus;
+
+    // Average cost:
+    // - Display per-share premium for options (divide by contract multiplier)
+    // - Otherwise per-unit
     const averageCost =
-      totalCostBasis !== null && Math.abs(quantity) > 0
-        ? totalCostBasis / Math.abs(quantity)
+      totalCostBasis !== null && quantity !== 0
+        ? (totalCostBasis / quantity) / multiplier
         : null;
+
     const unrealizedPnl =
       marketValue !== null && totalCostBasis !== null
         ? marketValue - totalCostBasis
         : null;
+
+    const pnlPctDenom = totalCostBasis !== null && totalCostBasis !== 0
+      ? Math.abs(totalCostBasis)
+      : null;
+
     const unrealizedPnlPct =
-      totalCostBasis && totalCostBasis !== 0 && unrealizedPnl !== null
-        ? (unrealizedPnl / totalCostBasis) * 100
+      pnlPctDenom !== null && unrealizedPnl !== null
+        ? (unrealizedPnl / pnlPctDenom) * 100
         : null;
 
     rows.push({

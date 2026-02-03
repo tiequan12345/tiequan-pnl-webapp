@@ -38,9 +38,31 @@ model Account {
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
 
-  ledger_transactions LedgerTransaction[]
+  ledger_transactions      LedgerTransaction[]
+  tradestation_connection TradeStationConnection?
 
   @@index([name])
+}
+
+model TradeStationConnection {
+  id                   Int      @id @default(autoincrement())
+  account_id            Int      @unique
+  ts_account_id         String?
+  access_token          String?
+  refresh_token         String
+  token_expires_at      DateTime?
+  scopes                String?
+  status                String   @default("ACTIVE")
+  last_sync_at          DateTime?
+  last_order_sync_at    DateTime?
+  last_order_next_token String?
+  metadata_json         String?
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@index([ts_account_id])
 }
 
 model LedgerTransaction {
@@ -65,6 +87,7 @@ model LedgerTransaction {
   @@index([account_id])
   @@index([asset_id])
   @@index([tx_type])
+  @@index([account_id, external_reference])
 }
 
 model PriceLatest {

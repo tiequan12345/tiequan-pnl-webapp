@@ -84,7 +84,13 @@ pnpm run prisma:migrate
 pnpm run dev
 ```
 
-The application will be available at `http://localhost:1373`
+The application will be available at `http://localhost:1373`.
+
+**TradeStation note:** TradeStation's default localhost callback allowlist typically includes port `3000` (but not `1373`). For TradeStation OAuth flows, run the dev server on port 3000:
+```bash
+pnpm run dev:ts
+```
+Then use `http://localhost:3000`.
 
 ## Environment Setup
 
@@ -96,6 +102,25 @@ APP_PASSWORD=your-secure-password
 
 # Required: Database connection string (SQLite)
 DATABASE_URL="file:prisma/dev.db"
+
+# --- TradeStation OAuth / Brokerage API (optional) ---
+# Used to import orders into the ledger and (best-effort) price options from positions.
+TRADESTATION_CLIENT_ID=your-tradestation-client-id
+TRADESTATION_CLIENT_SECRET=your-tradestation-client-secret
+
+# Redirect URI must match your TradeStation API key configuration.
+# For local dev, TradeStation commonly only whitelists localhost roots (no path):
+#   http://localhost:3000
+# This app rewrites `/?code=...&state=...` to `/api/tradestation/auth/callback` internally.
+TRADESTATION_REDIRECT_URI=http://localhost:3000
+
+# Defaults to https://api.tradestation.com
+TRADESTATION_BASE_URL=
+
+# Space-separated scopes
+# Recommended:
+#   "openid offline_access profile MarketData ReadAccount Trade"
+TRADESTATION_SCOPE=
 
 # Required: Finnhub API key for equity price fetching
 FINNHUB_API_KEY=your-finnhub-api-key
@@ -114,6 +139,11 @@ BACKUP_RETENTION_DAYS=60
 ```
 
 ### Getting API Keys
+
+**TradeStation API Key (Client ID/Secret):**
+1. Request a TradeStation API Key from TradeStation Client Experience / Developer portal.
+2. Ensure your API key has access to the scopes you need (commonly: `MarketData`, `ReadAccount`, `Trade`).
+3. Ensure the key's **Allowed Callback URLs** include your local dev URL. Many keys include `http://localhost:3000` by default.
 
 **Finnhub API Key:**
 1. Sign up at [Finnhub](https://finnhub.io/)
@@ -180,6 +210,63 @@ The application uses a simple single-user authentication system:
 - Middleware enforces authentication on all protected routes
 - Single-user system (no multi-user support)
 
+## TradeStation Integration (OAuth + Sync)
+
+This project supports importing recent TradeStation orders into the ledger and pricing option positions (best-effort) using the TradeStation API.
+
+### Prerequisites
+
+1. Set the TradeStation environment variables in `.env.local` (see [Environment Setup](#environment-setup)).
+2. For local OAuth flows, run on port **3000** and set:
+   - `TRADESTATION_REDIRECT_URI=http://localhost:3000`
+
+TradeStation commonly whitelists only specific localhost callback URLs by default (often the *root* `http://localhost:3000`, not a path). This app supports that by rewriting:
+- `GET /?code=...&state=...` → `/api/tradestation/auth/callback` (via `middleware.ts`).
+
+### Connect a local Account to TradeStation
+
+1. Log into the app at `/login` (required; most TS routes are authenticated).
+2. Create a local account at `/accounts/new`:
+   - `platform`: `TradeStation`
+   - `account_type`: `BROKER`
+   - `status`: `ACTIVE`
+3. Note the local account id (`Account.id`).
+4. Start OAuth:
+
+   `GET /api/tradestation/auth/start?accountId=<LOCAL_ACCOUNT_ID>`
+
+5. After approving in TradeStation you will be redirected back and a `TradeStationConnection` record will be created/updated.
+6. Check status:
+
+   `GET /api/tradestation/status?accountId=<LOCAL_ACCOUNT_ID>`
+
+7. (Optional) If your TradeStation login has multiple brokerage accounts, list and link the correct one:
+
+   - List: `GET /api/tradestation/accounts?accountId=<LOCAL_ACCOUNT_ID>`
+   - Link: `POST /api/tradestation/accounts` with body:
+     ```json
+     { "accountId": 42, "tsAccountId": "11613055" }
+     ```
+
+### Sync orders into the ledger
+
+- UI helper (recommended):
+
+  `GET /api/tradestation/sync?accountId=<LOCAL_ACCOUNT_ID>`
+
+  This page submits `POST /api/tradestation/sync`.
+
+- The TradeStation **Historical Orders** endpoint has a **maximum 90-day lookback**. This means the automatic sync can only import the last ~90 calendar days of history unless TradeStation provides an alternative export method.
+
+### Pricing options via TradeStation
+
+`POST /api/prices/refresh` now also attempts to price `OPTION` assets by calling TradeStation **Positions** for the connected account and using a best-effort mark:
+- Prefer **mid price** `(bid + ask) / 2`
+- Fallback to `Last`
+- Fallback to `MarkToMarketPrice`
+
+This only prices option contracts that appear in **current positions**.
+
 ## Pricing API Endpoints
 
 The application provides several endpoints for price management and monitoring:
@@ -214,6 +301,7 @@ Refreshes prices for all assets with `AUTO` pricing mode.
   "processed": {
     "crypto": 2,
     "equity": 0,
+    "option": 0,
     "total": 2
   },
   "summary": {

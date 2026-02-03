@@ -6,11 +6,21 @@ const PUBLIC_PATHS = [
   '/api/login',
   '/api/prices/rate-limit',
   '/api/prices/refresh',
-  '/api/prices/health'
+  '/api/prices/health',
+  // OAuth callbacks must be public so the broker can redirect back to us.
+  '/api/tradestation/auth/callback'
 ];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // TradeStation may require redirect_uri to be exactly http://localhost:3000 (no path).
+  // In that case the OAuth callback hits '/', so we rewrite it to our API callback.
+  if (pathname === '/' && request.nextUrl.searchParams.has('code') && request.nextUrl.searchParams.has('state')) {
+    const rewriteUrl = request.nextUrl.clone();
+    rewriteUrl.pathname = '/api/tradestation/auth/callback';
+    return NextResponse.rewrite(rewriteUrl);
+  }
 
   const isPublic =
     PUBLIC_PATHS.includes(pathname) ||

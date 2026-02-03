@@ -4,8 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 1373",
+    "dev:ts": "next dev -p 3000",
     "build": "next build",
     "start": "next start -p 1373",
+    "start:ts": "next start -p 3000",
     "lint": "next lint",
     "prisma:migrate": "prisma migrate dev",
     "prisma:generate": "prisma generate",

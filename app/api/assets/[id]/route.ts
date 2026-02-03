@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 const ALLOWED_ASSET_TYPES = [
   'CRYPTO',
   'EQUITY',
+  'OPTION',
   'STABLE',
   'NFT',
   'OFFLINE',

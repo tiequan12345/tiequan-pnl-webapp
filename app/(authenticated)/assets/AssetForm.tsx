@@ -4,7 +4,7 @@ import React, { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card } from '../_components/ui/Card';
 
-export const ASSET_TYPES = ['CRYPTO', 'EQUITY', 'STABLE', 'NFT', 'OFFLINE', 'CASH', 'OTHER'] as const;
+export const ASSET_TYPES = ['CRYPTO', 'EQUITY', 'OPTION', 'STABLE', 'NFT', 'OFFLINE', 'CASH', 'OTHER'] as const;
 export const VOLATILITY_BUCKETS = ['CASH_LIKE', 'VOLATILE'] as const;
 export const PRICING_MODES = ['AUTO', 'MANUAL'] as const;
 export const ASSET_STATUSES = ['ACTIVE', 'INACTIVE'] as const;

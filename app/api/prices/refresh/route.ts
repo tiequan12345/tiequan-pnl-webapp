@@ -1,9 +1,30 @@
 import { NextResponse } from 'next/server';
 
 import { prisma } from '@/lib/db';
-import { fetchCryptoPrice, fetchEquityPrice, fetchBatchCryptoPrices, getCoinGeckoRateLimitStats, logPricingOperation } from '@/lib/pricing';
+import {
+  fetchCryptoPrice,
+  fetchEquityPrice,
+  fetchBatchCryptoPrices,
+  getCoinGeckoRateLimitStats,
+  logPricingOperation,
+} from '@/lib/pricing';
 import { getAppSettings } from '@/lib/settings';
 import { createPortfolioSnapshot } from '@/lib/pnlSnapshots';
+import { fetchPositions, refreshToken } from '@/lib/tradestation/client';
+
+function isExpired(expiresAt: Date | null): boolean {
+  if (!expiresAt) return false;
+  return expiresAt.getTime() - Date.now() < 30_000;
+}
+
+function parseNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const n = Number(value.trim());
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
 
 export async function POST(request: Request) {
   const startTime = Date.now();
@@ -53,7 +74,7 @@ export async function POST(request: Request) {
         message: 'Auto refresh disabled in settings',
         refreshed: [],
         failed: [],
-        processed: { crypto: 0, equity: 0, total: 0 },
+        processed: { crypto: 0, equity: 0, option: 0, total: 0 },
         duration: `${Date.now() - startTime}ms`
       });
     }
@@ -119,7 +140,7 @@ export async function POST(request: Request) {
         message: 'No assets with AUTO pricing mode found',
         refreshed: [],
         failed: [],
-        processed: { crypto: 0, equity: 0, total: 0 },
+        processed: { crypto: 0, equity: 0, option: 0, total: 0 },
         duration: `${Date.now() - startTime}ms`
       });
     }
@@ -127,14 +148,16 @@ export async function POST(request: Request) {
     const refreshed: number[] = [];
     const failed: { id: number; symbol: string; type: string; error: string }[] = [];
 
-    // Separate crypto and equity assets
+    // Separate assets by pricing strategy
     const cryptoAssets = assets.filter(asset => asset.type === 'CRYPTO');
     const equityAssets = assets.filter(asset => asset.type === 'EQUITY');
+    const optionAssets = assets.filter(asset => asset.type === 'OPTION');
 
     logPricingOperation('asset_counts', {
       total: assets.length,
       crypto: cryptoAssets.length,
-      equity: equityAssets.length
+      equity: equityAssets.length,
+      option: optionAssets.length,
     });
 
     // Batch fetch crypto prices
@@ -212,6 +235,113 @@ export async function POST(request: Request) {
             type: asset.type,
             error: `Batch fetch failed: ${batchError instanceof Error ? batchError.message : 'Unknown error'}`
           });
+        }
+      }
+    }
+
+    // Best-effort pricing for OPTION assets via TradeStation brokerage positions.
+    // This only prices contracts that appear in the account's current Positions response.
+    if (optionAssets.length > 0) {
+      logPricingOperation('option_processing_start', {
+        count: optionAssets.length,
+      });
+
+      const connection = await prisma.tradeStationConnection.findFirst({
+        where: {
+          status: 'ACTIVE',
+          ts_account_id: { not: null },
+        },
+      });
+
+      if (!connection?.ts_account_id) {
+        for (const asset of optionAssets) {
+          failed.push({
+            id: asset.id,
+            symbol: asset.symbol,
+            type: asset.type,
+            error: 'No active TradeStation connection available for option pricing.',
+          });
+        }
+      } else {
+        let accessToken = connection.access_token;
+
+        if (!accessToken || isExpired(connection.token_expires_at)) {
+          const refreshedToken = await refreshToken(connection.refresh_token);
+          accessToken = refreshedToken.accessToken;
+
+          await prisma.tradeStationConnection.update({
+            where: { account_id: connection.account_id },
+            data: {
+              access_token: refreshedToken.accessToken,
+              refresh_token: refreshedToken.refreshToken,
+              token_expires_at: refreshedToken.expiresAt,
+              scopes: refreshedToken.scopes?.join(' ') ?? connection.scopes,
+              status: 'ACTIVE',
+            },
+          });
+        }
+
+        const positions = await fetchPositions({
+          accountId: connection.ts_account_id,
+          accessToken: accessToken ?? '',
+        });
+
+        const priceBySymbol = new Map<string, number>();
+
+        for (const pos of positions) {
+          const symbol = typeof pos.Symbol === 'string' ? pos.Symbol.trim() : '';
+          if (!symbol) continue;
+
+          const last = parseNumber((pos as any).Last);
+          const bid = parseNumber((pos as any).Bid);
+          const ask = parseNumber((pos as any).Ask);
+          const mark = parseNumber((pos as any).MarkToMarketPrice);
+
+          let price: number | null = null;
+
+          // Prefer midpoint for options (best effort).
+          if (bid !== null && ask !== null && bid > 0 && ask > 0) {
+            price = (bid + ask) / 2;
+          } else if (last && last > 0) {
+            price = last;
+          } else if (mark && mark > 0) {
+            price = mark;
+          }
+
+          if (price && price > 0) {
+            priceBySymbol.set(symbol, price);
+          }
+        }
+
+        for (const asset of optionAssets) {
+          const price = priceBySymbol.get(asset.symbol.trim());
+
+          if (!price) {
+            failed.push({
+              id: asset.id,
+              symbol: asset.symbol,
+              type: asset.type,
+              error: 'No TradeStation position price found for this option symbol.',
+            });
+            continue;
+          }
+
+          await prisma.priceLatest.upsert({
+            where: { asset_id: asset.id },
+            create: {
+              asset_id: asset.id,
+              price_in_base: price,
+              source: 'TradeStation',
+              last_updated: new Date(),
+            },
+            update: {
+              price_in_base: price,
+              source: 'TradeStation',
+              last_updated: new Date(),
+            },
+          });
+
+          refreshed.push(asset.id);
         }
       }
     }
@@ -301,6 +431,7 @@ export async function POST(request: Request) {
       processed: {
         crypto: cryptoAssets.length,
         equity: equityAssets.length,
+        option: optionAssets.length,
         total: assets.length
       },
       summary: {
