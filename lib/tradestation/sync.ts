@@ -440,9 +440,9 @@ async function reconcileTradeStationCash(params: {
       tx_type: 'RECONCILIATION',
       external_reference: externalReference,
       notes,
-      unit_price_in_base: null,
-      total_value_in_base: null,
-      fee_in_base: null,
+      unit_price_in_base: undefined,
+      total_value_in_base: undefined,
+      fee_in_base: undefined,
     },
   });
 
@@ -629,9 +629,9 @@ export async function syncTradeStationAccount(params: {
               tx_type: 'TRADE',
               external_reference: `${t.externalRef}:USD`,
               notes: `${t.notes ?? 'TradeStation import'} cash leg`,
-              unit_price_in_base: null,
-              total_value_in_base: null,
-              fee_in_base: null,
+              unit_price_in_base: undefined,
+              total_value_in_base: undefined,
+              fee_in_base: undefined,
             });
           }
         }

@@ -11,6 +11,7 @@ import {
 import { getAppSettings } from '@/lib/settings';
 import { createPortfolioSnapshot } from '@/lib/pnlSnapshots';
 import { fetchPositions, refreshToken } from '@/lib/tradestation/client';
+import { syncTradeStationAccount } from '@/lib/tradestation/sync';
 
 function isExpired(expiresAt: Date | null): boolean {
   if (!expiresAt) return false;
@@ -114,6 +115,42 @@ export async function POST(request: Request) {
   });
 
   try {
+    const tradeStationConnections = await prisma.tradeStationConnection.findMany({
+      where: { status: 'ACTIVE' },
+      select: { account_id: true },
+    });
+
+    if (tradeStationConnections.length > 0) {
+      logPricingOperation('tradestation_sync_start', {
+        accounts: tradeStationConnections.map((connection) => connection.account_id),
+        count: tradeStationConnections.length,
+      });
+
+      for (const connection of tradeStationConnections) {
+        try {
+          const result = await syncTradeStationAccount({
+            accountId: connection.account_id,
+            mode: 'orders',
+          });
+
+          logPricingOperation('tradestation_sync_complete', {
+            accountId: connection.account_id,
+            created: result.created,
+            lastSyncAt: result.lastSyncAt.toISOString(),
+          });
+        } catch (syncError) {
+          logPricingOperation(
+            'tradestation_sync_failed',
+            {
+              accountId: connection.account_id,
+              error: syncError instanceof Error ? syncError.message : 'Unknown error',
+            },
+            'warn',
+          );
+        }
+      }
+    }
+
     const assets = await prisma.asset.findMany({
       where: { pricing_mode: 'AUTO' },
     });
