@@ -2,11 +2,12 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 const PUBLIC_PATHS = [
-  '/login', 
+  '/login',
   '/api/login',
   '/api/prices/rate-limit',
   '/api/prices/refresh',
   '/api/prices/health',
+  '/api/tradestation/sync',
   // OAuth callbacks must be public so the broker can redirect back to us.
   '/api/tradestation/auth/callback'
 ];
