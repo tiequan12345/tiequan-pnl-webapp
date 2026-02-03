@@ -22,7 +22,7 @@ This webapp provides a comprehensive solution for tracking investment portfolios
 - **Authentication**: Single-user session-based auth via middleware
 - **API**: RESTful endpoints for data management and price refreshing
 - **Rate Limiting**: Custom rate limiter for CoinGecko API (30 calls/minute)
-- **Deployment**: Vercel with scheduled cron jobs
+- **Deployment**: Oracle VPS (or any Linux host) with PM2 for the Next.js server + `crontab` for scheduled jobs (see `scripts/cron/`)
 
 ## Quick Start
 
@@ -509,20 +509,24 @@ const COINGECKO_OVERRIDES: Record<string, string> = {
 
 ## Automated Refresh
 
-The application supports automated price refresh through:
+The application supports automated price refresh through a **server-side cron job** (Oracle VPS):
 
-### GitHub Actions Workflow
+### Cron (recommended for Oracle VPS)
 
-The application uses GitHub Actions to automate price refresh via the workflow file `.github/workflows/price-refresh.yml`:
-
-- **Schedule**: Runs every hour at the beginning of each hour (`0 * * * *`)
-- **Endpoint**: Calls `/api/prices/refresh` automatically
-- **Manual Trigger**: Workflow can also be manually triggered via GitHub Actions UI
+- **Schedule**: Run hourly at the top of the hour (`0 * * * *`)
+- **Runner**: `scripts/cron/run-price-refresh.sh`
+- **Endpoint**: Calls `POST /api/prices/refresh`
 - **Mode Detection**: Includes `X-Refresh-Mode: auto` header to differentiate scheduled vs manual runs
-- **Interval Enforcement**: Scheduled runs honor the `priceAutoRefreshIntervalMinutes` setting; the system skips the run if the configured interval has not passed since the last successful or partial refresh.
-- **Settings Toggle**: Scheduled runs also respect the `priceAutoRefresh` setting; if disabled, the refresh is skipped.
-- **Concurrency Guard**: A built-in mutex prevents overlapping refreshes; if a run is already in progress, new requests are blocked with a `409 Conflict`.
-- **Execution History**: All refresh attempts (manual and auto) are recorded in the `PriceRefreshRun` table for audit and monitoring.
+- **Interval Enforcement**: Runs honor `priceAutoRefreshIntervalMinutes`; the system skips the run if the configured interval has not passed since the last successful or partial refresh
+- **Settings Toggle**: Runs respect `priceAutoRefresh`; if disabled, the refresh is skipped
+- **Concurrency Guard**: A built-in mutex prevents overlapping refreshes; if a run is already in progress, new requests are blocked with a `409 Conflict`
+- **Execution History**: All refresh attempts (manual and auto) are recorded in the `PriceRefreshRun` table
+
+See `scripts/cron/README.md` for the exact `crontab` entry and environment file setup.
+
+### GitHub Actions workflow (manual only)
+
+`.github/workflows/price-refresh.yml` is kept for manual triggering/debugging, but is **not scheduled**.
 
 ### Manual Refresh
 
@@ -537,8 +541,7 @@ Users can trigger manual refresh through:
 Monitor the refresh system through:
 
 - **Rate Limit Endpoint**: `/api/prices/rate-limit`
-- **GitHub Actions**: Check the Actions tab in your repository for workflow execution history
-- **Application Logs**: Check your hosting platform's function logs
+- **Execution Logs**: Check `/var/log/...` (if you redirect cron output), PM2 logs, and your reverse proxy logs
 - **Database**: Query `PriceLatest` table for freshness
 - **Health Endpoint**: `/api/prices/health` (publicly accessible)
 
@@ -631,13 +634,20 @@ node scripts/repair-null-yield-valuation.js --apply   # Backfill missing totals 
 
 ## Deployment
 
-### GitHub Actions Deployment
+### Oracle VPS Deployment (PM2)
 
-1. **Connect Repository**: Link your GitHub repository to your hosting platform
-2. **Environment Variables**: Add all required environment variables
-3. **Deploy**: Your platform will automatically build and deploy
-4. **Price Refresh**: The included GitHub Actions workflow will handle hourly price refresh automatically
-5. **Secrets Setup**: Configure the required secrets in your GitHub repository for the workflow
+High-level steps:
+
+1. **Provision VPS**: Install Node.js + pnpm.
+2. **Deploy code**: Clone/pull the repo on the server.
+3. **Configure env**: Create `.env` (or `.env.local`) with production values.
+4. **Migrate + build**:
+   - `pnpm install`
+   - `pnpm run prisma:generate`
+   - `pnpm run prisma:migrate`
+   - `pnpm run build`
+5. **Run with PM2**: Use `ecosystem.config.js`.
+6. **Schedule refresh**: Add the hourly `crontab` entry (see `scripts/cron/README.md`).
 
 ### Environment Variables for Production
 
@@ -656,16 +666,19 @@ Ensure all variables from `.env.example` are set in your hosting platform:
  
 When running on your own server with PM2, point the process at `ecosystem.config.js` (provided in the repo). That file loads `.env` using `dotenv`, sets `cwd` to the repo root, and exposes the same vars the rest of the app expects, so you do not need to pass every env var manually to `pm2`.
 
-### GitHub Actions Secrets
+### Scheduler (cron)
 
-For the price refresh workflow to function, configure these secrets in your GitHub repository:
+This project runs the hourly refresh from the **Oracle VPS** using `crontab`.
 
-- `REFRESH_ENDPOINT_URL`: Full URL to your deployed `/api/prices/refresh` endpoint
-- `REFRESH_AUTH_HEADER`: Optional authentication header if your middleware requires auth
+- See `scripts/cron/README.md` for the server setup.
+- The endpoint invoked is `/api/prices/refresh`.
+- If your deployment requires auth, pass an auth header (e.g. `Authorization: Bearer ...`) via the cron env file.
+
+> Note: `.github/workflows/price-refresh.yml` is kept only for **manual** triggering/debugging.
 
 ### Database Considerations
 
-- **Production Database**: The app uses SQLite in all environments; ensure your host provides a persistent file system or volume for the database file (Vercel's default filesystem is ephemeral)
+- **Production Database**: The app uses SQLite in all environments; ensure your Oracle VPS (or host) provides a persistent filesystem location for the database file and that your process user can read/write it.
 - **Migrations**: Run migrations during deployment
 - **Backups**: Set up regular database backups
 - **SQLite Path Resolution**: The server now normalizes `DATABASE_URL` by searching upward from both the current working directory and the compiled module directory for the repo root before resolving relative `file:` URLs, so refer to `prisma/dev.db` only relative to the project root and let the helper turn it into an absolute path.
@@ -689,7 +702,7 @@ For the price refresh workflow to function, configure these secrets in your GitH
 **Solution**:
 - Check API keys are valid
 - Monitor rate limit status at `/api/prices/rate-limit`
-- Check Vercel function logs
+- Check server logs (PM2 logs / systemd journal / reverse proxy logs)
 - Verify assets have `AUTO` pricing mode
 
 #### Rate Limiting Issues

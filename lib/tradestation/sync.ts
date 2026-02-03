@@ -180,7 +180,12 @@ function normalizeTradesFromOrder(order: Record<string, unknown>): NormalizedTra
 
       return { leg, index, execQty };
     })
-    .filter(({ execQty }) => execQty !== null && Number.isFinite(execQty) && execQty > 0);
+    .filter(
+      (entry): entry is { leg: Record<string, unknown>; index: number; execQty: number } =>
+        entry.execQty !== null && Number.isFinite(entry.execQty) && entry.execQty > 0,
+    );
+
+  const orderCommission = getFirstNumber(order, ['CommissionFee', 'Commission', 'Fees', 'Fee']);
 
   // If there are no filled legs, attempt a single-leg fallback from order-level fields.
   if (filledLegs.length === 0) {
@@ -219,8 +224,6 @@ function normalizeTradesFromOrder(order: Record<string, unknown>): NormalizedTra
       },
     ];
   }
-
-  const orderCommission = getFirstNumber(order, ['CommissionFee', 'Commission', 'Fees', 'Fee']);
 
   const orderLevelFillPrice = getFirstNumber(order, ['FilledPrice', 'AveragePrice', 'AvgPrice', 'FillPrice', 'ExecutionPrice', 'LimitPrice']);
 

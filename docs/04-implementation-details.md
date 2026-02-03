@@ -134,13 +134,14 @@ All core phases (0-6) are complete with the following key features implemented:
 - Pass through to `getHoldings` function
 - UI filters now properly utilize the parameter
 
-### Issue 8: Docs vs Reality (Vercel Cron vs GitHub Actions) ✅
-**Problem**: README referenced Vercel cron; actual scheduling was via GitHub Actions.
+### Issue 8: Scheduler migration (GitHub Actions → Oracle VPS cron) ✅
+**Problem**: Hourly scheduling lived in GitHub Actions, but the app is deployed on an Oracle VPS.
 
-**Solution**: Documentation alignment:
-- Updated README to state GitHub Actions hourly workflow
-- Removed references to `vercel.json` cron configuration
-- Clarified scheduler story in all documentation
+**Solution**: Moved scheduling to the server:
+- Added `scripts/cron/run-price-refresh.sh`
+- Documented `crontab` setup in `scripts/cron/README.md`
+- Updated README to reflect Oracle VPS + PM2 + cron
+- Kept `.github/workflows/price-refresh.yml` for manual triggering/debugging only
 
 ### Issue 9: Rate Limiting Scope ✅
 **Problem**: In-memory limiter was process-local; ineffective in multi-instance setups.
