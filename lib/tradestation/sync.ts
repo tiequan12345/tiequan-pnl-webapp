@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db';
 import {
+  fetchBalances,
   fetchBrokerageAccounts,
   fetchHistoricalOrders,
   fetchOrdersToday,
@@ -7,7 +8,7 @@ import {
   refreshToken,
 } from '@/lib/tradestation/client';
 
-type SyncMode = 'orders' | 'positions' | 'full';
+type SyncMode = 'orders' | 'positions' | 'cash' | 'full';
 
 function isExpired(expiresAt: Date | null): boolean {
   if (!expiresAt) {
@@ -136,6 +137,31 @@ function mapTsAssetType(value: unknown): string | undefined {
   if (raw.includes('STOCK') || raw.includes('EQUITY')) return 'EQUITY';
 
   return 'OTHER';
+}
+
+function getContractMultiplierForAssetType(assetType?: string): number {
+  const normalized = (assetType ?? '').toUpperCase();
+  if (normalized === 'OPTION' || normalized.includes('OPTION')) {
+    return 100;
+  }
+  return 1;
+}
+
+function formatDateKey(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function getCashBalanceFromRecord(record: Record<string, unknown>): number | null {
+  return getFirstNumber(record, [
+    'CashBalance',
+    'Cash',
+    'AvailableCash',
+    'CashAvailable',
+    'TotalCash',
+    'CashBalanceTotal',
+    'NetCash',
+    'SettledCash',
+  ]);
 }
 
 function normalizeTradesFromOrder(order: Record<string, unknown>): NormalizedTrade[] {
@@ -331,6 +357,98 @@ async function ensureAssetsBySymbol(
   return map;
 }
 
+async function reconcileTradeStationCash(params: {
+  accountId: number;
+  tsAccountId: string;
+  accessToken: string;
+  asOf: Date;
+}): Promise<number> {
+  const assetMap = await ensureAssetsBySymbol([
+    { symbol: 'USD', assetType: 'CASH' },
+  ]);
+
+  const usdAssetId = assetMap.get('USD');
+  if (!usdAssetId) {
+    throw new Error('Unable to resolve USD asset for cash reconciliation.');
+  }
+
+  const balances = await fetchBalances({
+    accountId: params.tsAccountId,
+    accessToken: params.accessToken,
+  });
+
+  const balanceRecord = balances.find((record) => {
+    const recordId = getFirstString(record as Record<string, unknown>, ['AccountID', 'AccountId', 'Account']);
+    return recordId ? recordId === params.tsAccountId : false;
+  }) ?? (balances[0] as Record<string, unknown> | undefined);
+
+  if (!balanceRecord) {
+    throw new Error('TradeStation balances response was empty.');
+  }
+
+  const cashBalance = getCashBalanceFromRecord(balanceRecord as Record<string, unknown>);
+  if (cashBalance === null) {
+    throw new Error('Unable to read cash balance from TradeStation balances response.');
+  }
+
+  const aggregate = await prisma.ledgerTransaction.aggregate({
+    where: {
+      account_id: params.accountId,
+      asset_id: usdAssetId,
+    },
+    _sum: { quantity: true },
+  });
+
+  const ledgerCash = aggregate._sum.quantity ? Number(aggregate._sum.quantity) : 0;
+  const delta = cashBalance - ledgerCash;
+  const epsilon = 1e-6;
+
+  const dateKey = formatDateKey(params.asOf);
+  const externalReference = `TS:CASH:${params.accountId}:${dateKey}`;
+
+  const existing = await prisma.ledgerTransaction.findFirst({
+    where: {
+      account_id: params.accountId,
+      external_reference: externalReference,
+    },
+  });
+
+  if (Math.abs(delta) < epsilon) {
+    return 0;
+  }
+
+  const notes = `TradeStation cash reconcile ${dateKey}: balance=${cashBalance} ledger=${ledgerCash}`;
+
+  if (existing) {
+    await prisma.ledgerTransaction.update({
+      where: { id: existing.id },
+      data: {
+        date_time: params.asOf,
+        quantity: delta.toString(),
+        notes,
+      },
+    });
+    return 1;
+  }
+
+  await prisma.ledgerTransaction.create({
+    data: {
+      date_time: params.asOf,
+      account_id: params.accountId,
+      asset_id: usdAssetId,
+      quantity: delta.toString(),
+      tx_type: 'RECONCILIATION',
+      external_reference: externalReference,
+      notes,
+      unit_price_in_base: null,
+      total_value_in_base: null,
+      fee_in_base: null,
+    },
+  });
+
+  return 1;
+}
+
 export async function syncTradeStationAccount(params: {
   accountId: number;
   mode?: SyncMode;
@@ -383,6 +501,7 @@ export async function syncTradeStationAccount(params: {
   }
 
   let created = 0;
+  let reconciled = 0;
 
   if (mode === 'orders' || mode === 'full') {
     const ninetyDaysAgo = subtractDays(now, 90);
@@ -453,41 +572,34 @@ export async function syncTradeStationAccount(params: {
     const normalized = Array.from(normalizedMap.values());
 
     if (normalized.length > 0) {
-      const assetMap = await ensureAssetsBySymbol(
-        normalized.map((t) => ({ symbol: t.symbol, assetType: t.assetType })),
-      );
+      const assetMap = await ensureAssetsBySymbol([
+        ...normalized.map((t) => ({ symbol: t.symbol, assetType: t.assetType })),
+        { symbol: 'USD', assetType: 'CASH' },
+      ]);
 
-      const externalRefs = normalized.map((t) => t.externalRef);
+      const cashAssetId = assetMap.get('USD');
 
-      const existing = await prisma.ledgerTransaction.findMany({
-        where: {
-          account_id: params.accountId,
-          external_reference: { in: externalRefs },
-        },
-        select: { external_reference: true },
-      });
+      const candidateRows = normalized.flatMap((t) => {
+        const assetId = assetMap.get(t.symbol);
+        if (!assetId) {
+          return [];
+        }
 
-      const existingSet = new Set(existing.map((row) => row.external_reference).filter((v): v is string => Boolean(v)));
+        const unitPrice = t.unitPriceInBase;
+        let totalValue: string | undefined;
+        let qtyNumber: number | null = null;
+        let priceNumber: number | null = null;
 
-      const rowsToCreate = normalized
-        .filter((t) => !existingSet.has(t.externalRef))
-        .map((t) => {
-          const assetId = assetMap.get(t.symbol);
-          if (!assetId) {
-            return null;
+        if (unitPrice !== undefined) {
+          qtyNumber = Number(t.quantity);
+          priceNumber = Number(unitPrice);
+          if (Number.isFinite(qtyNumber) && Number.isFinite(priceNumber)) {
+            totalValue = (qtyNumber * priceNumber).toString();
           }
+        }
 
-          const unitPrice = t.unitPriceInBase;
-          let totalValue: string | undefined;
-          if (unitPrice !== undefined) {
-            const qtyNumber = Number(t.quantity);
-            const priceNumber = Number(unitPrice);
-            if (Number.isFinite(qtyNumber) && Number.isFinite(priceNumber)) {
-              totalValue = (qtyNumber * priceNumber).toString();
-            }
-          }
-
-          return {
+        const rows = [
+          {
             date_time: t.dateTime,
             account_id: params.accountId,
             asset_id: assetId,
@@ -498,9 +610,54 @@ export async function syncTradeStationAccount(params: {
             unit_price_in_base: unitPrice,
             total_value_in_base: totalValue,
             fee_in_base: t.feeInBase,
-          };
-        })
-        .filter((row): row is NonNullable<typeof row> => Boolean(row));
+          },
+        ];
+
+        if (cashAssetId && qtyNumber !== null && priceNumber !== null) {
+          const multiplier = getContractMultiplierForAssetType(t.assetType);
+          const notional = qtyNumber * priceNumber * multiplier;
+          const feeNumber = t.feeInBase ? Number(t.feeInBase) : 0;
+          const feeSafe = Number.isFinite(feeNumber) ? feeNumber : 0;
+          const cashDelta = -notional - feeSafe;
+
+          if (Number.isFinite(cashDelta) && Math.abs(cashDelta) > 0) {
+            rows.push({
+              date_time: t.dateTime,
+              account_id: params.accountId,
+              asset_id: cashAssetId,
+              quantity: cashDelta.toString(),
+              tx_type: 'TRADE',
+              external_reference: `${t.externalRef}:USD`,
+              notes: `${t.notes ?? 'TradeStation import'} cash leg`,
+              unit_price_in_base: null,
+              total_value_in_base: null,
+              fee_in_base: null,
+            });
+          }
+        }
+
+        return rows;
+      });
+
+      const externalRefs = candidateRows
+        .map((row) => row.external_reference)
+        .filter((value): value is string => Boolean(value));
+
+      const existing = externalRefs.length
+        ? await prisma.ledgerTransaction.findMany({
+            where: {
+              account_id: params.accountId,
+              external_reference: { in: externalRefs },
+            },
+            select: { external_reference: true },
+          })
+        : [];
+
+      const existingSet = new Set(existing.map((row) => row.external_reference).filter((v): v is string => Boolean(v)));
+
+      const rowsToCreate = candidateRows.filter(
+        (row) => row.external_reference && !existingSet.has(row.external_reference),
+      );
 
       if (rowsToCreate.length > 0) {
         const result = await prisma.ledgerTransaction.createMany({
@@ -521,6 +678,15 @@ export async function syncTradeStationAccount(params: {
     });
   }
 
+  if (mode === 'cash' || mode === 'full') {
+    reconciled += await reconcileTradeStationCash({
+      accountId: params.accountId,
+      tsAccountId: connection.ts_account_id,
+      accessToken,
+      asOf: now,
+    });
+  }
+
   await prisma.tradeStationConnection.update({
     where: { account_id: params.accountId },
     data: {
@@ -532,7 +698,7 @@ export async function syncTradeStationAccount(params: {
   return {
     created,
     updated: 0,
-    reconciled: 0,
+    reconciled,
     lastSyncAt: now,
   };
 }

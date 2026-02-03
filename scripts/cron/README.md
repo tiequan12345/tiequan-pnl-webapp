@@ -47,6 +47,56 @@ Notes:
 - If you want local time instead of UTC, ensure the server timezone is set appropriately.
 - The script uses `flock` (if available) to prevent overlapping executions.
 
+## TradeStation order sync (recommended)
+
+Use the helper script `scripts/cron/run-tradestation-order-sync.sh` to import recent orders on a schedule.
+
+Example env file additions:
+
+```bash
+TS_ORDER_SYNC_ENDPOINT_URL="https://port.tiequan.app/api/tradestation/sync"
+TS_ORDER_SYNC_ACCOUNT_ID="4"
+# Optional
+TS_ORDER_SYNC_AUTH_HEADER="Authorization: Bearer <token>"
+```
+
+Make the script executable:
+
+```bash
+chmod +x /path/to/repo/scripts/cron/run-tradestation-order-sync.sh
+```
+
+Example cron entry (every 30 minutes):
+
+```cron
+*/30 * * * * ENV_FILE=/etc/tiequan-pnl-webapp.env /bin/bash /path/to/repo/scripts/cron/run-tradestation-order-sync.sh >> /var/log/tiequan-tradestation-orders.log 2>&1
+```
+
+## TradeStation daily cash reconciliation
+
+Use the helper script `scripts/cron/run-tradestation-cash-reconcile.sh` to reconcile TradeStation cash balances to the ledger once per day.
+
+Example env file additions:
+
+```bash
+TS_CASH_SYNC_ENDPOINT_URL="https://port.tiequan.app/api/tradestation/sync"
+TS_CASH_SYNC_ACCOUNT_ID="4"
+# Optional
+TS_CASH_SYNC_AUTH_HEADER="Authorization: Bearer <token>"
+```
+
+Make the script executable:
+
+```bash
+chmod +x /path/to/repo/scripts/cron/run-tradestation-cash-reconcile.sh
+```
+
+Example cron entry (daily at 01:15 UTC):
+
+```cron
+15 1 * * * ENV_FILE=/etc/tiequan-pnl-webapp.env /bin/bash /path/to/repo/scripts/cron/run-tradestation-cash-reconcile.sh >> /var/log/tiequan-tradestation-cash.log 2>&1
+```
+
 ## 4) (Optional) Remove the GitHub Actions schedule
 
 Once cron is running reliably, you can delete `.github/workflows/price-refresh.yml` to avoid double-triggering.

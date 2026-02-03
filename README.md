@@ -258,6 +258,21 @@ TradeStation commonly whitelists only specific localhost callback URLs by defaul
 
 - The TradeStation **Historical Orders** endpoint has a **maximum 90-day lookback**. This means the automatic sync can only import the last ~90 calendar days of history unless TradeStation provides an alternative export method.
 
+- Each imported trade creates **two ledger legs** (best effort):
+  - The asset leg (stock/option)
+  - A USD cash leg (quantity = `-(qty * price * contractMultiplier) - fee`)
+
+### Daily cash reconciliation (TradeStation balances)
+
+To account for dividends, interest, margin changes, and other cash activity not represented in orders, use the cash reconcile mode:
+
+`POST /api/tradestation/sync` with body:
+```json
+{ "accountId": 42, "mode": "cash" }
+```
+
+This pulls the TradeStation **Balances** endpoint and creates/updates a single daily `RECONCILIATION` entry for USD (idempotent by date).
+
 ### Pricing options via TradeStation
 
 `POST /api/prices/refresh` now also attempts to price `OPTION` assets by calling TradeStation **Positions** for the connected account and using a best-effort mark:

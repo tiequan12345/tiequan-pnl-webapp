@@ -3,7 +3,7 @@ import { syncTradeStationAccount } from '@/lib/tradestation/sync';
 
 type SyncPayload = {
   accountId?: number;
-  mode?: 'orders' | 'positions' | 'full';
+  mode?: 'orders' | 'positions' | 'cash' | 'full';
   since?: string;
 };
 
@@ -40,6 +40,7 @@ export async function GET(request: NextRequest) {
     <select id="mode">
       <option value="orders" selected>orders</option>
       <option value="positions">positions</option>
+      <option value="cash">cash</option>
       <option value="full">full</option>
     </select>
   </div>

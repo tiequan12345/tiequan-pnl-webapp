@@ -28,6 +28,14 @@ export type TsPosition = {
   [key: string]: unknown;
 };
 
+export type TsBalance = {
+  AccountID?: string;
+  CashBalance?: string | number;
+  AvailableCash?: string | number;
+  TotalCash?: string | number;
+  [key: string]: unknown;
+};
+
 export type TsOrder = Record<string, unknown>;
 
 function getApiBaseUrl(): string {
@@ -227,6 +235,18 @@ export async function fetchPositions(params: {
   );
 
   return json.Positions ?? [];
+}
+
+export async function fetchBalances(params: {
+  accountId: string;
+  accessToken: string;
+}): Promise<TsBalance[]> {
+  const json = await apiGet<{ Balances?: TsBalance[] }>(
+    `/v3/brokerage/accounts/${encodeURIComponent(params.accountId)}/balances`,
+    params.accessToken,
+  );
+
+  return json.Balances ?? [];
 }
 
 function formatYYYYMMDD(date: Date): string {
