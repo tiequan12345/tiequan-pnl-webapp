@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db';
 import {
   fetchBrokerageAccounts,
   fetchHistoricalOrders,
+  fetchOrdersToday,
   fetchPositions,
   refreshToken,
 } from '@/lib/tradestation/client';
@@ -390,86 +391,122 @@ export async function syncTradeStationAccount(params: {
     const requestedSince = params.since ?? ninetyDaysAgo;
     const since = requestedSince < ninetyDaysAgo ? ninetyDaysAgo : requestedSince;
 
+    const aggregatedOrders: Record<string, unknown>[] = [];
+
     let nextToken = connection.last_order_next_token ?? undefined;
 
-    // Safety cap so we don't loop forever if the API keeps returning a token.
+    // Pull historical orders (last 90 days, closed orders)
     for (let page = 0; page < 50; page += 1) {
       const pageResult = await fetchHistoricalOrders({
         accountId: connection.ts_account_id,
         accessToken,
         since: since.toISOString(),
-        pageSize: 250,
+        pageSize: 600,
         nextToken,
       });
 
-      const normalized = pageResult.orders
-        .flatMap((order) =>
-          order && typeof order === 'object'
-            ? normalizeTradesFromOrder(order as Record<string, unknown>)
-            : [],
-        );
-
-      if (normalized.length > 0) {
-        const assetMap = await ensureAssetsBySymbol(
-          normalized.map((t) => ({ symbol: t.symbol, assetType: t.assetType })),
-        );
-
-        const externalRefs = normalized.map((t) => t.externalRef);
-
-        const existing = await prisma.ledgerTransaction.findMany({
-          where: {
-            account_id: params.accountId,
-            external_reference: { in: externalRefs },
-          },
-          select: { external_reference: true },
-        });
-
-        const existingSet = new Set(existing.map((row) => row.external_reference).filter((v): v is string => Boolean(v)));
-
-        const rowsToCreate = normalized
-          .filter((t) => !existingSet.has(t.externalRef))
-          .map((t) => {
-            const assetId = assetMap.get(t.symbol);
-            if (!assetId) {
-              return null;
-            }
-
-            const unitPrice = t.unitPriceInBase;
-            let totalValue: string | undefined;
-            if (unitPrice !== undefined) {
-              const qtyNumber = Number(t.quantity);
-              const priceNumber = Number(unitPrice);
-              if (Number.isFinite(qtyNumber) && Number.isFinite(priceNumber)) {
-                totalValue = (qtyNumber * priceNumber).toString();
-              }
-            }
-
-            return {
-              date_time: t.dateTime,
-              account_id: params.accountId,
-              asset_id: assetId,
-              quantity: t.quantity,
-              tx_type: 'TRADE',
-              external_reference: t.externalRef,
-              notes: t.notes,
-              unit_price_in_base: unitPrice,
-              total_value_in_base: totalValue,
-              fee_in_base: t.feeInBase,
-            };
-          })
-          .filter((row): row is NonNullable<typeof row> => Boolean(row));
-
-        if (rowsToCreate.length > 0) {
-          const result = await prisma.ledgerTransaction.createMany({
-            data: rowsToCreate,
-          });
-          created += result.count;
-        }
-      }
+      aggregatedOrders.push(
+        ...pageResult.orders.filter((order): order is Record<string, unknown> =>
+          Boolean(order && typeof order === 'object'),
+        ),
+      );
 
       nextToken = pageResult.nextToken;
       if (!nextToken) {
         break;
+      }
+    }
+
+    // Also pull today's + open orders (TradeStation /orders endpoint)
+    let nextTokenToday: string | undefined;
+    for (let page = 0; page < 10; page += 1) {
+      const pageResult = await fetchOrdersToday({
+        accountId: connection.ts_account_id,
+        accessToken,
+        pageSize: 600,
+        nextToken: nextTokenToday,
+      });
+
+      aggregatedOrders.push(
+        ...pageResult.orders.filter((order): order is Record<string, unknown> =>
+          Boolean(order && typeof order === 'object'),
+        ),
+      );
+
+      nextTokenToday = pageResult.nextToken;
+      if (!nextTokenToday) {
+        break;
+      }
+    }
+
+    const normalizedRaw = aggregatedOrders.flatMap((order) =>
+      normalizeTradesFromOrder(order),
+    );
+
+    const normalizedMap = new Map<string, NormalizedTrade>();
+    for (const trade of normalizedRaw) {
+      if (!normalizedMap.has(trade.externalRef)) {
+        normalizedMap.set(trade.externalRef, trade);
+      }
+    }
+
+    const normalized = Array.from(normalizedMap.values());
+
+    if (normalized.length > 0) {
+      const assetMap = await ensureAssetsBySymbol(
+        normalized.map((t) => ({ symbol: t.symbol, assetType: t.assetType })),
+      );
+
+      const externalRefs = normalized.map((t) => t.externalRef);
+
+      const existing = await prisma.ledgerTransaction.findMany({
+        where: {
+          account_id: params.accountId,
+          external_reference: { in: externalRefs },
+        },
+        select: { external_reference: true },
+      });
+
+      const existingSet = new Set(existing.map((row) => row.external_reference).filter((v): v is string => Boolean(v)));
+
+      const rowsToCreate = normalized
+        .filter((t) => !existingSet.has(t.externalRef))
+        .map((t) => {
+          const assetId = assetMap.get(t.symbol);
+          if (!assetId) {
+            return null;
+          }
+
+          const unitPrice = t.unitPriceInBase;
+          let totalValue: string | undefined;
+          if (unitPrice !== undefined) {
+            const qtyNumber = Number(t.quantity);
+            const priceNumber = Number(unitPrice);
+            if (Number.isFinite(qtyNumber) && Number.isFinite(priceNumber)) {
+              totalValue = (qtyNumber * priceNumber).toString();
+            }
+          }
+
+          return {
+            date_time: t.dateTime,
+            account_id: params.accountId,
+            asset_id: assetId,
+            quantity: t.quantity,
+            tx_type: 'TRADE',
+            external_reference: t.externalRef,
+            notes: t.notes,
+            unit_price_in_base: unitPrice,
+            total_value_in_base: totalValue,
+            fee_in_base: t.feeInBase,
+          };
+        })
+        .filter((row): row is NonNullable<typeof row> => Boolean(row));
+
+      if (rowsToCreate.length > 0) {
+        const result = await prisma.ledgerTransaction.createMany({
+          data: rowsToCreate,
+        });
+        created += result.count;
       }
     }
 

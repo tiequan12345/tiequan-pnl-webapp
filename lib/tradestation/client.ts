@@ -272,18 +272,33 @@ function buildHistoricalOrderCandidatePaths(params: {
     );
   }
 
-  // Candidate B: today's/open orders (not historical) - kept as a fallback.
-  {
-    const query = new URLSearchParams();
-    if (params.pageSize) query.set('pageSize', String(params.pageSize));
-    if (params.nextToken) query.set('nextToken', params.nextToken);
-    const suffix = query.toString();
-    candidates.push(
-      `/v3/brokerage/accounts/${encodeURIComponent(params.accountId)}/orders${suffix ? `?${suffix}` : ''}`,
-    );
-  }
-
   return candidates;
+}
+
+export async function fetchOrdersTodayRaw(params: {
+  accountId: string;
+  accessToken: string;
+  pageSize?: number;
+  nextToken?: string;
+}): Promise<{ path: string; json: unknown }> {
+  const query = new URLSearchParams();
+  if (params.pageSize) query.set('pageSize', String(params.pageSize));
+  if (params.nextToken) query.set('nextToken', params.nextToken);
+  const suffix = query.toString();
+  const path = `/v3/brokerage/accounts/${encodeURIComponent(params.accountId)}/orders${suffix ? `?${suffix}` : ''}`;
+
+  const json = await apiGet<unknown>(path, params.accessToken);
+  return { path, json };
+}
+
+export async function fetchOrdersToday(params: {
+  accountId: string;
+  accessToken: string;
+  pageSize?: number;
+  nextToken?: string;
+}): Promise<{ orders: TsOrder[]; nextToken?: string }> {
+  const raw = await fetchOrdersTodayRaw(params);
+  return extractOrdersFromResponse(raw.json);
 }
 
 function responseHasErrors(json: unknown): boolean {
