@@ -251,7 +251,8 @@ export function DashboardView() {
 
   const latestSnapshot = pnlPoints[pnlPoints.length - 1];
   const earliestSnapshot = pnlPoints[0];
-  const pnlLatestValue = latestSnapshot?.totalValue ?? 0;
+  const latestHoldingsValue = state.summary?.totalValue ?? 0;
+  const pnlLatestValue = latestHoldingsValue || (latestSnapshot?.totalValue ?? 0);
   const pnlEarliestValue = pnlPoints.length > 0 ? earliestSnapshot?.totalValue ?? 0 : 0;
   const pnlChangeValue = pnlLatestValue - pnlEarliestValue;
   const pnlChangePercent =
@@ -319,7 +320,9 @@ export function DashboardView() {
         header: 'Notes',
         accessor: (row) => row.notes ?? '—',
         cell: (row) => (
-          <span className="text-zinc-500 max-w-xs truncate">{row.notes ?? '—'}</span>
+          <span className="text-zinc-500 inline-block max-w-[200px] truncate align-bottom" title={row.notes ?? ''}>
+            {row.notes ?? '—'}
+          </span>
         ),
         sortable: true,
       },
@@ -336,7 +339,7 @@ export function DashboardView() {
               <p className="text-xs uppercase tracking-wider text-zinc-400 font-semibold">
                 Total Portfolio Value
               </p>
-              <div className="mt-2 text-3xl font-semibold text-white">
+              <div className="mt-2 text-4xl sm:text-5xl font-bold tracking-tight text-white mb-2">
                 {formatCurrency(pnlLatestValue, totalCurrency)}
               </div>
               <div className="flex items-center gap-3 text-sm">
