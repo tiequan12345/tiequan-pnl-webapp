@@ -164,6 +164,81 @@ function getCashBalanceFromRecord(record: Record<string, unknown>): number | nul
   ]);
 }
 
+function decimalToNumber(value: unknown): number {
+  if (value === null || value === undefined) {
+    return 0;
+  }
+  if (typeof value === 'number') {
+    return value;
+  }
+  if (typeof value === 'bigint') {
+    return Number(value);
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  if (typeof (value as { toNumber?: () => number }).toNumber === 'function') {
+    return (value as { toNumber: () => number }).toNumber();
+  }
+  return 0;
+}
+
+async function updateAssetStatuses(assetIds: number[]): Promise<void> {
+  const uniqueIds = Array.from(new Set(assetIds.filter((id) => Number.isFinite(id))));
+  if (uniqueIds.length === 0) {
+    return;
+  }
+
+  const totals = await prisma.ledgerTransaction.groupBy({
+    by: ['asset_id'],
+    where: { asset_id: { in: uniqueIds } },
+    _sum: { quantity: true },
+  });
+
+  const totalMap = new Map<number, number>();
+  for (const row of totals) {
+    totalMap.set(row.asset_id, decimalToNumber(row._sum.quantity));
+  }
+
+  const epsilon = 1e-6;
+  const activeIds: number[] = [];
+  const inactiveIds: number[] = [];
+
+  for (const assetId of uniqueIds) {
+    const total = totalMap.get(assetId) ?? 0;
+    if (Math.abs(total) > epsilon) {
+      activeIds.push(assetId);
+    } else {
+      inactiveIds.push(assetId);
+    }
+  }
+
+  if (activeIds.length > 0) {
+    await prisma.asset.updateMany({
+      where: { id: { in: activeIds } },
+      data: { status: 'ACTIVE' },
+    });
+  }
+
+  if (inactiveIds.length > 0) {
+    await prisma.asset.updateMany({
+      where: { id: { in: inactiveIds } },
+      data: { status: 'INACTIVE' },
+    });
+  }
+}
+
+async function updateAssetStatusesForAccount(accountId: number): Promise<void> {
+  const assetRows = await prisma.ledgerTransaction.findMany({
+    where: { account_id: accountId },
+    select: { asset_id: true },
+    distinct: ['asset_id'],
+  });
+
+  await updateAssetStatuses(assetRows.map((row) => row.asset_id));
+}
+
 function normalizeTradesFromOrder(order: Record<string, unknown>): NormalizedTrade[] {
   const orderId = getFirstString(order, ['OrderID', 'OrderId', 'OrderIDString', 'ID', 'Id']);
   if (!orderId) {
@@ -686,6 +761,8 @@ export async function syncTradeStationAccount(params: {
       asOf: now,
     });
   }
+
+  await updateAssetStatusesForAccount(params.accountId);
 
   await prisma.tradeStationConnection.update({
     where: { account_id: params.accountId },
