@@ -73,7 +73,9 @@ export function HoldingsFilters({
 
         if (allAssetsRes.ok) {
           const data = await allAssetsRes.json();
-          const sortedAssets = data.sort((a: Asset, b: Asset) => {
+          // Filter out inactive assets for the "More Assets" dropdown
+          const activeAssets = data.filter((a: Asset & { status?: string }) => a.status !== 'INACTIVE');
+          const sortedAssets = activeAssets.sort((a: Asset, b: Asset) => {
             const countA = a._count?.ledger_transactions ?? 0;
             const countB = b._count?.ledger_transactions ?? 0;
             if (countB !== countA) {
