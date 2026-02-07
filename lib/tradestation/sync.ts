@@ -239,6 +239,36 @@ async function updateAssetStatusesForAccount(accountId: number): Promise<void> {
   await updateAssetStatuses(assetRows.map((row) => row.asset_id));
 }
 
+function isExplicitFilledStatus(statusUpper: string): boolean {
+  if (!statusUpper) return false;
+
+  return (
+    statusUpper.includes('FLL') ||
+    statusUpper.includes('FILLED') ||
+    statusUpper.includes('PARTIAL') ||
+    statusUpper.includes('PARTFILL')
+  );
+}
+
+function isNonFilledStatus(statusUpper: string): boolean {
+  if (!statusUpper) return false;
+
+  return (
+    statusUpper.includes('OPEN') ||
+    statusUpper.includes('OPN') ||
+    statusUpper.includes('OUT') ||
+    statusUpper.includes('WORK') ||
+    statusUpper.includes('PEND') ||
+    statusUpper.includes('QUEU') ||
+    statusUpper.includes('CANCEL') ||
+    statusUpper.includes('CXL') ||
+    statusUpper.includes('REJECT') ||
+    statusUpper.includes('REJ') ||
+    statusUpper.includes('EXPIRE') ||
+    statusUpper.includes('EXP')
+  );
+}
+
 function normalizeTradesFromOrder(order: Record<string, unknown>): NormalizedTrade[] {
   const orderId = getFirstString(order, ['OrderID', 'OrderId', 'OrderIDString', 'ID', 'Id']);
   if (!orderId) {
@@ -246,6 +276,12 @@ function normalizeTradesFromOrder(order: Record<string, unknown>): NormalizedTra
   }
 
   const statusRaw = getFirstString(order, ['Status', 'OrderStatus', 'State']);
+  const statusUpper = statusRaw ? statusRaw.toUpperCase() : '';
+
+  // Guardrail: do not create trade rows from clearly non-filled/open orders.
+  if (isNonFilledStatus(statusUpper)) {
+    return [];
+  }
 
   const dateTime =
     parseTsDate(order.ClosedDateTime) ??
@@ -257,7 +293,6 @@ function normalizeTradesFromOrder(order: Record<string, unknown>): NormalizedTra
     new Date();
 
   const legsRaw = Array.isArray(order.Legs) ? order.Legs : [];
-  const statusUpper = statusRaw ? statusRaw.toUpperCase() : '';
 
   const legEntries = legsRaw
     .map((leg, index) => ({ leg, index }))
@@ -274,7 +309,7 @@ function normalizeTradesFromOrder(order: Record<string, unknown>): NormalizedTra
       if (execQty === null) {
         const remaining = getFirstNumber(leg, ['QuantityRemaining']);
         const ordered = getFirstNumber(leg, ['QuantityOrdered', 'Quantity', 'Qty']);
-        const isFilledStatus = statusUpper.includes('FLL') || statusUpper.includes('FILLED');
+        const isFilledStatus = isExplicitFilledStatus(statusUpper);
         if (isFilledStatus && remaining !== null && ordered !== null && remaining === 0 && ordered > 0) {
           execQty = ordered;
         }
@@ -290,12 +325,17 @@ function normalizeTradesFromOrder(order: Record<string, unknown>): NormalizedTra
   const orderCommission = getFirstNumber(order, ['CommissionFee', 'Commission', 'Fees', 'Fee']);
 
   // If there are no filled legs, attempt a single-leg fallback from order-level fields.
+  // Only do this when order status explicitly indicates a fill.
   if (filledLegs.length === 0) {
+    if (!isExplicitFilledStatus(statusUpper)) {
+      return [];
+    }
+
     const symbol = getFirstString(order, ['Symbol', 'UnderlyingSymbol', 'Ticker']);
     const sideRaw = getFirstString(order, ['BuyOrSell', 'Side', 'Action', 'TradeAction']);
     const side = sideRaw ? sideRaw.toUpperCase() : '';
 
-    const filledQty = getFirstNumber(order, ['FilledQuantity', 'FilledQty', 'Filled', 'ExecQuantity', 'Quantity']);
+    const filledQty = getFirstNumber(order, ['FilledQuantity', 'FilledQty', 'Filled', 'ExecQuantity']);
 
     let sign = 0;
     if (side.includes('BUY')) sign = 1;

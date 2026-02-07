@@ -258,12 +258,10 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
 
   const isCashLikeAsset = (asset: LedgerTransactionWithRelations['asset']): boolean => {
     const type = (asset.type ?? '').toUpperCase();
-    const bucket = (asset.volatility_bucket ?? '').toUpperCase();
     const symbol = (asset.symbol ?? '').toUpperCase();
     return (
       type === 'CASH' ||
       type === 'STABLE' ||
-      bucket === 'CASH_LIKE' ||
       symbol === 'USD' ||
       symbol === 'USDT' ||
       symbol === 'USDC'

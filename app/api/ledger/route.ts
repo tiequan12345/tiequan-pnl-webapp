@@ -593,12 +593,8 @@ export async function POST(request: Request) {
         const isCashLike = (asset: (typeof assets)[number] | undefined) => {
           const type = asset?.type?.toUpperCase?.() ?? '';
           const symbol = asset?.symbol?.toUpperCase?.() ?? '';
-          const bucket = asset?.volatility_bucket?.toUpperCase?.() ?? '';
 
           if (type === 'CASH' || type === 'STABLE') {
-            return true;
-          }
-          if (bucket === 'CASH_LIKE') {
             return true;
           }
           if (symbol === 'USD' || symbol === 'USDT' || symbol === 'USDC') {
