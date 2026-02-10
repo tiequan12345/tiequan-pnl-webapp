@@ -288,6 +288,7 @@ export function LedgerForm({
   const [transferUnitPriceTouched, setTransferUnitPriceTouched] = useState<boolean>(false);
   const [transferTotalValueTouched, setTransferTotalValueTouched] = useState<boolean>(false);
 
+  const [dateTimeTouched, setDateTimeTouched] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -463,12 +464,13 @@ export function LedgerForm({
   const buildCommonPayload = (overrides: {
     assetId: number;
     quantity: string;
-  }) => {
+  }, dateTimeOverride?: string) => {
     const trimmedExternalRef = externalReference.trim();
     const trimmedNotes = notes.trim();
+    const effectiveDateTime = dateTimeOverride ?? dateTime;
 
     return {
-      date_time: new Date(dateTime).toISOString(),
+      date_time: new Date(effectiveDateTime).toISOString(),
       account_id: accountId ? Number(accountId) : undefined,
       asset_id: overrides.assetId,
       quantity: overrides.quantity,
@@ -583,6 +585,9 @@ export function LedgerForm({
     setError(null);
     setSubmitting(true);
 
+    // Use current time at submission if user hasn't modified the date/time field
+    const effectiveDateTime = dateTimeTouched ? dateTime : getDefaultDateTimeLocal();
+
     if (!dateTime || !accountId) {
       setError('Date/time and account are required.');
       setSubmitting(false);
@@ -593,7 +598,7 @@ export function LedgerForm({
       // Batch reconciliation mode: asset and quantity are handled by backend (zeros out account)
       try {
         const payload = {
-          date_time: new Date(dateTime).toISOString(),
+          date_time: new Date(effectiveDateTime).toISOString(),
           account_id: Number(accountId),
           tx_type: 'RECONCILIATION',
           external_reference: externalReference.trim() || null,
@@ -725,7 +730,7 @@ export function LedgerForm({
         const basePayload = buildCommonPayload({
           assetId: targetAssetId,
           quantity: targetQuantity,
-        });
+        }, effectiveDateTime);
 
         // Override account if derived from transfer fields
         if (isTransferType) {
@@ -810,10 +815,10 @@ export function LedgerForm({
         // Use the parsed quantity which handles commas properly
         const qtyString = qtyParsed!;
         const transferPayload = {
-          ...buildCommonPayload({
+        ...buildCommonPayload({
             assetId: assetNumeric, // Will be ignored for multi-leg transfers
             quantity: '0', // Will be ignored for multi-leg transfers
-          }),
+          }, effectiveDateTime),
           legs: [
             {
               account_id: Number(transferFromAccountId),
@@ -922,12 +927,12 @@ export function LedgerForm({
         const payload = buildCommonPayload({
           assetId: assetInNumeric, // This will be ignored for multi-leg trades
           quantity: '0', // This will be ignored for multi-leg trades
-        });
+        }, effectiveDateTime);
 
-        const payloadOut = buildCommonPayload({
+      const payloadOut = buildCommonPayload({
           assetId: assetOutNumeric,
           quantity: (-Math.abs(outQtyNumber!)).toString(),
-        });
+        }, effectiveDateTime);
 
         // Use the new multi-leg API
         const assetInValuations = buildValuationPayload({
@@ -942,10 +947,10 @@ export function LedgerForm({
         });
 
         const tradePayload = {
-          ...buildCommonPayload({
+        ...buildCommonPayload({
             assetId: assetInNumeric, // This will be ignored for multi-leg trades
             quantity: '0', // This will be ignored for multi-leg trades
-          }),
+          }, effectiveDateTime),
           legs: [
             {
               asset_id: assetInNumeric,
@@ -1048,7 +1053,7 @@ export function LedgerForm({
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              date_time: new Date(dateTime).toISOString(),
+              date_time: new Date(effectiveDateTime).toISOString(),
               asset_id: assetNumeric,
               unit_price_in_base: unitPriceTrimmed || null,
               total_value_in_base: totalValueTrimmed || null,
@@ -1102,7 +1107,7 @@ export function LedgerForm({
       const basePayload = buildCommonPayload({
         assetId: assetNumeric,
         quantity: signedQtyNumber.toString(),
-      });
+      }, effectiveDateTime);
       if (isCostBasisReset) {
         const totalValueTrimmed = totalValue.trim();
         const unitPriceTrimmed = unitPrice.trim();
@@ -1164,7 +1169,10 @@ export function LedgerForm({
           <input
             type="datetime-local"
             value={dateTime}
-            onChange={(event) => setDateTime(event.target.value)}
+            onChange={(event) => {
+              setDateTimeTouched(true);
+              setDateTime(event.target.value);
+            }}
             required
             className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
           />
