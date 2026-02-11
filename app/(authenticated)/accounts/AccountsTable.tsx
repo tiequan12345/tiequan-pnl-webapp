@@ -67,7 +67,7 @@ export function AccountsTable({ rows }: AccountsTableProps) {
     {
       id: 'actions',
       header: 'Actions',
-      cell: (row) => <AccountRowActions accountId={row.id} />,
+      cell: (row) => <AccountRowActions accountId={row.id} accountType={row.accountType} />,
       sortable: false,
       align: 'right',
       className: 'text-right',

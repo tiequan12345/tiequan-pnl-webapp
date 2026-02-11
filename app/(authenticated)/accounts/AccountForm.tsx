@@ -1,14 +1,17 @@
 'use client';
 
-import React, { FormEvent, useState } from 'react';
+import React, { FormEvent, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card } from '../_components/ui/Card';
+import { ExchangeConnectionClient } from './[id]/exchange/ExchangeConnectionClient';
 
 const ACCOUNT_TYPES = [
   'CEX',
   'DEX_WALLET',
   'BROKER',
   'BANK',
+  'BINANCE',
+  'BYBIT',
   'NFT_WALLET',
   'OFFLINE',
   'OTHER',
@@ -50,6 +53,12 @@ export function AccountForm({ mode, accountId, initialValues }: AccountFormProps
 
   const isEditMode = mode === 'edit';
 
+  const selectedExchangeId = useMemo(() => {
+    if (accountType === 'BINANCE') return 'binance' as const;
+    if (accountType === 'BYBIT') return 'bybit' as const;
+    return null;
+  }, [accountType]);
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
@@ -83,7 +92,14 @@ export function AccountForm({ mode, accountId, initialValues }: AccountFormProps
         return;
       }
 
-      router.push('/accounts');
+      const createdOrUpdated = (await response.json().catch(() => null)) as { id?: number } | null;
+
+      if (!isEditMode && selectedExchangeId && createdOrUpdated?.id) {
+        router.push(`/accounts/${createdOrUpdated.id}`);
+      } else {
+        router.push('/accounts');
+      }
+
       router.refresh();
     } catch {
       setError('Unexpected error. Please try again.');
@@ -213,6 +229,19 @@ export function AccountForm({ mode, accountId, initialValues }: AccountFormProps
           </button>
         </div>
       </form>
+
+      {selectedExchangeId ? (
+        <div className="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+          <h3 className="text-sm font-medium text-zinc-200 mb-2">Exchange API Connection</h3>
+          {isEditMode && accountId ? (
+            <ExchangeConnectionClient accountId={accountId} exchangeId={selectedExchangeId} />
+          ) : (
+            <p className="text-sm text-zinc-400">
+              Save this account first, then you can configure and sync {selectedExchangeId.toUpperCase()} credentials here.
+            </p>
+          )}
+        </div>
+      ) : null}
     </Card>
   );
 }

@@ -6,9 +6,10 @@ import { useRouter } from 'next/navigation';
 
 type AccountRowActionsProps = {
   accountId: number;
+  accountType: string;
 };
 
-export function AccountRowActions({ accountId }: AccountRowActionsProps) {
+export function AccountRowActions({ accountId, accountType }: AccountRowActionsProps) {
   const router = useRouter();
 
   const handleDelete = async () => {
@@ -40,6 +41,14 @@ export function AccountRowActions({ accountId }: AccountRowActionsProps) {
 
   return (
     <div className="flex items-center justify-end gap-3">
+      {accountType === 'BINANCE' || accountType === 'BYBIT' ? (
+        <Link
+          href={`/accounts/${accountId}/exchange`}
+          className="text-xs text-emerald-400 hover:text-emerald-300"
+        >
+          Exchange
+        </Link>
+      ) : null}
       <Link
         href={`/accounts/${accountId}`}
         className="text-xs text-blue-400 hover:text-blue-300"

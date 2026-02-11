@@ -12,6 +12,7 @@ import { getAppSettings } from '@/lib/settings';
 import { createPortfolioSnapshot } from '@/lib/pnlSnapshots';
 import { fetchPositions, refreshToken } from '@/lib/tradestation/client';
 import { syncTradeStationAccount } from '@/lib/tradestation/sync';
+import { syncCcxtAccount } from '@/lib/ccxt/sync';
 
 function isExpired(expiresAt: Date | null): boolean {
   if (!expiresAt) return false;
@@ -143,6 +144,44 @@ export async function POST(request: Request) {
             'tradestation_sync_failed',
             {
               accountId: connection.account_id,
+              error: syncError instanceof Error ? syncError.message : 'Unknown error',
+            },
+            'warn',
+          );
+        }
+      }
+    }
+
+    const ccxtConnections = await prisma.ccxtConnection.findMany({
+      where: { status: 'ACTIVE' },
+      select: { account_id: true, exchange_id: true },
+    });
+
+    if (ccxtConnections.length > 0) {
+      logPricingOperation('ccxt_sync_start', {
+        accounts: ccxtConnections.map((connection) => connection.account_id),
+        count: ccxtConnections.length,
+      });
+
+      for (const connection of ccxtConnections) {
+        try {
+          const result = await syncCcxtAccount({
+            accountId: connection.account_id,
+            mode: 'trades',
+          });
+
+          logPricingOperation('ccxt_sync_complete', {
+            accountId: connection.account_id,
+            exchangeId: connection.exchange_id,
+            created: result.created,
+            lastSyncAt: result.lastSyncAt.toISOString(),
+          });
+        } catch (syncError) {
+          logPricingOperation(
+            'ccxt_sync_failed',
+            {
+              accountId: connection.account_id,
+              exchangeId: connection.exchange_id,
               error: syncError instanceof Error ? syncError.message : 'Unknown error',
             },
             'warn',

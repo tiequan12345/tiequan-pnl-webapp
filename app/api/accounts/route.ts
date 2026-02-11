@@ -6,6 +6,8 @@ const ALLOWED_ACCOUNT_TYPES = [
   'DEX_WALLET',
   'BROKER',
   'BANK',
+  'BINANCE',
+  'BYBIT',
   'NFT_WALLET',
   'OFFLINE',
   'OTHER',
