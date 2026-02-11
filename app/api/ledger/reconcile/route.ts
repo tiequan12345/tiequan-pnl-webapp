@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { parseLedgerDateTime, parseLedgerDecimal } from '@/lib/ledger';
+import { updateAssetStatuses } from '@/lib/assets';
 import { Prisma } from '@prisma/client';
 
 type ReconcileTarget = {
@@ -176,6 +177,8 @@ export async function POST(req: NextRequest) {
                 });
                 createdCount = result.count;
             }
+
+            await updateAssetStatuses(assetIds);
 
             return Response.json({
                 ...baseResponse,

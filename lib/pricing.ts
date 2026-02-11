@@ -1,16 +1,8 @@
+import { resolveCoinGeckoIdFromSymbol } from './coingecko';
+import { coingeckoRateLimiter } from './rateLimiter';
+
 const COINGECKO_BASE = 'https://api.coingecko.com/api/v3';
 const FINNHUB_QUOTE_URL = 'https://finnhub.io/api/v1/quote';
-
-const COINGECKO_OVERRIDES: Record<string, string> = {
-  BTC: 'bitcoin',
-  ETH: 'ethereum',
-  SOL: 'solana',
-  BNB: 'binancecoin',
-  USDT: 'tether',
-  USDC: 'usd-coin',
-};
-
-import { coingeckoRateLimiter } from './rateLimiter';
 
 // Retry configuration
 const MAX_RETRIES = 3;
@@ -56,58 +48,102 @@ export type ProviderPrice = {
 };
 
 export interface BatchedCryptoPrices {
-  [coinId: string]: ProviderPrice | null;
+  [symbol: string]: ProviderPrice | null;
+}
+
+export type CryptoPriceLookupInput =
+  | string
+  | {
+      symbol: string;
+      coinGeckoId?: string | null;
+    };
+
+type ResolvedCryptoLookup = {
+  symbol: string;
+  coinGeckoId: string;
+};
+
+function resolveCryptoLookups(inputs: CryptoPriceLookupInput[]): ResolvedCryptoLookup[] {
+  return inputs
+    .map((input) => {
+      if (typeof input === 'string') {
+        const symbol = input.trim().toUpperCase();
+        if (!symbol) return null;
+        return {
+          symbol,
+          coinGeckoId: resolveCoinGeckoIdFromSymbol({ symbol }),
+        };
+      }
+
+      const symbol = input.symbol.trim().toUpperCase();
+      if (!symbol) return null;
+
+      return {
+        symbol,
+        coinGeckoId: resolveCoinGeckoIdFromSymbol({
+          symbol,
+          coinGeckoIdOverride: input.coinGeckoId,
+        }),
+      };
+    })
+    .filter((item): item is ResolvedCryptoLookup => Boolean(item));
 }
 
 /**
- * Fetch multiple crypto prices in a single batched API call with retry logic
- * @param symbols Array of crypto symbols to fetch prices for
- * @returns Object mapping symbol to price data
+ * Fetch multiple crypto prices in a single batched API call with retry logic.
+ * Inputs can be simple symbols or explicit CoinGecko mapping objects.
  */
-export async function fetchBatchCryptoPrices(symbols: string[]): Promise<BatchedCryptoPrices> {
-  logPricingOperation('batch_fetch_start', { symbolCount: symbols.length });
-  
-  // Normalize symbols to coin IDs
-  const coinIds = symbols.map(symbol => {
-    const normalized = symbol.trim().toUpperCase();
-    return COINGECKO_OVERRIDES[normalized] ?? normalized.toLowerCase();
+export async function fetchBatchCryptoPrices(
+  inputs: CryptoPriceLookupInput[],
+): Promise<BatchedCryptoPrices> {
+  const lookups = resolveCryptoLookups(inputs);
+
+  logPricingOperation('batch_fetch_start', {
+    symbolCount: lookups.length,
+    mappings: lookups.map((lookup) => ({ symbol: lookup.symbol, coinGeckoId: lookup.coinGeckoId })),
   });
 
-  // Create comma-separated list of coin IDs (limit to avoid URL too long)
-  const maxCoinsPerBatch = 10; // As specified in requirements
   const results: BatchedCryptoPrices = {};
+  if (lookups.length === 0) {
+    return results;
+  }
+
+  const symbolsByCoinId = new Map<string, string[]>();
+  for (const lookup of lookups) {
+    const symbols = symbolsByCoinId.get(lookup.coinGeckoId) ?? [];
+    symbols.push(lookup.symbol);
+    symbolsByCoinId.set(lookup.coinGeckoId, symbols);
+  }
+
+  const coinIds = Array.from(symbolsByCoinId.keys());
+  const maxCoinsPerBatch = 10;
   let totalSuccessful = 0;
   let totalFailed = 0;
 
-  // Process in batches of maxCoinsPerBatch
   for (let i = 0; i < coinIds.length; i += maxCoinsPerBatch) {
-    const batch = coinIds.slice(i, i + maxCoinsPerBatch);
+    const batchCoinIds = coinIds.slice(i, i + maxCoinsPerBatch);
     const batchNumber = Math.floor(i / maxCoinsPerBatch) + 1;
     const totalBatches = Math.ceil(coinIds.length / maxCoinsPerBatch);
-    const coinIdList = batch.join(',');
-    
+    const coinIdList = batchCoinIds.join(',');
+
     logPricingOperation('batch_start', {
       batchNumber,
       totalBatches,
-      coinIds: batch,
-      batchSize: batch.length
+      coinIds: batchCoinIds,
+      batchSize: batchCoinIds.length,
     });
 
-    // Retry logic for each batch
-    let batchSuccessful = false;
     let lastError: Error | null = null;
-    
+
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
-        // Wait for rate limit slot
         await coingeckoRateLimiter.waitForSlot();
 
-        // Build API URL with optional API key
         const apiKey = process.env.COINGECKO_API_KEY;
         const url = new URL(`${COINGECKO_BASE}/simple/price`);
         url.searchParams.set('ids', coinIdList);
         url.searchParams.set('vs_currencies', 'usd');
-        
+
         if (apiKey) {
           url.searchParams.set('x_cg_demo_api_key', apiKey);
         }
@@ -117,8 +153,7 @@ export async function fetchBatchCryptoPrices(symbols: string[]): Promise<Batched
             Accept: 'application/json',
             ...(apiKey && { 'x-cg-demo-api-key': apiKey }),
           },
-          // Add timeout to prevent hanging
-          signal: AbortSignal.timeout(10000), // 10 second timeout
+          signal: AbortSignal.timeout(10000),
         });
 
         if (!response.ok) {
@@ -126,98 +161,118 @@ export async function fetchBatchCryptoPrices(symbols: string[]): Promise<Batched
           throw new Error(`CoinGecko API error: ${response.status} ${response.statusText} - ${errorText}`);
         }
 
-        const data = await response.json() as Record<string, { usd?: number }>;
-        
-        // Process results for this batch
+        const data = (await response.json()) as Record<string, { usd?: number }>;
+
         let batchSuccessCount = 0;
-        for (const coinId of batch) {
+        let batchFailCount = 0;
+
+        for (const coinId of batchCoinIds) {
+          const symbols = symbolsByCoinId.get(coinId) ?? [];
           const quote = data[coinId];
-          const symbolIndex = coinIds.indexOf(coinId);
-          const originalSymbol = symbols[symbolIndex];
 
           if (!quote || typeof quote.usd !== 'number') {
-            results[originalSymbol] = null;
-            logPricingOperation('symbol_fetch_failed', {
-              symbol: originalSymbol,
-              coinId,
-              batchNumber,
-              reason: 'Invalid or missing price data'
-            }, 'warn');
-          } else {
-            results[originalSymbol] = {
+            for (const symbol of symbols) {
+              results[symbol] = null;
+              batchFailCount += 1;
+              logPricingOperation(
+                'symbol_fetch_failed',
+                {
+                  symbol,
+                  coinId,
+                  batchNumber,
+                  reason: 'Invalid or missing price data',
+                },
+                'warn',
+              );
+            }
+            continue;
+          }
+
+          for (const symbol of symbols) {
+            results[symbol] = {
               price: quote.usd,
               source: 'CoinGecko',
               updatedAt: new Date(),
             };
-            batchSuccessCount++;
+            batchSuccessCount += 1;
           }
         }
 
-        batchSuccessful = true;
         totalSuccessful += batchSuccessCount;
-        totalFailed += batch.length - batchSuccessCount;
-        
+        totalFailed += batchFailCount;
+
         logPricingOperation('batch_complete', {
           batchNumber,
           successCount: batchSuccessCount,
-          failCount: batch.length - batchSuccessCount,
-          attempt: attempt + 1
+          failCount: batchFailCount,
+          attempt: attempt + 1,
         });
-        
-        break; // Success, exit retry loop
-        
+
+        break;
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
-        
+
         if (attempt < MAX_RETRIES) {
           const delay = calculateRetryDelay(attempt);
-          logPricingOperation('batch_retry', {
-            batchNumber,
-            attempt: attempt + 1,
-            maxRetries: MAX_RETRIES + 1,
-            delay,
-            error: lastError.message
-          }, 'warn');
-          
+          logPricingOperation(
+            'batch_retry',
+            {
+              batchNumber,
+              attempt: attempt + 1,
+              maxRetries: MAX_RETRIES + 1,
+              delay,
+              error: lastError.message,
+            },
+            'warn',
+          );
+
           await sleep(delay);
         } else {
-          logPricingOperation('batch_failed', {
-            batchNumber,
-            coinIds: batch,
-            error: lastError.message,
-            totalAttempts: attempt + 1
-          }, 'error');
-          
-          // Mark all symbols in this batch as failed
-          const batchStartIndex = i;
-          const batchEndIndex = Math.min(i + maxCoinsPerBatch, symbols.length);
-          for (let j = batchStartIndex; j < batchEndIndex; j++) {
-            results[symbols[j]] = null;
+          logPricingOperation(
+            'batch_failed',
+            {
+              batchNumber,
+              coinIds: batchCoinIds,
+              error: lastError.message,
+              totalAttempts: attempt + 1,
+            },
+            'error',
+          );
+
+          for (const coinId of batchCoinIds) {
+            const symbols = symbolsByCoinId.get(coinId) ?? [];
+            for (const symbol of symbols) {
+              results[symbol] = null;
+              totalFailed += 1;
+            }
           }
-          totalFailed += batch.length;
         }
       }
     }
   }
 
   logPricingOperation('batch_fetch_complete', {
-    totalSymbols: symbols.length,
+    totalSymbols: lookups.length,
     totalSuccessful,
     totalFailed,
-    successRate: ((totalSuccessful / symbols.length) * 100).toFixed(2) + '%'
+    successRate: lookups.length > 0 ? `${((totalSuccessful / lookups.length) * 100).toFixed(2)}%` : '0%',
   });
 
   return results;
 }
 
-/**
- * Legacy single crypto price fetch function for backward compatibility
- * @param symbol Single crypto symbol
- * @returns Price data or null
- */
-export async function fetchCryptoPrice(symbol: string): Promise<ProviderPrice | null> {
-  const batchResults = await fetchBatchCryptoPrices([symbol]);
-  return batchResults[symbol] || null;
+export async function fetchCryptoPrice(
+  symbol: string,
+  options?: { coinGeckoId?: string | null },
+): Promise<ProviderPrice | null> {
+  const normalizedSymbol = symbol.trim().toUpperCase();
+  const batchResults = await fetchBatchCryptoPrices([
+    {
+      symbol: normalizedSymbol,
+      coinGeckoId: options?.coinGeckoId,
+    },
+  ]);
+  return batchResults[normalizedSymbol] || null;
 }
 
 /**

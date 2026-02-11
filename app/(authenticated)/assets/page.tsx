@@ -4,6 +4,8 @@ import { Card } from '../_components/ui/Card';
 import { AssetsTable, type AssetRow } from './AssetsTable';
 import { AssetsFilters } from './AssetsFilters';
 import { consolidateHoldingsByAsset, getHoldings } from '@/lib/holdings';
+import { getCoinGeckoIdFromMetadata } from '@/lib/assetMetadata';
+import { resolveCoinGeckoIdFromSymbol } from '@/lib/coingecko';
 
 type AssetsPageProps = {
   searchParams: Promise<{
@@ -33,6 +35,9 @@ export default async function AssetsPage(props: AssetsPageProps) {
 
   const rows: AssetRow[] = filteredAssets.map((asset) => {
     const status = (asset as { status?: string }).status ?? 'ACTIVE';
+    const coinGeckoId = getCoinGeckoIdFromMetadata(asset.metadata_json);
+    const supportsCoinGeckoMapping = asset.type === 'CRYPTO' || asset.type === 'STABLE';
+
     return {
       id: asset.id,
       symbol: asset.symbol,
@@ -41,6 +46,10 @@ export default async function AssetsPage(props: AssetsPageProps) {
       volatilityBucket: asset.volatility_bucket,
       chainOrMarket: asset.chain_or_market,
       pricingMode: asset.pricing_mode,
+      coinGeckoId,
+      resolvedCoinGeckoId: supportsCoinGeckoMapping
+        ? resolveCoinGeckoIdFromSymbol({ symbol: asset.symbol, coinGeckoIdOverride: coinGeckoId })
+        : null,
       manualPrice: asset.manual_price ? asset.manual_price.toString() : null,
       manualPriceValue: asset.manual_price ? Number(asset.manual_price.toString()) : null,
       status,

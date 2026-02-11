@@ -25,19 +25,24 @@ The pricing system provides automated price fetching for crypto and equity asset
 ### 2. Batched API Calls
 - **Batch up to 10 volatile coins** per API call
 - Reduces API calls from individual requests to batch requests
-- Maintains backward compatibility with existing single-asset price fetches
+- Supports per-asset CoinGecko ID overrides while preserving symbol-keyed results
 
-### 3. API Key Support
+### 3. CoinGecko ID Mapping Overrides
+- Asset-level CoinGecko mapping via `asset.metadata_json.coinGeckoId`
+- UI support in **Assets → Edit Asset → CoinGecko ID Override**
+- Fallback resolution: override → built-in map (`lib/coingecko.ts`) → lowercased symbol
+
+### 4. API Key Support
 - Optional CoinGecko API key integration
 - Uses `x-cg-demo-api-key` header for authenticated requests
 - Falls back to unauthenticated requests if no key provided
 
-### 4. Automated Scheduling
+### 5. Automated Scheduling
 - Hourly refresh via GitHub Actions workflow
 - Manual refresh trigger via UI
 - Interval enforcement with configurable settings
 
-### 5. Retry Logic with Exponential Backoff
+### 6. Retry Logic with Exponential Backoff
 - Max 3 retry attempts for failed API calls
 - Backoff strategy with jitter to prevent thundering herd
 - 10-second timeout for all API requests
@@ -131,7 +136,9 @@ Usage recommendations
 
 ### Core Components
 - `lib/rateLimiter.ts` - Rate limiting utility class
-- `lib/pricing.ts` - Updated pricing functions with batch support
+- `lib/pricing.ts` - Batch and single-price fetch logic with mapping-aware lookups
+- `lib/coingecko.ts` - Built-in symbol → CoinGecko slug defaults
+- `lib/assetMetadata.ts` - metadata parsing/merge helpers for `coinGeckoId`
 
 ### Configuration
 The rate limiter is configured for 30 calls per minute by default:
@@ -147,10 +154,26 @@ export const coingeckoRateLimiter = new RateLimiter(30); // Change number as nee
 ```typescript
 import { fetchBatchCryptoPrices } from '@/lib/pricing';
 
-const symbols = ['bitcoin', 'ethereum', 'solana', 'cardano', 'polkadot'];
-const prices = await fetchBatchCryptoPrices(symbols);
+const lookups = [
+  { symbol: 'BTC' },
+  { symbol: 'DOT', coinGeckoId: 'polkadot' },
+  { symbol: 'MATIC', coinGeckoId: 'matic-network' },
+];
 
-// Returns: { bitcoin: { price: 91509, source: 'CoinGecko', updatedAt: Date }, ... }
+const prices = await fetchBatchCryptoPrices(lookups);
+
+// Returns: {
+//   BTC: { price: 91509, source: 'CoinGecko', updatedAt: Date },
+//   DOT: { price: 6.72, source: 'CoinGecko', updatedAt: Date },
+//   MATIC: { price: 0.88, source: 'CoinGecko', updatedAt: Date },
+// }
+```
+
+#### Single Crypto Price Fetching (with optional override)
+```typescript
+import { fetchCryptoPrice } from '@/lib/pricing';
+
+const dotPrice = await fetchCryptoPrice('DOT', { coinGeckoId: 'polkadot' });
 ```
 
 #### Rate Limit Monitoring

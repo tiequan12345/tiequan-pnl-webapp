@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 
 import { prisma } from '@/lib/db';
 import {
-  fetchCryptoPrice,
   fetchEquityPrice,
   fetchBatchCryptoPrices,
   getCoinGeckoRateLimitStats,
@@ -13,6 +12,7 @@ import { createPortfolioSnapshot } from '@/lib/pnlSnapshots';
 import { fetchPositions, refreshToken } from '@/lib/tradestation/client';
 import { syncTradeStationAccount } from '@/lib/tradestation/sync';
 import { syncCcxtAccount } from '@/lib/ccxt/sync';
+import { getCoinGeckoIdFromMetadata } from '@/lib/assetMetadata';
 
 function isExpired(expiresAt: Date | null): boolean {
   if (!expiresAt) return false;
@@ -154,7 +154,7 @@ export async function POST(request: Request) {
 
     const ccxtConnections = await prisma.ccxtConnection.findMany({
       where: { status: 'ACTIVE' },
-      select: { account_id: true, exchange_id: true },
+      select: { account_id: true, exchange_id: true, last_trade_sync_at: true },
     });
 
     if (ccxtConnections.length > 0) {
@@ -163,17 +163,33 @@ export async function POST(request: Request) {
         count: ccxtConnections.length,
       });
 
+      const lookbackHoursRaw = Number(process.env.CCXT_AUTO_TRADE_LOOKBACK_HOURS ?? '24');
+      const lookbackHours = Number.isFinite(lookbackHoursRaw) && lookbackHoursRaw > 0 ? lookbackHoursRaw : 24;
+      const overlapMinutesRaw = Number(process.env.CCXT_AUTO_TRADE_OVERLAP_MINUTES ?? '15');
+      const overlapMinutes =
+        Number.isFinite(overlapMinutesRaw) && overlapMinutesRaw >= 0 ? overlapMinutesRaw : 15;
+      const fallbackSince = new Date(Date.now() - lookbackHours * 60 * 60 * 1000);
+
       for (const connection of ccxtConnections) {
         try {
+          const cursorSince = connection.last_trade_sync_at
+            ? new Date(connection.last_trade_sync_at.getTime() - overlapMinutes * 60 * 1000)
+            : null;
+          const since = cursorSince
+            ? new Date(Math.max(fallbackSince.getTime(), cursorSince.getTime()))
+            : fallbackSince;
+
           const result = await syncCcxtAccount({
             accountId: connection.account_id,
             mode: 'trades',
+            since,
           });
 
           logPricingOperation('ccxt_sync_complete', {
             accountId: connection.account_id,
             exchangeId: connection.exchange_id,
             created: result.created,
+            since: since.toISOString(),
             lastSyncAt: result.lastSyncAt.toISOString(),
           });
         } catch (syncError) {
@@ -238,14 +254,20 @@ export async function POST(request: Request) {
 
     // Batch fetch crypto prices
     if (cryptoAssets.length > 0) {
-      const cryptoSymbols = cryptoAssets.map(asset => asset.symbol);
+      const cryptoLookups = cryptoAssets.map((asset) => ({
+        symbol: asset.symbol,
+        coinGeckoId: getCoinGeckoIdFromMetadata(asset.metadata_json),
+      }));
       logPricingOperation('crypto_batch_start', {
-        symbolCount: cryptoSymbols.length,
-        symbols: cryptoSymbols
+        symbolCount: cryptoLookups.length,
+        symbols: cryptoLookups.map((item) => item.symbol),
+        mappedCoinGeckoIds: cryptoLookups
+          .filter((item) => Boolean(item.coinGeckoId))
+          .map((item) => ({ symbol: item.symbol, coinGeckoId: item.coinGeckoId })),
       });
 
       try {
-        const batchResults = await fetchBatchCryptoPrices(cryptoSymbols);
+        const batchResults = await fetchBatchCryptoPrices(cryptoLookups);
 
         for (const asset of cryptoAssets) {
           const price = batchResults[asset.symbol];

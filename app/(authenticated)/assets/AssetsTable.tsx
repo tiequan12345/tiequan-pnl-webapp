@@ -14,6 +14,8 @@ export type AssetRow = {
   volatilityBucket: string;
   chainOrMarket: string | null;
   pricingMode: string;
+  coinGeckoId: string | null;
+  resolvedCoinGeckoId: string | null;
   manualPrice: string | null;
   manualPriceValue: number | null;
   status: string;
@@ -138,6 +140,33 @@ export function AssetsTable({ rows, statusFilter = 'ACTIVE' }: AssetsTableProps)
           {row.pricingMode}
         </Badge>
       ),
+      sortable: true,
+    },
+    {
+      id: 'coinGeckoId',
+      header: 'CoinGecko Map',
+      accessor: (row) => row.resolvedCoinGeckoId ?? '—',
+      cell: (row) => {
+        if (!row.resolvedCoinGeckoId) {
+          return <span className="text-zinc-500">—</span>;
+        }
+
+        if (row.coinGeckoId) {
+          return (
+            <div className="flex items-center gap-2">
+              <span className="text-zinc-200">{row.coinGeckoId}</span>
+              <Badge type="green">override</Badge>
+            </div>
+          );
+        }
+
+        return (
+          <div className="flex items-center gap-2">
+            <span className="text-zinc-400">{row.resolvedCoinGeckoId}</span>
+            <Badge type="default">auto</Badge>
+          </div>
+        );
+      },
       sortable: true,
     },
     {

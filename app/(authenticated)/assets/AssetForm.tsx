@@ -3,6 +3,7 @@
 import React, { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card } from '../_components/ui/Card';
+import { getCoinGeckoIdFromMetadata, mergeCoinGeckoIdIntoMetadata } from '@/lib/assetMetadata';
 
 export const ASSET_TYPES = ['CRYPTO', 'EQUITY', 'OPTION', 'STABLE', 'NFT', 'OFFLINE', 'CASH', 'OTHER'] as const;
 export const VOLATILITY_BUCKETS = ['CASH_LIKE', 'VOLATILE'] as const;
@@ -42,17 +43,32 @@ export function AssetForm({ mode, assetId, initialValues }: AssetFormProps) {
   );
   const [chainOrMarket, setChainOrMarket] = useState(initialValues?.chain_or_market ?? '');
   const [manualPrice, setManualPrice] = useState(initialValues?.manual_price ?? '');
+  const [coinGeckoId, setCoinGeckoId] = useState(
+    getCoinGeckoIdFromMetadata(initialValues?.metadata_json) ?? '',
+  );
   const [metadataJson, setMetadataJson] = useState(initialValues?.metadata_json ?? '');
   const [status, setStatus] = useState(initialValues?.status ?? ASSET_STATUSES[0]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const isEditMode = mode === 'edit';
+  const supportsCoinGeckoMapping = type === 'CRYPTO' || type === 'STABLE';
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
     setSubmitting(true);
+
+    const mergedMetadata = mergeCoinGeckoIdIntoMetadata({
+      metadataJson,
+      coinGeckoId: supportsCoinGeckoMapping ? coinGeckoId : null,
+    });
+
+    if (mergedMetadata.error) {
+      setError(mergedMetadata.error);
+      setSubmitting(false);
+      return;
+    }
 
     const payload = {
       symbol: symbol.trim(),
@@ -62,7 +78,7 @@ export function AssetForm({ mode, assetId, initialValues }: AssetFormProps) {
       pricing_mode: pricingMode,
       chain_or_market: chainOrMarket.trim() || '',
       manual_price: manualPrice.trim() === '' ? null : manualPrice.trim(),
-      metadata_json: metadataJson.trim() === '' ? null : metadataJson,
+      metadata_json: mergedMetadata.metadataJson,
       status,
     };
 
@@ -221,6 +237,35 @@ export function AssetForm({ mode, assetId, initialValues }: AssetFormProps) {
             <p className="text-[11px] text-zinc-500">
               Only used when pricing mode is MANUAL.
             </p>
+          </div>
+
+          <div className="space-y-2 md:col-span-2">
+            <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+              CoinGecko ID Override
+            </label>
+            <input
+              type="text"
+              value={coinGeckoId}
+              onChange={(event) => setCoinGeckoId(event.target.value)}
+              disabled={!supportsCoinGeckoMapping}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:opacity-60"
+              placeholder={supportsCoinGeckoMapping ? 'e.g. polkadot' : 'Only available for CRYPTO/STABLE assets'}
+            />
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+              <p className="text-zinc-500">
+                Use this when symbol-to-slug auto mapping fails (e.g. DOT → polkadot).
+              </p>
+              {supportsCoinGeckoMapping ? (
+                <a
+                  href={`https://www.coingecko.com/en/search?query=${encodeURIComponent(symbol || name || coinGeckoId)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-blue-400 hover:text-blue-300"
+                >
+                  Find CoinGecko slug ↗
+                </a>
+              ) : null}
+            </div>
           </div>
 
           <div className="space-y-2 md:col-span-2">

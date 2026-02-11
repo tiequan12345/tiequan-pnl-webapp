@@ -63,6 +63,7 @@ All core phases (0-6) are complete with the following key features implemented:
 ### ✅ Additional Features
 - **USD Currency Lock**: Base currency fixed to USD across UI and backend
 - **Price Refresh System**: Automated hourly refresh via GitHub Actions with rate limiting
+- **CoinGecko Mapping Override UI**: Asset-level `coinGeckoId` override in Asset edit form, persisted in `metadata_json` and respected by batch/single refresh endpoints
 - **Snapshot Persistence**: Portfolio snapshots for historical PnL tracking
 - **Backup System**: Automated SQLite backups to S3 with configurable schedule
 - **Transfer Transaction Type**: Move assets between accounts with cost basis preservation

@@ -7,6 +7,8 @@ type ExchangeConnectionClientProps = {
   exchangeId: 'binance' | 'bybit';
 };
 
+type CcxtSyncMode = 'trades' | 'balances' | 'full';
+
 type StatusPayload = {
   connected: boolean;
   connection: {
@@ -32,6 +34,7 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [manualSyncMode, setManualSyncMode] = useState<CcxtSyncMode>('balances');
   const [message, setMessage] = useState<string | null>(null);
 
   const statusUrl = useMemo(
@@ -121,7 +124,7 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           accountId,
-          mode: 'full',
+          mode: manualSyncMode,
         }),
       });
 
@@ -137,7 +140,7 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
       }
 
       setMessage(
-        `Manual sync complete. Created ${data?.created ?? 0} ledger rows, reconciled ${data?.reconciled ?? 0} balances.`,
+        `Manual ${manualSyncMode} sync complete. Created ${data?.created ?? 0} ledger rows, reconciled ${data?.reconciled ?? 0} balances.`,
       );
       await loadStatus();
     } catch {
@@ -259,7 +262,19 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
           Use sandbox / testnet
         </label>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="text-sm text-zinc-300 flex items-center gap-2">
+            <span>Sync mode</span>
+            <select
+              value={manualSyncMode}
+              onChange={(event) => setManualSyncMode(event.target.value as CcxtSyncMode)}
+              className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100"
+            >
+              <option value="balances">balances (fast)</option>
+              <option value="trades">trades</option>
+              <option value="full">full</option>
+            </select>
+          </label>
           <button
             type="submit"
             disabled={saving}

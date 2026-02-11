@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { prisma } from '@/lib/db';
 import { fetchCryptoPrice, fetchEquityPrice } from '@/lib/pricing';
+import { getCoinGeckoIdFromMetadata } from '@/lib/assetMetadata';
 
 export async function POST(
   _request: Request,
@@ -24,8 +25,12 @@ export async function POST(
     return NextResponse.json({ error: 'Asset not found.' }, { status: 404 });
   }
 
-  const fetcher = asset.type === 'EQUITY' ? fetchEquityPrice : fetchCryptoPrice;
-  const price = await fetcher(asset.symbol);
+  const price =
+    asset.type === 'EQUITY'
+      ? await fetchEquityPrice(asset.symbol)
+      : await fetchCryptoPrice(asset.symbol, {
+          coinGeckoId: getCoinGeckoIdFromMetadata(asset.metadata_json),
+        });
 
   if (!price) {
     return NextResponse.json(
