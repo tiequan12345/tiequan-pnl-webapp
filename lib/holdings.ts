@@ -588,11 +588,17 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
   }
 
   const rows: HoldingRow[] = [];
+  const HOLDING_ZERO_THRESHOLD = 1e-9;
 
   for (const position of positions.values()) {
     const asset = position.asset;
     const account = position.account;
     const quantity = position.quantity;
+
+    // Suppress dust/fully reconciled ghost rows from historical transactions.
+    if (Math.abs(quantity) <= HOLDING_ZERO_THRESHOLD) {
+      continue;
+    }
 
     const latestPriceRecord = buildLatestPriceRecord(asset.price_latest ?? null);
     const priceResolution = resolveAssetPrice({

@@ -129,6 +129,18 @@ FINNHUB_API_KEY=your-finnhub-api-key
 # Get your free API key from: https://www.coingecko.com/en/api/documentation
 COINGECKO_API_KEY=your-coingecko-api-key
 
+# Optional: CCXT exchange sync tuning
+# How far back automated trade sync looks during scheduled price refresh
+CCXT_AUTO_TRADE_LOOKBACK_HOURS=24
+# Cursor overlap to avoid missing fills near sync boundaries
+CCXT_AUTO_TRADE_OVERLAP_MINUTES=15
+# Binance wallet segments included in balance reconciliation
+# Includes spot balances plus futures wallet collateral (walletBalance only, excludes unrealized PnL).
+# Add others only if needed (e.g. spot,future,margin or spot,untyped).
+CCXT_BINANCE_BALANCE_TYPES=spot,future
+# Ignore Binance balances whose estimated USD value is below this threshold.
+CCXT_BINANCE_MIN_USD_VALUE=1
+
 # Optional: S3 backup configuration (required if you run backup scripts)
 S3_BUCKET_NAME=your-s3-bucket-name
 S3_REGION=us-east-1
@@ -508,19 +520,24 @@ The custom rate limiter ([`lib/rateLimiter.ts`](lib/rateLimiter.ts)) provides:
 - **Detailed Logging**: All operations logged with timestamps
 - **Status Reporting**: Comprehensive success/failure reporting
 
-### Symbol Normalization
+### Symbol Normalization & CoinGecko Mapping
 
-The pricing system includes symbol mapping and overrides:
+The pricing system resolves CoinGecko IDs in this order:
+
+1. **Asset-level override**: `asset.metadata_json.coinGeckoId` (editable in `/assets/:id`)
+2. **Built-in symbol map**: defaults from [`lib/coingecko.ts`](lib/coingecko.ts)
+3. **Fallback**: lower-cased symbol
+
+This allows exchange symbols (e.g. `DOT`) to map cleanly to CoinGecko slugs (e.g. `polkadot`) without renaming the tracked asset symbol.
+
+Examples:
 
 ```typescript
-// Example overrides in lib/pricing.ts
-const COINGECKO_OVERRIDES: Record<string, string> = {
-  'BTC': 'bitcoin',
-  'ETH': 'ethereum',
-  'USDT': 'tether',
-  // ... more mappings
-}
+resolveCoinGeckoIdFromSymbol({ symbol: 'DOT' }); // 'polkadot'
+resolveCoinGeckoIdFromSymbol({ symbol: 'DOT', coinGeckoIdOverride: 'polkadot' }); // 'polkadot'
 ```
+
+For UI usage, go to **Assets → Edit Asset → CoinGecko ID Override**.
 
 ## Automated Refresh
 

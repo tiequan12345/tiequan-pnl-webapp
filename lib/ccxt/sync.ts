@@ -5,7 +5,7 @@ import {
   parseOptionsJson,
   type CcxtExchangeId,
 } from '@/lib/ccxt/client';
-import { ensureAssetsBySymbol } from '@/lib/assets';
+import { ensureAssetsBySymbol, updateAssetStatusesForAccount } from '@/lib/assets';
 
 export type CcxtSyncMode = 'trades' | 'balances' | 'full';
 
@@ -59,6 +59,210 @@ function getDefaultSince(since?: Date): Date {
 
 function formatDateKey(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+function extractBalanceTotals(balance: any): Map<string, number> {
+  const totalRaw = (balance?.total ?? {}) as Record<string, unknown>;
+  const freeRaw = (balance?.free ?? {}) as Record<string, unknown>;
+  const usedRaw = (balance?.used ?? {}) as Record<string, unknown>;
+
+  const symbols = new Set<string>([
+    ...Object.keys(totalRaw),
+    ...Object.keys(freeRaw),
+    ...Object.keys(usedRaw),
+  ]);
+
+  const totalsBySymbol = new Map<string, number>();
+
+  for (const symbolRaw of symbols) {
+    const symbol = symbolRaw.trim().toUpperCase();
+    if (!symbol) continue;
+
+    const totalValue = toFiniteNumber(totalRaw[symbolRaw]);
+    const resolvedTotal =
+      totalValue ??
+      ((toFiniteNumber(freeRaw[symbolRaw]) ?? 0) + (toFiniteNumber(usedRaw[symbolRaw]) ?? 0));
+
+    if (!Number.isFinite(resolvedTotal)) {
+      continue;
+    }
+
+    totalsBySymbol.set(symbol, resolvedTotal);
+  }
+
+  // Binance-specific fallback from raw payload (more reliable for some accounts/assets).
+  const rawBalances = Array.isArray(balance?.info?.balances) ? balance.info.balances : [];
+  for (const row of rawBalances) {
+    const symbol = String(row?.asset ?? '')
+      .trim()
+      .toUpperCase();
+    if (!symbol) continue;
+
+    const free = toFiniteNumber(row?.free) ?? 0;
+    const locked = toFiniteNumber(row?.locked) ?? 0;
+    const total = free + locked;
+
+    if (!Number.isFinite(total)) {
+      continue;
+    }
+
+    totalsBySymbol.set(symbol, total);
+  }
+
+  return totalsBySymbol;
+}
+
+function addBalanceTotals(base: Map<string, number>, extra: Map<string, number>): Map<string, number> {
+  const merged = new Map(base);
+
+  for (const [symbol, amount] of extra.entries()) {
+    if (!Number.isFinite(amount)) {
+      continue;
+    }
+
+    merged.set(symbol, (merged.get(symbol) ?? 0) + amount);
+  }
+
+  return merged;
+}
+
+async function fetchBinanceSpotWalletTotals(exchange: any): Promise<Map<string, number>> {
+  // Prefer Binance spot wallet endpoint; it returns explicit free/locked by coin.
+  if (typeof exchange?.sapiGetCapitalConfigGetall === 'function') {
+    try {
+      const rows = await exchange.sapiGetCapitalConfigGetall();
+      const totals = new Map<string, number>();
+
+      for (const row of rows ?? []) {
+        const symbol = String(row?.coin ?? '').trim().toUpperCase();
+        if (!symbol) continue;
+
+        const free = toFiniteNumber(row?.free) ?? 0;
+        const locked = toFiniteNumber(row?.locked) ?? 0;
+        const total = free + locked;
+
+        if (!Number.isFinite(total)) continue;
+        totals.set(symbol, total);
+      }
+
+      return totals;
+    } catch {
+      // Fall back to CCXT's generic balance parser.
+    }
+  }
+
+  const spotBalance = await exchange.fetchBalance({ type: 'spot' });
+  return extractBalanceTotals(spotBalance);
+}
+
+function extractBinanceFuturesWalletTotals(balance: any): Map<string, number> {
+  const totals = new Map<string, number>();
+
+  const rows = Array.isArray(balance?.info?.assets) ? balance.info.assets : [];
+  for (const row of rows) {
+    const symbol = String(row?.asset ?? '').trim().toUpperCase();
+    if (!symbol) continue;
+
+    // Important: walletBalance excludes unrealized PnL.
+    const walletBalance = toFiniteNumber(row?.walletBalance);
+    if (walletBalance === null || !Number.isFinite(walletBalance)) {
+      continue;
+    }
+
+    totals.set(symbol, walletBalance);
+  }
+
+  return totals;
+}
+
+const USD_LIKE_SYMBOLS = new Set(['USD', 'USDT', 'USDC', 'BUSD', 'FDUSD', 'TUSD', 'USDP', 'DAI']);
+
+async function buildBinanceUsdPriceMap(exchange: any, symbols: string[]): Promise<Map<string, number>> {
+  const prices = new Map<string, number>();
+
+  const tradableSymbols = symbols.filter((symbol) => !USD_LIKE_SYMBOLS.has(symbol));
+  if (tradableSymbols.length === 0) {
+    return prices;
+  }
+
+  if (!exchange.markets || Object.keys(exchange.markets).length === 0) {
+    try {
+      await exchange.loadMarkets();
+    } catch {
+      return prices;
+    }
+  }
+
+  const markets = exchange.markets ?? {};
+  const tickerSymbols = Array.from(
+    new Set(
+      tradableSymbols
+        .map((symbol) => `${symbol}/USDT`)
+        .filter((marketSymbol) => Boolean(markets[marketSymbol])),
+    ),
+  );
+
+  if (tickerSymbols.length === 0) {
+    return prices;
+  }
+
+  try {
+    const tickers = await exchange.fetchTickers(tickerSymbols);
+    for (const [marketSymbol, ticker] of Object.entries(tickers ?? {})) {
+      const base = String(marketSymbol).split('/')[0]?.trim().toUpperCase();
+      if (!base) continue;
+
+      const last = toFiniteNumber((ticker as any)?.last);
+      if (last !== null && last > 0) {
+        prices.set(base, last);
+      }
+    }
+  } catch {
+    // Best effort.
+  }
+
+  return prices;
+}
+
+async function applyBinanceUsdThreshold(params: {
+  exchange: any;
+  totalsBySymbol: Map<string, number>;
+  minUsdValue: number;
+}): Promise<Map<string, number>> {
+  const { exchange, totalsBySymbol, minUsdValue } = params;
+  if (!(minUsdValue > 0)) {
+    return totalsBySymbol;
+  }
+
+  const symbols = Array.from(totalsBySymbol.keys());
+  const priceMap = await buildBinanceUsdPriceMap(exchange, symbols);
+
+  const filtered = new Map<string, number>();
+  for (const [symbol, qty] of totalsBySymbol.entries()) {
+    const absQty = Math.abs(qty);
+    const usdValue = USD_LIKE_SYMBOLS.has(symbol)
+      ? absQty
+      : (() => {
+          const price = priceMap.get(symbol);
+          if (price === undefined || !Number.isFinite(price)) {
+            return null;
+          }
+          return absQty * price;
+        })();
+
+    if (usdValue !== null && usdValue < minUsdValue) {
+      continue;
+    }
+
+    // If we cannot price the asset via Binance markets, fall back to quantity threshold.
+    if (usdValue === null && absQty < minUsdValue) {
+      continue;
+    }
+
+    filtered.set(symbol, qty);
+  }
+
+  return filtered;
 }
 
 function isSupportedExchangeId(value: string): value is CcxtExchangeId {
@@ -341,16 +545,51 @@ async function reconcileCcxtBalances(params: {
   exchange: any;
   asOf: Date;
 }): Promise<number> {
-  const balance = await params.exchange.fetchBalance();
-  const totalsRaw = (balance?.total ?? {}) as Record<string, unknown>;
-  const totalsBySymbol = new Map<string, number>();
+  let totalsBySymbol =
+    params.exchangeId === 'binance'
+      ? await fetchBinanceSpotWalletTotals(params.exchange)
+      : extractBalanceTotals(await params.exchange.fetchBalance());
 
-  for (const [symbolRaw, amountRaw] of Object.entries(totalsRaw)) {
-    const symbol = symbolRaw.trim().toUpperCase();
-    if (!symbol) continue;
-    const amount = toFiniteNumber(amountRaw);
-    if (amount === null) continue;
-    totalsBySymbol.set(symbol, amount);
+  if (params.exchangeId === 'binance') {
+    const configuredTypes = (process.env.CCXT_BINANCE_BALANCE_TYPES ?? 'spot,future')
+      .split(',')
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean);
+
+    for (const balanceType of configuredTypes) {
+      if (balanceType === 'spot') {
+        continue;
+      }
+
+      try {
+        const typedBalance = await params.exchange.fetchBalance({ type: balanceType });
+        const typedTotals =
+          balanceType === 'future' || balanceType === 'futures'
+            ? extractBinanceFuturesWalletTotals(typedBalance)
+            : extractBalanceTotals(typedBalance);
+        totalsBySymbol = addBalanceTotals(totalsBySymbol, typedTotals);
+      } catch {
+        // Best effort per wallet type.
+      }
+    }
+
+    if (configuredTypes.includes('untyped')) {
+      try {
+        const fallbackBalance = await params.exchange.fetchBalance();
+        const fallbackTotals = extractBalanceTotals(fallbackBalance);
+        totalsBySymbol = addBalanceTotals(totalsBySymbol, fallbackTotals);
+      } catch {
+        // Keep typed balance results only.
+      }
+    }
+
+    const minUsdValueRaw = Number(process.env.CCXT_BINANCE_MIN_USD_VALUE ?? '1');
+    const minUsdValue = Number.isFinite(minUsdValueRaw) && minUsdValueRaw >= 0 ? minUsdValueRaw : 1;
+    totalsBySymbol = await applyBinanceUsdThreshold({
+      exchange: params.exchange,
+      totalsBySymbol,
+      minUsdValue,
+    });
   }
 
   const ledgerRows = await prisma.ledgerTransaction.findMany({
@@ -414,15 +653,18 @@ async function reconcileCcxtBalances(params: {
         account_id: params.accountId,
         external_reference: externalReference,
       },
-      select: { id: true },
+      select: { id: true, quantity: true },
     });
 
     if (existing) {
+      const existingQty = Number(existing.quantity);
+      const adjustedQuantity = Number.isFinite(existingQty) ? existingQty + delta : delta;
+
       await prisma.ledgerTransaction.update({
         where: { id: existing.id },
         data: {
           date_time: params.asOf,
-          quantity: String(delta),
+          quantity: String(adjustedQuantity),
           notes,
         },
       });
@@ -475,8 +717,28 @@ export async function syncCcxtAccount(params: {
   const exchangeId = connection.exchange_id as CcxtExchangeId;
   const connectionOptions = parseOptionsJson(connection.options_json);
 
-  const buildExchangeForSync = (defaultTypeOverride?: 'spot' | 'margin') =>
-    buildCcxtExchange({
+  const buildExchangeForSync = (params?: {
+    defaultTypeOverride?: 'spot' | 'margin';
+    forceSpotWalletProfile?: boolean;
+  }) => {
+    const { defaultTypeOverride, forceSpotWalletProfile } = params ?? {};
+
+    const options = (() => {
+      if (forceSpotWalletProfile && exchangeId === 'binance') {
+        return { defaultType: 'spot' as const };
+      }
+
+      if (defaultTypeOverride) {
+        return {
+          ...(connectionOptions ?? {}),
+          defaultType: defaultTypeOverride,
+        };
+      }
+
+      return connectionOptions;
+    })();
+
+    return buildCcxtExchange({
       exchangeId,
       credentials: {
         apiKey: connection.api_key_enc,
@@ -485,13 +747,9 @@ export async function syncCcxtAccount(params: {
         encrypted: true,
       },
       sandbox: connection.sandbox,
-      options: defaultTypeOverride
-        ? {
-            ...(connectionOptions ?? {}),
-            defaultType: defaultTypeOverride,
-          }
-        : connectionOptions,
+      options,
     });
+  };
 
   let created = 0;
   let reconciled = 0;
@@ -500,7 +758,7 @@ export async function syncCcxtAccount(params: {
   if (mode === 'trades' || mode === 'full') {
     const exchangesForTradeSync =
       exchangeId === 'binance'
-        ? [buildExchangeForSync('spot'), buildExchangeForSync('margin')]
+        ? [buildExchangeForSync({ defaultTypeOverride: 'spot' }), buildExchangeForSync({ defaultTypeOverride: 'margin' })]
         : [buildExchangeForSync()];
 
     const fetchedTrades: any[] = [];
@@ -572,7 +830,10 @@ export async function syncCcxtAccount(params: {
       created += result.count;
     }
 
-    const movementExchange = exchangeId === 'binance' ? buildExchangeForSync('spot') : buildExchangeForSync();
+    const movementExchange =
+      exchangeId === 'binance'
+        ? buildExchangeForSync({ defaultTypeOverride: 'spot' })
+        : buildExchangeForSync();
     await initializeCcxtExchange(movementExchange);
 
     const movements = await fetchMovementsForSync({
@@ -639,7 +900,10 @@ export async function syncCcxtAccount(params: {
   }
 
   if (mode === 'balances' || mode === 'full') {
-    const balanceExchange = exchangeId === 'binance' ? buildExchangeForSync('spot') : buildExchangeForSync();
+    const balanceExchange =
+      exchangeId === 'binance'
+        ? buildExchangeForSync({ forceSpotWalletProfile: true })
+        : buildExchangeForSync();
     await initializeCcxtExchange(balanceExchange);
     reconciled += await reconcileCcxtBalances({
       accountId: params.accountId,
@@ -648,6 +912,8 @@ export async function syncCcxtAccount(params: {
       asOf: now,
     });
   }
+
+  await updateAssetStatusesForAccount(params.accountId);
 
   await prisma.ccxtConnection.update({
     where: { account_id: params.accountId },
