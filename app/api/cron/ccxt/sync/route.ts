@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { syncCcxtAccount, type CcxtSyncMode } from '@/lib/ccxt/sync';
+import { type CcxtSyncMode } from '@/lib/ccxt/sync';
+import { enqueueCcxtSyncJob } from '@/lib/ccxt/syncJobs';
 import { isMissingSyncSinceColumnError, parseIsoInstant } from '@/lib/datetime';
 
 export const runtime = 'nodejs';
@@ -99,20 +100,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await syncCcxtAccount({
+    const queued = await enqueueCcxtSyncJob({
       accountId,
+      exchangeId: exchangeRaw,
       mode: modeRaw,
       since,
+      requestedBy: 'CRON',
     });
 
     return NextResponse.json({
       ok: true,
+      queued: true,
+      deduped: queued.deduped,
+      jobId: queued.jobId,
+      status: queued.status,
       accountId,
       exchange: exchangeRaw,
       mode: modeRaw,
       usedSinceOverride: Boolean(since),
-      result,
-    });
+    }, { status: 202 });
   } catch (error) {
     if (isMissingSyncSinceColumnError(error)) {
       return NextResponse.json(

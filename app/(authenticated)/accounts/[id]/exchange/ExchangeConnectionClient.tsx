@@ -23,6 +23,24 @@ type StatusPayload = {
   } | null;
 };
 
+type SyncQueueResponse = {
+  error?: string;
+  queued?: boolean;
+  deduped?: boolean;
+  jobId?: number;
+  status?: 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'FAILED';
+};
+
+type SyncJobStatusResponse = {
+  id: number;
+  status: 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'FAILED';
+  error_message: string | null;
+  result?: {
+    created?: number;
+    reconciled?: number;
+  } | null;
+};
+
 export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConnectionClientProps) {
   const [apiKey, setApiKey] = useState('');
   const [secret, setSecret] = useState('');
@@ -131,6 +149,30 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
     }
   }
 
+  async function pollSyncJob(jobId: number): Promise<SyncJobStatusResponse | null> {
+    const maxAttempts = 180;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const response = await fetch(`/api/ccxt/sync-jobs/${jobId}`, { cache: 'no-store' });
+      if (!response.ok) {
+        return null;
+      }
+
+      const data = (await response.json().catch(() => null)) as SyncJobStatusResponse | null;
+      if (!data) {
+        return null;
+      }
+
+      if (data.status === 'SUCCESS' || data.status === 'FAILED') {
+        return data;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+
+    return null;
+  }
+
   async function handleManualSync() {
     setSyncing(true);
     setMessage(null);
@@ -156,19 +198,34 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
         }),
       });
 
-      const data = (await response.json().catch(() => null)) as {
-        error?: string;
-        created?: number;
-        reconciled?: number;
-      } | null;
+      const queued = (await response.json().catch(() => null)) as SyncQueueResponse | null;
 
       if (!response.ok) {
-        setMessage(data?.error ?? 'Manual sync failed.');
+        setMessage(queued?.error ?? 'Manual sync failed to queue.');
+        return;
+      }
+
+      if (!queued?.jobId) {
+        setMessage('Manual sync was queued, but job id was missing.');
+        return;
+      }
+
+      setMessage(`Manual ${manualSyncMode} sync queued (job #${queued.jobId}). Waiting for completion...`);
+
+      const job = await pollSyncJob(queued.jobId);
+
+      if (!job) {
+        setMessage(`Manual ${manualSyncMode} sync queued (job #${queued.jobId}). Still running — refresh status in a moment.`);
+        return;
+      }
+
+      if (job.status === 'FAILED') {
+        setMessage(job.error_message ?? `Manual ${manualSyncMode} sync failed.`);
         return;
       }
 
       setMessage(
-        `Manual ${manualSyncMode} sync complete. Created ${data?.created ?? 0} ledger rows, reconciled ${data?.reconciled ?? 0} balances.`,
+        `Manual ${manualSyncMode} sync complete. Created ${job.result?.created ?? 0} ledger rows, reconciled ${job.result?.reconciled ?? 0} balances.`,
       );
       await loadStatus();
     } catch {
@@ -319,8 +376,8 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
               onChange={(event) => setManualSyncMode(event.target.value as CcxtSyncMode)}
               className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100"
             >
-              <option value="balances">balances (fast)</option>
               <option value="trades">trades</option>
+              <option value="balances">balances (fast)</option>
               <option value="full">full</option>
             </select>
           </label>

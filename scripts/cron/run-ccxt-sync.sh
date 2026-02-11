@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# CCXT sync runner (Binance / Bybit).
+# CCXT sync enqueue runner (Binance / Bybit).
 #
 # Expected env vars:
 #   CCXT_SYNC_ENDPOINT_URL (required) e.g. https://<host>/api/cron/ccxt/sync
@@ -49,7 +49,7 @@ fi
 LOCK_FILE="${LOCK_FILE:-/tmp/tiequan-ccxt-sync-${exchange_lc}-${CCXT_SYNC_ACCOUNT_ID}-${mode_lc}.lock}"
 
 run_sync() {
-  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] Triggering CCXT sync: exchange=${exchange_lc} accountId=${CCXT_SYNC_ACCOUNT_ID} mode=${mode_lc}"
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] Enqueuing CCXT sync: exchange=${exchange_lc} accountId=${CCXT_SYNC_ACCOUNT_ID} mode=${mode_lc}"
 
   local payload
   if [[ -n "${CCXT_SYNC_SINCE:-}" ]]; then
@@ -64,7 +64,7 @@ run_sync() {
     --data "$payload" \
     --fail --show-error --max-time "${CURL_MAX_TIME:-120}"
 
-  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] ✅ CCXT sync completed"
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] ✅ CCXT sync enqueue completed"
 }
 
 if command -v flock >/dev/null 2>&1; then

@@ -41,6 +41,7 @@ model Account {
   ledger_transactions      LedgerTransaction[]
   tradestation_connection TradeStationConnection?
   ccxt_connection         CcxtConnection?
+  ccxt_sync_jobs          CcxtSyncJob[]
 
   @@index([name])
 }
@@ -92,6 +93,30 @@ model CcxtConnection {
 
   @@index([exchange_id])
   @@index([status])
+}
+
+model CcxtSyncJob {
+  id           Int      @id @default(autoincrement())
+  account_id   Int
+  exchange_id  String
+  mode         String
+  since        DateTime?
+  requested_by String   @default("MANUAL")
+  status       String   @default("QUEUED")
+  attempts     Int      @default(0)
+  claim_token  String?
+  result_json  String?
+  error_message String?
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+  started_at   DateTime?
+  finished_at  DateTime?
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@index([status, created_at])
+  @@index([account_id, exchange_id, status])
+  @@index([created_at])
 }
 
 model LedgerTransaction {

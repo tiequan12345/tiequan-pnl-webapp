@@ -74,18 +74,30 @@ Example cron entry (every 30 minutes):
 */30 * * * * ENV_FILE=/etc/tiequan-pnl-webapp.env /bin/bash /path/to/repo/scripts/cron/run-tradestation-order-sync.sh >> /var/log/tiequan-tradestation-orders.log 2>&1
 ```
 
-## CCXT sync (Binance / Bybit)
+## CCXT sync queue (Binance / Bybit)
 
-Use the helper script `scripts/cron/run-ccxt-sync.sh` to run scheduled CCXT sync jobs.
+CCXT sync now runs as **async jobs**:
+1. enqueue jobs (`/api/cron/ccxt/sync`)
+2. process queue (`/api/cron/ccxt/sync-jobs`)
+
+Use both helper scripts:
+- `scripts/cron/run-ccxt-sync.sh` (enqueue)
+- `scripts/cron/run-ccxt-sync-worker.sh` (worker)
 
 ### Env file additions
 
 ```bash
-# App endpoint + auth token (token must match CCXT_CRON_SYNC_TOKEN in app env)
-CCXT_SYNC_ENDPOINT_URL="https://port.tiequan.app/api/cron/ccxt/sync"
+# Auth token must match CCXT_CRON_SYNC_TOKEN in app env
 CCXT_SYNC_AUTH_HEADER="Authorization: Bearer <token>"
 
-# You can define defaults here and override per cron line if needed
+# Enqueue endpoint
+CCXT_SYNC_ENDPOINT_URL="https://port.tiequan.app/api/cron/ccxt/sync"
+
+# Worker endpoint
+CCXT_SYNC_WORKER_ENDPOINT_URL="https://port.tiequan.app/api/cron/ccxt/sync-jobs"
+CCXT_SYNC_WORKER_MAX_JOBS="1"
+
+# You can define enqueue defaults here and override per cron line
 CCXT_SYNC_ACCOUNT_ID="4"
 CCXT_SYNC_EXCHANGE="binance"
 CCXT_SYNC_MODE="trades"
@@ -93,29 +105,33 @@ CCXT_SYNC_MODE="trades"
 # CCXT_SYNC_SINCE="2026-02-11T13:30:00.000Z"
 ```
 
-Make the script executable:
+Make the scripts executable:
 
 ```bash
 chmod +x /path/to/repo/scripts/cron/run-ccxt-sync.sh
+chmod +x /path/to/repo/scripts/cron/run-ccxt-sync-worker.sh
 ```
 
 Example cron entries:
 
 ```cron
-# Binance trades every 15 minutes
-*/15 * * * * ENV_FILE=/etc/tiequan-pnl-webapp.env CCXT_SYNC_ACCOUNT_ID=4 CCXT_SYNC_EXCHANGE=binance CCXT_SYNC_MODE=trades /bin/bash /path/to/repo/scripts/cron/run-ccxt-sync.sh >> /var/log/tiequan-ccxt-binance-trades.log 2>&1
+# Worker: process queued jobs every minute
+* * * * * ENV_FILE=/etc/tiequan-pnl-webapp.env /bin/bash /path/to/repo/scripts/cron/run-ccxt-sync-worker.sh >> /var/log/tiequan-ccxt-worker.log 2>&1
 
-# Bybit trades every 15 minutes, offset to reduce contention
-5,20,35,50 * * * * ENV_FILE=/etc/tiequan-pnl-webapp.env CCXT_SYNC_ACCOUNT_ID=5 CCXT_SYNC_EXCHANGE=bybit CCXT_SYNC_MODE=trades /bin/bash /path/to/repo/scripts/cron/run-ccxt-sync.sh >> /var/log/tiequan-ccxt-bybit-trades.log 2>&1
+# Binance trades enqueue every 15 minutes
+*/15 * * * * ENV_FILE=/etc/tiequan-pnl-webapp.env CCXT_SYNC_ACCOUNT_ID=4 CCXT_SYNC_EXCHANGE=binance CCXT_SYNC_MODE=trades /bin/bash /path/to/repo/scripts/cron/run-ccxt-sync.sh >> /var/log/tiequan-ccxt-binance-trades-enqueue.log 2>&1
 
-# Hourly balances reconcile for Binance
-10 * * * * ENV_FILE=/etc/tiequan-pnl-webapp.env CCXT_SYNC_ACCOUNT_ID=4 CCXT_SYNC_EXCHANGE=binance CCXT_SYNC_MODE=balances /bin/bash /path/to/repo/scripts/cron/run-ccxt-sync.sh >> /var/log/tiequan-ccxt-binance-balances.log 2>&1
+# Bybit trades enqueue every 15 minutes, offset to reduce contention
+5,20,35,50 * * * * ENV_FILE=/etc/tiequan-pnl-webapp.env CCXT_SYNC_ACCOUNT_ID=5 CCXT_SYNC_EXCHANGE=bybit CCXT_SYNC_MODE=trades /bin/bash /path/to/repo/scripts/cron/run-ccxt-sync.sh >> /var/log/tiequan-ccxt-bybit-trades-enqueue.log 2>&1
+
+# Hourly balances enqueue for Binance
+10 * * * * ENV_FILE=/etc/tiequan-pnl-webapp.env CCXT_SYNC_ACCOUNT_ID=4 CCXT_SYNC_EXCHANGE=binance CCXT_SYNC_MODE=balances /bin/bash /path/to/repo/scripts/cron/run-ccxt-sync.sh >> /var/log/tiequan-ccxt-binance-balances-enqueue.log 2>&1
 ```
 
 Notes:
 - If `CCXT_SYNC_SINCE` is omitted, the app uses saved `sync_since` by default.
 - Use absolute paths in cron entries.
-- The script uses `flock` (if available) to prevent overlapping runs for the same target account/exchange/mode.
+- Both scripts use `flock` (if available) to prevent overlapping runs.
 
 ## TradeStation daily cash reconciliation
 

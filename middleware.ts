@@ -9,6 +9,7 @@ const PUBLIC_PATHS = [
   '/api/prices/health',
   '/api/tradestation/sync',
   '/api/cron/ccxt/sync',
+  '/api/cron/ccxt/sync-jobs',
   // OAuth callbacks must be public so the broker can redirect back to us.
   '/api/tradestation/auth/callback'
 ];

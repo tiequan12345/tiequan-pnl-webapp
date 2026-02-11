@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { syncCcxtAccount, type CcxtSyncMode } from '@/lib/ccxt/sync';
+import { type CcxtSyncMode } from '@/lib/ccxt/sync';
+import { enqueueCcxtSyncJob } from '@/lib/ccxt/syncJobs';
 import { prisma } from '@/lib/db';
 import { isMissingSyncSinceColumnError, parseIsoInstant } from '@/lib/datetime';
 
@@ -21,6 +22,10 @@ function isSupportedExchange(value: string): value is 'binance' | 'bybit' {
 
 function expectedAccountType(exchange: 'binance' | 'bybit'): 'BINANCE' | 'BYBIT' {
   return exchange === 'binance' ? 'BINANCE' : 'BYBIT';
+}
+
+function isSupportedMode(value: string): value is CcxtSyncMode {
+  return value === 'trades' || value === 'balances' || value === 'full';
 }
 
 export async function GET(request: NextRequest, context: RouteContext) {
@@ -150,13 +155,34 @@ export async function POST(request: Request, context: RouteContext) {
       return NextResponse.json({ error: `No ${exchange.toUpperCase()} connection configured for this account.` }, { status: 404 });
     }
 
-    const result = await syncCcxtAccount({
+    const mode = (body?.mode ?? 'trades').trim().toLowerCase();
+    if (!isSupportedMode(mode)) {
+      return NextResponse.json(
+        { error: "mode must be one of 'trades', 'balances', or 'full'." },
+        { status: 400 },
+      );
+    }
+
+    const queued = await enqueueCcxtSyncJob({
       accountId,
-      mode: body?.mode,
+      exchangeId: exchange,
+      mode,
       since,
+      requestedBy: 'MANUAL',
     });
 
-    return NextResponse.json(result);
+    return NextResponse.json(
+      {
+        queued: true,
+        deduped: queued.deduped,
+        jobId: queued.jobId,
+        status: queued.status,
+        accountId,
+        exchange,
+        mode,
+      },
+      { status: 202 },
+    );
   } catch (error) {
     if (isMissingSyncSinceColumnError(error)) {
       return NextResponse.json(

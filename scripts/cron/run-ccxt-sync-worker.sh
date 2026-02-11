@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# CCXT sync queue worker runner.
+#
+# Expected env vars:
+#   CCXT_SYNC_WORKER_ENDPOINT_URL (required) e.g. https://<host>/api/cron/ccxt/sync-jobs
+#   CCXT_SYNC_AUTH_HEADER         (required) e.g. "Authorization: Bearer <token>"
+#   CCXT_SYNC_WORKER_MAX_JOBS     (optional) number of jobs to process per run (default: 1)
+#   ENV_FILE                      (optional) path to env file to source
+
+ENV_FILE="${ENV_FILE:-/etc/tiequan-pnl-webapp.env}"
+
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+fi
+
+: "${CCXT_SYNC_WORKER_ENDPOINT_URL:?CCXT_SYNC_WORKER_ENDPOINT_URL is required}"
+: "${CCXT_SYNC_AUTH_HEADER:?CCXT_SYNC_AUTH_HEADER is required}"
+
+CCXT_SYNC_WORKER_MAX_JOBS="${CCXT_SYNC_WORKER_MAX_JOBS:-1}"
+
+LOCK_FILE="${LOCK_FILE:-/tmp/tiequan-ccxt-sync-worker.lock}"
+
+run_worker() {
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] Triggering CCXT sync worker: maxJobs=${CCXT_SYNC_WORKER_MAX_JOBS}"
+
+  local payload
+  payload="{\"maxJobs\":${CCXT_SYNC_WORKER_MAX_JOBS}}"
+
+  curl -X POST "$CCXT_SYNC_WORKER_ENDPOINT_URL" \
+    -H "Content-Type: application/json" \
+    -H "$CCXT_SYNC_AUTH_HEADER" \
+    --data "$payload" \
+    --fail --show-error --max-time "${CURL_MAX_TIME:-120}"
+
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] ✅ CCXT sync worker completed"
+}
+
+if command -v flock >/dev/null 2>&1; then
+  exec 9>"$LOCK_FILE"
+  if ! flock -n 9; then
+    echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] CCXT sync worker already running; exiting." >&2
+    exit 0
+  fi
+  run_worker
+else
+  run_worker
+fi

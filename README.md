@@ -335,21 +335,29 @@ For first-time setup, `apiKey` and `secret` are required.
 
 ### Scheduling regular CCXT sync jobs (production)
 
-Use `scripts/cron/run-ccxt-sync.sh` with your server's absolute repo path.
+CCXT sync now uses an async queue:
+- `scripts/cron/run-ccxt-sync.sh` enqueues jobs
+- `scripts/cron/run-ccxt-sync-worker.sh` processes queued jobs
 
 Example:
 
 ```cron
-*/15 * * * * ENV_FILE=/etc/tiequan-pnl-webapp.env CCXT_SYNC_ACCOUNT_ID=4 CCXT_SYNC_EXCHANGE=binance CCXT_SYNC_MODE=trades /bin/bash /path/to/repo/scripts/cron/run-ccxt-sync.sh >> /var/log/tiequan-ccxt-binance-trades.log 2>&1
+# Worker every minute
+* * * * * ENV_FILE=/etc/tiequan-pnl-webapp.env /bin/bash /path/to/repo/scripts/cron/run-ccxt-sync-worker.sh >> /var/log/tiequan-ccxt-worker.log 2>&1
+
+# Enqueue Binance trades every 15 minutes
+*/15 * * * * ENV_FILE=/etc/tiequan-pnl-webapp.env CCXT_SYNC_ACCOUNT_ID=4 CCXT_SYNC_EXCHANGE=binance CCXT_SYNC_MODE=trades /bin/bash /path/to/repo/scripts/cron/run-ccxt-sync.sh >> /var/log/tiequan-ccxt-binance-trades-enqueue.log 2>&1
 ```
 
 Important:
 - `/path/to/repo` must match the production machine path (it may differ from local dev).
 - Set `CCXT_CRON_SYNC_TOKEN` in app env and send matching `Authorization: Bearer ...` in cron env (`CCXT_SYNC_AUTH_HEADER`).
+- Configure `CCXT_SYNC_WORKER_ENDPOINT_URL` to `/api/cron/ccxt/sync-jobs`.
 
 ### Manual sync behavior
 
-- `POST /api/ccxt/{exchange}/sync` uses the saved `sync_since` by default.
+- `POST /api/ccxt/{exchange}/sync` enqueues an async sync job and returns `202` with `jobId`.
+- The endpoint uses saved `sync_since` by default.
 - You can override that cutoff per run by passing `since` in the request body.
 - `since`/`syncSince` must be ISO 8601 with timezone (`Z` or `±HH:MM`) to avoid timezone ambiguity.
 
