@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { datetimeLocalToUtcIso, toLocalDateTimeInput } from '@/lib/datetime';
 
 type ExchangeConnectionClientProps = {
   accountId: number;
@@ -15,6 +16,7 @@ type StatusPayload = {
     status: string;
     sandbox: boolean;
     options_json: string | null;
+    sync_since: string | null;
     last_sync_at: string | null;
     last_trade_sync_at: string | null;
     metadata_json: string | null;
@@ -35,6 +37,8 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [manualSyncMode, setManualSyncMode] = useState<CcxtSyncMode>('trades');
+  const [syncSince, setSyncSince] = useState('');
+  const [manualSyncSinceOverride, setManualSyncSinceOverride] = useState('');
   const [message, setMessage] = useState<string | null>(null);
 
   const statusUrl = useMemo(
@@ -61,6 +65,10 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
       if (parsedOptions?.defaultSubType) setDefaultSubType(parsedOptions.defaultSubType);
       if (parsedOptions?.defaultSettle) setDefaultSettle(parsedOptions.defaultSettle);
       if (typeof data.connection?.sandbox === 'boolean') setSandbox(data.connection.sandbox);
+      if (data.connection?.sync_since) {
+        const localDatetime = toLocalDateTimeInput(data.connection.sync_since);
+        setSyncSince(localDatetime ?? '');
+      }
     } catch {
       setStatus(null);
     } finally {
@@ -78,6 +86,14 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
     setMessage(null);
 
     try {
+      if (syncSince) {
+        const parsedSyncSince = datetimeLocalToUtcIso(syncSince);
+        if (!parsedSyncSince) {
+          setMessage('Invalid Sync From date/time.');
+          return;
+        }
+      }
+
       const response = await fetch(`/api/ccxt/${exchangeId}/connect`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -87,6 +103,7 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
           secret,
           passphrase: passphrase || undefined,
           sandbox,
+          syncSince: syncSince ? datetimeLocalToUtcIso(syncSince) ?? undefined : undefined,
           options: {
             defaultType,
             defaultSubType,
@@ -119,12 +136,23 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
     setMessage(null);
 
     try {
+      if (manualSyncSinceOverride) {
+        const parsedOverride = datetimeLocalToUtcIso(manualSyncSinceOverride);
+        if (!parsedOverride) {
+          setMessage('Invalid manual sync override date/time.');
+          return;
+        }
+      }
+
       const response = await fetch(`/api/ccxt/${exchangeId}/sync`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           accountId,
           mode: manualSyncMode,
+          since: manualSyncSinceOverride
+            ? datetimeLocalToUtcIso(manualSyncSinceOverride) ?? undefined
+            : undefined,
         }),
       });
 
@@ -167,6 +195,7 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
           <div className="text-sm text-zinc-300 space-y-1">
             <p>Status: <span className="font-medium">{status.connection.status}</span></p>
             <p>Sandbox: <span className="font-medium">{String(status.connection.sandbox)}</span></p>
+            <p>Sync from: {status.connection.sync_since ? `${new Date(status.connection.sync_since).toLocaleString()} (${new Date(status.connection.sync_since).toISOString()})` : '—'}</p>
             <p>Last sync: {status.connection.last_sync_at ?? '—'}</p>
             <p>Last trade sync: {status.connection.last_trade_sync_at ?? '—'}</p>
           </div>
@@ -176,14 +205,13 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
       </div>
 
       <form onSubmit={handleSaveCredentials} className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 space-y-4">
-        <h3 className="text-sm font-medium text-zinc-200">Set / Update Credentials</h3>
+        <h3 className="text-sm font-medium text-zinc-200">Set / Update Credentials & Sync Settings</h3>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <label className="space-y-1 text-sm text-zinc-300">
-            <span>API Key</span>
+            <span>API Key (optional when already connected)</span>
             <input
               type="password"
-              required
               value={apiKey}
               onChange={(event) => setApiKey(event.target.value)}
               className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100"
@@ -191,10 +219,9 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
           </label>
 
           <label className="space-y-1 text-sm text-zinc-300">
-            <span>API Secret</span>
+            <span>API Secret (optional when already connected)</span>
             <input
               type="password"
-              required
               value={secret}
               onChange={(event) => setSecret(event.target.value)}
               className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100"
@@ -250,6 +277,28 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
               <option value="USDT">USDT</option>
               <option value="USDC">USDC</option>
             </select>
+          </label>
+
+          <label className="space-y-1 text-sm text-zinc-300">
+            <span>Sync From (optional)</span>
+            <input
+              type="datetime-local"
+              value={syncSince}
+              onChange={(event) => setSyncSince(event.target.value)}
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100"
+            />
+            <p className="text-xs text-zinc-500">Only sync trades/movements from this date onwards. Saved and applied in UTC. Leave empty to use default lookback. You can change this without re-entering API credentials.</p>
+          </label>
+
+          <label className="space-y-1 text-sm text-zinc-300">
+            <span>Manual Sync Override (optional)</span>
+            <input
+              type="datetime-local"
+              value={manualSyncSinceOverride}
+              onChange={(event) => setManualSyncSinceOverride(event.target.value)}
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100"
+            />
+            <p className="text-xs text-zinc-500">Manual sync uses saved Sync From by default. Set this only to override for one run.</p>
           </label>
         </div>
 

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import ccxt from 'ccxt';
 import { prisma } from '@/lib/db';
-import { encrypt } from '@/lib/crypto';
+import { decrypt, encrypt } from '@/lib/crypto';
 import {
   resolveCcxtProxyUrl,
   serializeOptions,
@@ -9,6 +9,7 @@ import {
   type CcxtClientOptions,
   type CcxtExchangeId,
 } from '@/lib/ccxt/client';
+import { isMissingSyncSinceColumnError, parseIsoInstant } from '@/lib/datetime';
 
 export const runtime = 'nodejs';
 
@@ -23,6 +24,7 @@ type ConnectPayload = {
   passphrase?: string;
   sandbox?: boolean;
   options?: CcxtClientOptions;
+  syncSince?: string;
   verify?: boolean;
 };
 
@@ -53,13 +55,17 @@ export async function POST(request: Request, context: RouteContext) {
     const secret = body?.secret?.trim();
     const passphrase = body?.passphrase?.trim() || undefined;
     const sandbox = Boolean(body?.sandbox);
+    const syncSince = body?.syncSince ? parseIsoInstant(body.syncSince) : undefined;
 
     if (!accountId || !Number.isFinite(accountId) || accountId <= 0) {
       return NextResponse.json({ error: 'accountId is required.' }, { status: 400 });
     }
 
-    if (!apiKey || !secret) {
-      return NextResponse.json({ error: 'apiKey and secret are required.' }, { status: 400 });
+    if (body?.syncSince && !syncSince) {
+      return NextResponse.json(
+        { error: 'Invalid syncSince date. Use ISO 8601 with timezone (UTC recommended).' },
+        { status: 400 },
+      );
     }
 
     const account = await prisma.account.findUnique({
@@ -81,6 +87,28 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
+    const existingConnection = await prisma.ccxtConnection.findUnique({
+      where: { account_id: accountId },
+      select: {
+        api_key_enc: true,
+        api_secret_enc: true,
+        passphrase_enc: true,
+      },
+    });
+
+    const effectiveApiKeyEnc = apiKey ? encrypt(apiKey) : existingConnection?.api_key_enc;
+    const effectiveSecretEnc = secret ? encrypt(secret) : existingConnection?.api_secret_enc;
+    const effectivePassphraseEnc = passphrase
+      ? encrypt(passphrase)
+      : existingConnection?.passphrase_enc ?? null;
+
+    if (!effectiveApiKeyEnc || !effectiveSecretEnc) {
+      return NextResponse.json(
+        { error: 'apiKey and secret are required for first-time connection setup.' },
+        { status: 400 },
+      );
+    }
+
     const optionsJson = serializeOptions(body?.options);
 
     const shouldVerify = body?.verify !== false;
@@ -88,12 +116,22 @@ export async function POST(request: Request, context: RouteContext) {
     if (shouldVerify) {
       const verification = await testConnection({
         exchangeId: exchange,
-        credentials: {
-          apiKey,
-          secret,
-          passphrase,
-          encrypted: false,
-        },
+        credentials:
+          apiKey && secret
+            ? {
+                apiKey,
+                secret,
+                passphrase:
+                  passphrase ??
+                  (existingConnection?.passphrase_enc ? decrypt(existingConnection.passphrase_enc) : undefined),
+                encrypted: false,
+              }
+            : {
+                apiKey: effectiveApiKeyEnc,
+                secret: effectiveSecretEnc,
+                passphrase: effectivePassphraseEnc ?? undefined,
+                encrypted: true,
+              },
         sandbox,
         options: body?.options,
       });
@@ -103,11 +141,12 @@ export async function POST(request: Request, context: RouteContext) {
           where: { account_id: accountId },
           update: {
             exchange_id: exchange,
-            api_key_enc: encrypt(apiKey),
-            api_secret_enc: encrypt(secret),
-            passphrase_enc: passphrase ? encrypt(passphrase) : null,
+            api_key_enc: effectiveApiKeyEnc,
+            api_secret_enc: effectiveSecretEnc,
+            passphrase_enc: effectivePassphraseEnc,
             options_json: optionsJson,
             sandbox,
+            sync_since: syncSince,
             status: 'ERROR',
             metadata_json: JSON.stringify({
               lastError: verification.error ?? 'Authentication failed',
@@ -117,11 +156,12 @@ export async function POST(request: Request, context: RouteContext) {
           create: {
             account_id: accountId,
             exchange_id: exchange,
-            api_key_enc: encrypt(apiKey),
-            api_secret_enc: encrypt(secret),
-            passphrase_enc: passphrase ? encrypt(passphrase) : null,
+            api_key_enc: effectiveApiKeyEnc,
+            api_secret_enc: effectiveSecretEnc,
+            passphrase_enc: effectivePassphraseEnc,
             options_json: optionsJson,
             sandbox,
+            sync_since: syncSince,
             status: 'ERROR',
             metadata_json: JSON.stringify({
               lastError: verification.error ?? 'Authentication failed',
@@ -149,22 +189,24 @@ export async function POST(request: Request, context: RouteContext) {
       where: { account_id: accountId },
       update: {
         exchange_id: exchange,
-        api_key_enc: encrypt(apiKey),
-        api_secret_enc: encrypt(secret),
-        passphrase_enc: passphrase ? encrypt(passphrase) : null,
+        api_key_enc: effectiveApiKeyEnc,
+        api_secret_enc: effectiveSecretEnc,
+        passphrase_enc: effectivePassphraseEnc,
         options_json: optionsJson,
         sandbox,
+        sync_since: syncSince,
         status: 'ACTIVE',
         metadata_json: null,
       },
       create: {
         account_id: accountId,
         exchange_id: exchange,
-        api_key_enc: encrypt(apiKey),
-        api_secret_enc: encrypt(secret),
-        passphrase_enc: passphrase ? encrypt(passphrase) : null,
+        api_key_enc: effectiveApiKeyEnc,
+        api_secret_enc: effectiveSecretEnc,
+        passphrase_enc: effectivePassphraseEnc,
         options_json: optionsJson,
         sandbox,
+        sync_since: syncSince,
         status: 'ACTIVE',
       },
       select: {
@@ -173,6 +215,7 @@ export async function POST(request: Request, context: RouteContext) {
         status: true,
         options_json: true,
         sandbox: true,
+        sync_since: true,
         last_sync_at: true,
         updated_at: true,
       },
@@ -183,6 +226,13 @@ export async function POST(request: Request, context: RouteContext) {
       connection,
     });
   } catch (error) {
+    if (isMissingSyncSinceColumnError(error)) {
+      return NextResponse.json(
+        { error: 'Database migration required: run Prisma migrations before using sync_since fields.' },
+        { status: 503 },
+      );
+    }
+
     const message =
       error instanceof ccxt.AuthenticationError
         ? error.message

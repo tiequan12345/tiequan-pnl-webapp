@@ -808,6 +808,9 @@ export async function syncCcxtAccount(params: {
     throw new Error('CCXT connection not found for account.');
   }
 
+  // Use explicit since param, or fall back to connection's sync_since setting
+  const effectiveSince = params.since ?? connection.sync_since ?? undefined;
+
   if (!isSupportedExchangeId(connection.exchange_id)) {
     throw new Error(`Unsupported exchange_id '${connection.exchange_id}'.`);
   }
@@ -925,7 +928,7 @@ export async function syncCcxtAccount(params: {
 
       const trades = await fetchTradesForSync({
         exchange,
-        since: params.since,
+        since: effectiveSince,
         marketScope: profile.marketScope,
       });
 
@@ -1001,7 +1004,7 @@ export async function syncCcxtAccount(params: {
     const movements = await fetchMovementsForSync({
       exchange: movementExchange,
       exchangeId,
-      since: params.since,
+      since: effectiveSince,
     });
 
     if (movements.length > 0) {

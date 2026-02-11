@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { isMissingSyncSinceColumnError } from '@/lib/datetime';
 
 export const runtime = 'nodejs';
 
 function isSupportedExchange(value: string): value is 'binance' | 'bybit' {
   return value === 'binance' || value === 'bybit';
+}
+
+function expectedAccountType(exchange: 'binance' | 'bybit'): 'BINANCE' | 'BYBIT' {
+  return exchange === 'binance' ? 'BINANCE' : 'BYBIT';
 }
 
 type RouteContext = {
@@ -26,6 +31,23 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'accountId is required.' }, { status: 400 });
     }
 
+    const account = await prisma.account.findUnique({
+      where: { id: accountId },
+      select: { id: true, account_type: true },
+    });
+
+    if (!account) {
+      return NextResponse.json({ error: 'Account not found.' }, { status: 404 });
+    }
+
+    const expectedType = expectedAccountType(exchange);
+    if (account.account_type !== expectedType) {
+      return NextResponse.json(
+        { error: `Account type mismatch. Route '${exchange}' requires account_type='${expectedType}'.` },
+        { status: 400 },
+      );
+    }
+
     const connection = await prisma.ccxtConnection.findUnique({
       where: { account_id: accountId },
       select: {
@@ -34,6 +56,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         status: true,
         options_json: true,
         sandbox: true,
+        sync_since: true,
         last_sync_at: true,
         last_trade_sync_at: true,
         last_trade_cursor: true,
@@ -49,7 +72,14 @@ export async function GET(request: NextRequest, context: RouteContext) {
       connected: Boolean(matching),
       connection: matching,
     });
-  } catch {
+  } catch (error) {
+    if (isMissingSyncSinceColumnError(error)) {
+      return NextResponse.json(
+        { error: 'Database migration required: run Prisma migrations before using sync_since fields.' },
+        { status: 503 },
+      );
+    }
+
     return NextResponse.json({ error: 'Failed to fetch CCXT status.' }, { status: 500 });
   }
 }

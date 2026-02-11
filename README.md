@@ -302,6 +302,63 @@ This pulls the TradeStation **Balances** endpoint and creates/updates a single d
 
 This only prices option contracts that appear in **current positions**.
 
+## CCXT Integration (Binance / Bybit)
+
+CCXT routes are protected by the same session middleware used by the rest of the app (`app_session` cookie).
+
+### Sync window and UTC behavior
+
+- `CcxtConnection.sync_since` is persisted as an absolute UTC timestamp.
+- In the exchange connection UI, `Sync From` is entered via local `datetime-local`, then converted to UTC ISO before save.
+- Status displays both local time and UTC (`.toISOString()`) for clarity.
+
+#### How to set or change `Sync From`
+
+**UI**
+1. Go to `Accounts -> {account} -> Exchange`.
+2. Set **Sync From (optional)**.
+3. Click **Save Credentials**.
+
+If the connection already exists, API key/secret fields are optional for this update (you can update `Sync From` without re-entering credentials).
+
+**API**
+Use `POST /api/ccxt/{exchange}/connect` with `syncSince` as timezone-qualified ISO:
+
+```json
+{
+  "accountId": 42,
+  "syncSince": "2026-02-11T13:30:00.000Z"
+}
+```
+
+For first-time setup, `apiKey` and `secret` are required.
+
+### Scheduling regular CCXT sync jobs (production)
+
+Use `scripts/cron/run-ccxt-sync.sh` with your server's absolute repo path.
+
+Example:
+
+```cron
+*/15 * * * * ENV_FILE=/etc/tiequan-pnl-webapp.env CCXT_SYNC_ACCOUNT_ID=4 CCXT_SYNC_EXCHANGE=binance CCXT_SYNC_MODE=trades /bin/bash /path/to/repo/scripts/cron/run-ccxt-sync.sh >> /var/log/tiequan-ccxt-binance-trades.log 2>&1
+```
+
+Important:
+- `/path/to/repo` must match the production machine path (it may differ from local dev).
+- Set `CCXT_CRON_SYNC_TOKEN` in app env and send matching `Authorization: Bearer ...` in cron env (`CCXT_SYNC_AUTH_HEADER`).
+
+### Manual sync behavior
+
+- `POST /api/ccxt/{exchange}/sync` uses the saved `sync_since` by default.
+- You can override that cutoff per run by passing `since` in the request body.
+- `since`/`syncSince` must be ISO 8601 with timezone (`Z` or `±HH:MM`) to avoid timezone ambiguity.
+
+### API checks and migration note
+
+- CCXT `connect`, `status`, and `sync` routes validate account type (`BINANCE`/`BYBIT`) against route exchange.
+- If `sync_since` column is missing (migration not applied), routes return `503` with a migration-required message.
+- Deploy flow should run Prisma migrations before app startup (`pnpm run prisma:migrate:deploy`).
+
 ## Pricing API Endpoints
 
 The application provides several endpoints for price management and monitoring:
@@ -684,7 +741,7 @@ High-level steps:
 4. **Migrate + build**:
    - `pnpm install`
    - `pnpm run prisma:generate`
-   - `pnpm run prisma:migrate`
+   - `pnpm run prisma:migrate:deploy`
    - `pnpm run build`
 5. **Run with PM2**: Use `ecosystem.config.js`.
 6. **Schedule refresh**: Add the hourly `crontab` entry (see `scripts/cron/README.md`).

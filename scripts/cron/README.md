@@ -29,6 +29,8 @@ chmod +x /path/to/repo/scripts/cron/run-price-refresh.sh
 
 ## 3) Install the cron entry
 
+Tip: in production, your repo path may differ from local dev. Use the real absolute path on that machine (for example `/home/ubuntu/tiequan-pnl-webapp`), not your local path.
+
 Edit crontab:
 
 ```bash
@@ -71,6 +73,49 @@ Example cron entry (every 30 minutes):
 ```cron
 */30 * * * * ENV_FILE=/etc/tiequan-pnl-webapp.env /bin/bash /path/to/repo/scripts/cron/run-tradestation-order-sync.sh >> /var/log/tiequan-tradestation-orders.log 2>&1
 ```
+
+## CCXT sync (Binance / Bybit)
+
+Use the helper script `scripts/cron/run-ccxt-sync.sh` to run scheduled CCXT sync jobs.
+
+### Env file additions
+
+```bash
+# App endpoint + auth token (token must match CCXT_CRON_SYNC_TOKEN in app env)
+CCXT_SYNC_ENDPOINT_URL="https://port.tiequan.app/api/cron/ccxt/sync"
+CCXT_SYNC_AUTH_HEADER="Authorization: Bearer <token>"
+
+# You can define defaults here and override per cron line if needed
+CCXT_SYNC_ACCOUNT_ID="4"
+CCXT_SYNC_EXCHANGE="binance"
+CCXT_SYNC_MODE="trades"
+# Optional one-off override cutoff (ISO 8601 with timezone)
+# CCXT_SYNC_SINCE="2026-02-11T13:30:00.000Z"
+```
+
+Make the script executable:
+
+```bash
+chmod +x /path/to/repo/scripts/cron/run-ccxt-sync.sh
+```
+
+Example cron entries:
+
+```cron
+# Binance trades every 15 minutes
+*/15 * * * * ENV_FILE=/etc/tiequan-pnl-webapp.env CCXT_SYNC_ACCOUNT_ID=4 CCXT_SYNC_EXCHANGE=binance CCXT_SYNC_MODE=trades /bin/bash /path/to/repo/scripts/cron/run-ccxt-sync.sh >> /var/log/tiequan-ccxt-binance-trades.log 2>&1
+
+# Bybit trades every 15 minutes, offset to reduce contention
+5,20,35,50 * * * * ENV_FILE=/etc/tiequan-pnl-webapp.env CCXT_SYNC_ACCOUNT_ID=5 CCXT_SYNC_EXCHANGE=bybit CCXT_SYNC_MODE=trades /bin/bash /path/to/repo/scripts/cron/run-ccxt-sync.sh >> /var/log/tiequan-ccxt-bybit-trades.log 2>&1
+
+# Hourly balances reconcile for Binance
+10 * * * * ENV_FILE=/etc/tiequan-pnl-webapp.env CCXT_SYNC_ACCOUNT_ID=4 CCXT_SYNC_EXCHANGE=binance CCXT_SYNC_MODE=balances /bin/bash /path/to/repo/scripts/cron/run-ccxt-sync.sh >> /var/log/tiequan-ccxt-binance-balances.log 2>&1
+```
+
+Notes:
+- If `CCXT_SYNC_SINCE` is omitted, the app uses saved `sync_since` by default.
+- Use absolute paths in cron entries.
+- The script uses `flock` (if available) to prevent overlapping runs for the same target account/exchange/mode.
 
 ## TradeStation daily cash reconciliation
 

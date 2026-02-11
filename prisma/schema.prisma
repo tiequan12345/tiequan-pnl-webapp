@@ -82,6 +82,7 @@ model CcxtConnection {
   last_sync_at      DateTime?
   last_trade_sync_at DateTime?
   last_trade_cursor String?
+  sync_since        DateTime?
 
   metadata_json     String?
   created_at        DateTime @default(now())

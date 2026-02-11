@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { syncCcxtAccount, type CcxtSyncMode } from '@/lib/ccxt/sync';
+import { prisma } from '@/lib/db';
+import { isMissingSyncSinceColumnError, parseIsoInstant } from '@/lib/datetime';
 
 export const runtime = 'nodejs';
 
@@ -15,6 +17,10 @@ type SyncPayload = {
 
 function isSupportedExchange(value: string): value is 'binance' | 'bybit' {
   return value === 'binance' || value === 'bybit';
+}
+
+function expectedAccountType(exchange: 'binance' | 'bybit'): 'BINANCE' | 'BYBIT' {
+  return exchange === 'binance' ? 'BINANCE' : 'BYBIT';
 }
 
 export async function GET(request: NextRequest, context: RouteContext) {
@@ -52,7 +58,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   </div>
 
   <div style="margin: 10px 0;">
-    <label>Since (optional ISO date): </label>
+    <label>Since (optional ISO date with timezone): </label>
     <input id="since" style="width: 360px" placeholder="2026-01-01T00:00:00.000Z" />
   </div>
 
@@ -110,9 +116,38 @@ export async function POST(request: Request, context: RouteContext) {
       return NextResponse.json({ error: 'accountId is required.' }, { status: 400 });
     }
 
-    const since = body?.since ? new Date(body.since) : undefined;
-    if (body?.since && (!since || Number.isNaN(since.getTime()))) {
-      return NextResponse.json({ error: 'Invalid since date.' }, { status: 400 });
+    const since = body?.since ? (parseIsoInstant(body.since) ?? undefined) : undefined;
+    if (body?.since && !since) {
+      return NextResponse.json(
+        { error: 'Invalid since date. Use ISO 8601 with timezone (UTC recommended).' },
+        { status: 400 },
+      );
+    }
+
+    const account = await prisma.account.findUnique({
+      where: { id: accountId },
+      select: { id: true, account_type: true },
+    });
+
+    if (!account) {
+      return NextResponse.json({ error: 'Account not found.' }, { status: 404 });
+    }
+
+    const expectedType = expectedAccountType(exchange);
+    if (account.account_type !== expectedType) {
+      return NextResponse.json(
+        { error: `Account type mismatch. Route '${exchange}' requires account_type='${expectedType}'.` },
+        { status: 400 },
+      );
+    }
+
+    const connection = await prisma.ccxtConnection.findUnique({
+      where: { account_id: accountId },
+      select: { exchange_id: true },
+    });
+
+    if (!connection || connection.exchange_id !== exchange) {
+      return NextResponse.json({ error: `No ${exchange.toUpperCase()} connection configured for this account.` }, { status: 404 });
     }
 
     const result = await syncCcxtAccount({
@@ -123,6 +158,13 @@ export async function POST(request: Request, context: RouteContext) {
 
     return NextResponse.json(result);
   } catch (error) {
+    if (isMissingSyncSinceColumnError(error)) {
+      return NextResponse.json(
+        { error: 'Database migration required: run Prisma migrations before using sync_since fields.' },
+        { status: 503 },
+      );
+    }
+
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to sync CCXT account.' },
       { status: 500 },
