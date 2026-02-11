@@ -34,7 +34,7 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [manualSyncMode, setManualSyncMode] = useState<CcxtSyncMode>('balances');
+  const [manualSyncMode, setManualSyncMode] = useState<CcxtSyncMode>('trades');
   const [message, setMessage] = useState<string | null>(null);
 
   const statusUrl = useMemo(

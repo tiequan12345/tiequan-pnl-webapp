@@ -436,41 +436,835 @@ From `python/ccxt/bybit.py` `describe()['has']`:
 
 ---
 
-## 8. Symbol Format & Normalization
+## 8. Futures & Derivatives API
 
-### Unified Symbol Format
+Both Binance and Bybit support futures/derivatives trading with **differentiated market types** and API shapes.
 
-CCXT uses **standardized symbol format**: `BASE/QUOTE[:SETTLEMENT]`
+### Market Type Selection
 
-**Examples**:
-- `BTC/USDT` → Spot BTC/USDT
-- `BTC/USDT:USDT` → Linear perpetual swap (USDT-margined)
-- `BTC/USD:BTC` → Inverse perpetual swap (BTC-margined)
-- `BTC/USD:ETH-220930` → Delivery future (expiring Sept 30, 2022)
-- `BTC/USD:USDC` → USDC-margined swap
-
-### Symbol Resolution
+#### Binance
 
 ```python
-exchange.load_markets()
-market = exchange.market('BTC/USDT:USDT')
-# Returns full market object with:
-# - id: exchange-specific ID (e.g., 'BTCUSDT')
-# - symbol: unified symbol
-# - base: 'BTC'
-# - quote: 'USDT'
-# - settle: 'USDT' (for derivatives)
-# - type: 'swap' | 'future' | 'spot' | 'option'
-# - linear: True | False
-# - inverse: True | False
-# - active: True | False
-# - precision: {price, amount, cost}
-# - limits: {amount, price, cost, leverage, etc.}
+exchange = ccxt.binance({
+    'options': {
+        'defaultType': 'linear',   # USDT/M futures (perpetual & delivery)
+        # OR
+        'defaultType': 'inverse',  # Coin-margined futures (COIN-M)
+        # OR
+        'defaultType': 'future',   # Legacy alias for 'linear'
+        # OR
+        'defaultType': 'delivery', # Legacy alias for 'inverse'
+    }
+})
+```
+
+**Important**: Binance's `defaultType` determines which API endpoints are used:
+- `'spot'` → `/api/v3/*`, `/sapi/v1/*`
+- `'linear'`/`'future'` → `/fapi/*` (USDTⓈ-M) and `/dapi/*` (coin-margined is actually inverse)
+- `'inverse'`/`'delivery'` → `/dapi/*` (COIN-M delivery/quarterly)
+- `'margin'` → margin spot endpoints
+
+#### Bybit
+
+```python
+exchange = ccxt.bybit({
+    'options': {
+        'defaultType': 'swap',      # Perpetual swaps (default)
+        # OR
+        'defaultType': 'future',    # Delivery futures
+        # OR
+        'defaultType': 'option',    # Options
+        # OR
+        'defaultType': 'spot',      # Spot trading
+        
+        'defaultSubType': 'linear',  # USDT/USDC-margined (default)
+        # OR
+        'defaultSubType': 'inverse', # Coin-margined (BTC/USD:BTC)
+        
+        'defaultSettle': 'USDT',      # Settlement currency (USDT or USDC)
+    }
+})
+```
+
+### Symbol Conventions for Futures
+
+| Exchange | Linear (USDT/USDC) | Inverse (Coin) | Delivery |
+|----------|--------------------|----------------|----------|
+| **Binance** | `BTC/USDT:USDT` | `BTC/USD:BTC` | `BTC/USD:BTC-240927` |
+| **Bybit** | `BTC/USDT:USDT` | `BTC/USD:BTC` | `BTC/USD:BTC-240927` |
+
+**Notes**:
+- Linear: Quote currency = settlement currency (USDT or USDC)
+- Inverse: Quote currency = base currency (BTC), settlement is in base coin
+- Delivery: Includes expiry date in symbol
+
+### API Endpoint Mapping
+
+Understanding the underlying REST endpoints helps when debugging or using raw API calls.
+
+#### Binance REST Endpoints
+
+| Purpose | Spot | Linear (USDTⓈ-M) | Inverse (COIN-M) |
+|---------|------|-------------------|------------------|
+| **Market Data** | `/api/v3/*` | `/fapi/v1/*` | `/dapi/v1/*` |
+| **Account/Trading** | `/sapi/v1/*` | `/fapi/v1/*` | `/dapi/v1/*` |
+| **WebSocket** | `wss://stream.binance.com:9443` | `wss://fstream.binance.com` | `wss://dstream.binance.com` |
+
+**Examples**:
+```python
+# Public endpoints
+public GET /fapi/v1/ticker/24hr           # ticker (linear)
+public GET /dapi/v1/ticker/24hr           # ticker (inverse)
+public GET /fapi/v1/klines                # OHLCV (linear)
+
+# Private endpoints
+private GET /fapi/v1/account              # balance (linear)
+private GET /dapi/v1/account              # balance (inverse)
+private POST /fapi/v1/order               # create order (linear)
+```
+
+#### Bybit REST Endpoints
+
+| Purpose | Spot | Linear (USDT/USDC) | Inverse | Options |
+|---------|------|--------------------|---------|---------|
+| **Public** | `/spot/v3/*` | `/v5/market/*` | `/v5/market/*` | `/v5/market/*` |
+| **Private** | `/spot/v3/*` | `/v5/account/*` | `/v5/account/*` | `/v5/account/*` |
+| **WebSocket** | `wss://stream.bybit.com/v5` (all) | | | |
+
+**CCXT routes to endpoints automatically** based on `defaultType` and symbol:
+```python
+# Under the hood:
+# 'BTC/USDT:USDT' + defaultType='swap' → private/v5/order/create (category=linear)
+# 'BTC/USD:BTC' + defaultType='swap' → private/v5/order/create (category=inverse)
+```
+
+### Response Format Differences
+
+#### Binance
+
+```python
+# Typical response structure
+{
+  "code": 0,           # or negative for error (legacy)
+  "msg": "success",
+  "timestamp": 1672376496682,
+  "result": { ... }    # actual data
+}
+```
+
+**Weight-based rate limits**:
+```python
+# Each endpoint has a weight cost (declared in api docs)
+# CCXT tracks cumulative weight and enforces 1200/min limit
+response = exchange.fetch_ticker('BTC/USDT')  # weight = 1
+markets = exchange.load_markets()            # weight varies (50-500+)
+```
+
+#### Bybit
+
+```python
+# Typical response structure (V5)
+{
+  "retCode": 0,        # 0 = success
+  "retMsg": "OK",
+  "result": { ... },   # actual data
+  "time": "1672376496682",
+  "ratelimit": "20"    # rate limit remaining
+}
+```
+
+**Rate limit headers**:
+- `X-Bapi-Limit-Status`: remaining requests
+- `X-Bapi-Limit-Reset`: reset timestamp
+
+### Implicit API (Low-Level Access)
+
+CCXT exposes exchange-specific raw methods if needed:
+
+```python
+# Binance: Call endpoint directly
+# These map to: publicGetV3TickerPrice or privatePostV3Order
+ticker = exchange.publicGetV3TickerPrice({'symbol': 'BTCUSDT'})
+order = exchange.privatePostV3Order({
+    'symbol': 'BTCUSDT',
+    'side': 'BUY',
+    'type': 'LIMIT',
+    'timeInForce': 'GTC',
+    'quantity': '0.001',
+    'price': '50000',
+    'newClientOrderId': 'myorder1',
+})
+
+# Bybit: V5 endpoints
+ticker = exchange.publicGetV5MarketTickers({
+    'category': 'linear',
+    'symbol': 'BTCUSDT'
+})
+balance = exchange.privateGetV5AccountWalletBalance({
+    'accountType': 'CONTRACT',
+    'coin': 'USDT'
+})
+```
+
+**Common pattern**:
+```python
+# Implicit method naming: <access><version><endpoint>
+# access: public | private
+# version: V2 | V3 | V5 (exchange-specific)
+# endpoint: e.g. MarketTickers, AccountWalletBalance
+
+# Automatically generated from ImplicitAPI in abstract/<exchange>.py
 ```
 
 ---
 
-## 9. Timeframes
+### Futures Implementation Examples
+
+**Example symbols**:
+```python
+# Binance Linear Perpetual
+'BTC/USDT:USDT'
+'ETH/USDT:USDT'
+
+# Binance Inverse Perpetual
+'BTC/USD:BTC'
+'ETH/USD:ETH'
+
+# Bybit USDC Perpetual
+'BTC/USD:USDC'
+'ETH/USD:USDC'
+
+# Bybit Inverse Perpetual
+'BTC/USD:BTC'
+'ETH/USD:ETH'
+
+# Delivery Future (expiring)
+'BTC/USD:BTC-240927'  # Sept 27, 2024
+```
+
+### Futures Balance
+
+Returns **multi-currency wallet balances** across spot, futures, margin accounts.
+
+```python
+# Fetch total balance (all currencies, all accounts)
+balance = exchange.fetch_balance()
+# Structure:
+# {
+#   'BTC': {'free': 1.0, 'used': 0.5, 'total': 1.5},
+#   'USDT': {'free': 10000.0, 'used': 5000.0, 'total': 15000.0},
+#   'info': {
+#     'totalWalletBalance': '15000.5',  # total across all sub-accounts
+#     'totalCrossWalletBalance': '10000.0',
+#     'totalIsolatedWalletBalance': '5000.5',
+#   },
+#   'timestamp': ...,
+#   'datetime': ...
+# }
+```
+
+**Fetching specific account type**:
+
+```python
+# Bybit: fetch USDC balance specifically
+balance = exchange.fetch_balance({'settle': 'USDC'})
+
+# Binance: Use options to target futures wallet
+exchange.options['defaultType'] = 'linear'
+balance = exchange.fetch_balance()
+# Will return futures wallet balances
+```
+
+### Positions
+
+```python
+# Fetch all open positions
+positions = exchange.fetch_positions(
+    symbols=['BTC/USDT:USDT', 'ETH/USDT:USDT'],  # optional filter
+    params={}
+)
+# Returns: [
+#   {
+#     'symbol': 'BTC/USDT:USDT',
+#     'contracts': 1.0,           # position size in contracts
+#     'contractSize': 0.001,      # BTC per contract (usually 0.001 for BTCUSDT)
+#     'side': 'long',             # 'long' or 'short'
+#     'notional': 50000.0,        # position value in quote currency
+#     'leverage': 10.0,           # current leverage
+#     'entryPrice': 49000.0,      # average entry price
+#     'markPrice': 50000.0,       # current mark price
+#     'liquidationPrice': 45000.0,# liquidation price
+#     'marginType': 'isolated',   # 'isolated' or 'cross'
+#     'positionId': '123456',
+#     'unrealizedPnl': 1000.0,
+#     'percentage': 2.04,         # unrealized PnL %
+#     'timestamp': ...,
+#     'info': {}
+#   }
+# ]
+```
+
+**Position-specific operations**:
+
+```python
+# Fetch single position
+position = exchange.fetch_position('BTC/USDT:USDT')
+
+# Set leverage
+exchange.set_leverage(10, 'BTC/USDT:USDT')
+
+# Set margin mode
+exchange.set_margin_mode('isolated', 'BTC/USDT:USDT')  # or 'cross'
+
+# Close position (reduce-only order)
+order = exchange.create_market_sell_order(
+    'BTC/USDT:USDT',
+    amount=position['contracts'],
+    params={'reduce_only': True}
+)
+```
+
+### Funding Rates (Perpetual Swaps)
+
+```python
+# Current funding rate
+funding = exchange.fetch_funding_rate('BTC/USDT:USDT')
+# Returns:
+# {
+#   'symbol': 'BTC/USDT:USDT',
+#   'fundingRate': 0.0001,       # 0.01% per 8 hours
+#   'fundingTimestamp': 1672376400000,
+#   'nextFundingTime': 1672401600000,
+#   'timestamp': ...,
+#   'info': {}
+# }
+
+# Historical funding rates
+funding_history = exchange.fetch_funding_rate_history(
+    'BTC/USDT:USDT',
+    since=1672376400000,
+    limit=100
+)
+# [[timestamp, rate], ...]
+```
+
+**Note**: Bybit marks `fetch_funding_rate` as "emulated" - for precise values use `fetch_funding_rates()`.
+
+### OHLCV for Futures
+
+Same API as spot, but on futures symbols:
+
+```python
+# Fetch perpetual swap candles
+ohlcv = exchange.fetch_ohlcv(
+    'BTC/USDT:USDT',
+    timeframe='1h',
+    limit=200
+)
+
+# Fetch mark price candles (Bybit)
+ohlcv = exchange.fetch_ohlcv(
+    'BTC/USDT:USDT',
+    '1h',
+    params={'price': 'mark'}  # 'mark', 'index', or 'premiumIndex'
+)
+
+# Fetch index price (Binance)
+ohlcv = exchange.fetch_index_ohlcv('BTC/USDT:USDT', '1h', limit=100)
+```
+
+### Order Placement on Futures
+
+```python
+# Linear perpetual (USDT-margined)
+order = exchange.create_order(
+    symbol='BTC/USDT:USDT',
+    type='market',  # or 'limit'
+    side='buy',      # or 'sell'
+    amount=1.0,      # in contracts (or base currency for limit)
+    price=None,      # None for market orders
+    params={
+        'positionIdx': 0,          # 0=one-way, 1=buy-hedge, 2=sell-hedge
+        'reduce_only': False,      # True to reduce position only
+        'stopPrice': 50000.0,      # for stop orders
+        'basePrice': 51000.0,      # for trigger orders (Bybit)
+    }
+)
+
+# Inverse perpetual (BTC-margined)
+order = exchange.create_order(
+    symbol='BTC/USD:BTC',
+    type='limit',
+    side='sell',
+    amount=100.0,    # in USD value (not BTC!) for inverse
+    price=50000.0,   # price in USD
+    params={}
+)
+```
+
+**Key differences**:
+- **Inverse contracts**: `amount` is in **USD value** (not coin amount)
+- **Linear contracts**: `amount` is in **base currency** (BTC, ETH, etc.)
+- Use `market['contractSize']` to convert between contracts and base currency
+
+### Leverage
+
+```python
+# Set leverage (cross margin)
+exchange.set_leverage(10, 'BTC/USDT:USDT')
+
+# Set isolated leverage (tier-based)
+exchange.set_leverage(
+    {'long': 10, 'short': 10},  # separate long/short leverage
+    'BTC/USDT:USDT'
+)
+```
+
+### Common Futures Parameters
+
+#### Binance-Specific
+
+```python
+params = {
+    'positionSide': 'LONG',    # 'LONG' or 'SHORT' (for hedge mode)
+    'reduceOnly': True,        # reduce-only order
+    'stopLossPrice': 45000.0,  # attach stop-loss
+    'takeProfitPrice': 55000.0,# attach take-profit
+    'workingType': 'MARK_PRICE',  # 'MARK_PRICE' or 'CONTRACT_PRICE'
+}
+```
+
+#### Bybit-Specific
+
+```python
+params = {
+    'positionIdx': 0,          # 0=one-way, 1=buy-hedge, 2=sell-hedge
+    'reduceOnly': True,
+    'stopLoss': 45000.0,
+    'takeProfit': 55000.0,
+    'tpTriggerBy': 'LastPrice',   # 'LastPrice', 'IndexPrice', 'MarkPrice'
+    'slTriggerBy': 'MarkPrice',
+    'basePrice': 50000.0,     # for trigger orders (reference price)
+    'tpslMode': 'Full',       # 'Full' (TP/SL for whole position) or 'Partial'
+    'tpOrderType': 'Market',  # 'Market' or 'Limit'
+    'slOrderType': 'Market',
+}
+```
+
+### Futures-Specific Endpoints
+
+#### Binance Additional Methods
+
+```python
+# Fetch mark price
+mark = exchange.fetch_mark_price('BTC/USDT:USDT')
+
+# Fetch funding rate
+funding = exchange.fetch_funding_rate('BTC/USDT:USDT')
+
+# Fetch open interest
+oi = exchange.fetch_open_interest('BTC/USDT:USDT')
+
+# Fetch liquidation price
+liquidations = exchange.fetch_liquidations('BTC/USDT:USDT')  # not supported directly
+# Use fetch_my_liquidations() for your own liquidations
+```
+
+#### Bybit Additional Methods
+
+```python
+# Fetch option chain (if trading options)
+chain = exchange.fetch_option_chain('BTC/USD:USDC')
+
+# Fetch volatility history
+vol = exchange.fetch_volatility_history('BTC/USDT:USDT', limit=100)
+
+# Fetch long/short ratio
+ratio = exchange.fetch_long_short_ratio('BTC/USDT:USDT', limit=100)
+```
+
+---
+
+## 9. How to Discover CCXT Features from Scratch
+
+CCXT is a large library with many exchange-specific nuances. Here's a systematic approach to discovering what's available for any exchange.
+
+### 1. Start with `describe()` - The Exchange Blueprint
+
+Every exchange class has a `describe()` method that returns all metadata:
+
+```python
+import ccxt
+
+exchange = ccxt.binance()
+info = exchange.describe()
+
+# Key metadata:
+print('ID:', info['id'])
+print('Name:', info['name'])
+print('Version:', info.get('version'))
+print('Rate limit (ms):', info['rateLimit'])
+print('Certified:', info['certified'])
+print('Pro support:', info['pro'])
+
+# Capability matrix - what methods are available?
+has = info['has']
+print('Can fetch balance?', has['fetchBalance'])
+print('Can create orders?', has['createOrder'])
+print('Supports futures?', has['swap'] or has['future'])
+```
+
+**Output example** (truncated):
+```python
+{
+  'id': 'bybit',
+  'name': 'Bybit',
+  'countries': ['VG'],
+  'version': 'v5',
+  'rateLimit': 20,
+  'pro': True,
+  'certified': True,
+  'has': {
+    'spot': True,
+    'swap': True,
+    'future': True,
+    'option': True,
+    'fetchBalance': True,
+    'fetchOrder': True,
+    'createOrder': True,
+    'setLeverage': True,
+    'fetchFundingRate': 'emulated',  # 'emulated' means CCXT calculates it
+    # ...
+  },
+  'timeframes': {'1m': '1', '5m': '5', ...},
+  'urls': {...},
+}
+```
+
+### 2. Inspect Available Methods Programmatically
+
+```python
+# List all public methods
+methods = [m for m in dir(exchange) if not m.startswith('_') and callable(getattr(exchange, m))]
+print(sorted(methods))
+
+# Filter for fetch methods
+fetch_methods = [m for m in methods if m.startswith('fetch')]
+print('Fetch methods:', fetch_methods)
+
+# Create methods
+create_methods = [m for m in methods if m.startswith('create')]
+print('Create methods:', create_methods)
+```
+
+**Common patterns**:
+- `fetch_*` - read operations (market data, balances, orders)
+- `create_*` - create something (order, deposit address)
+- `cancel_*` - cancel operations
+- `set_*` - configuration (leverage, margin mode)
+- `public*`, `private*` - low-level raw API access
+
+### 3. Read Source: `abstract/<exchange>.py`
+
+The abstract class defines all **exchange-specific endpoints**. This is where you find:
+
+- Exact endpoint paths (`Entry('spot/v3/public/symbols', 'public', 'GET', {'cost': 1})`)
+- Cost (rate limit weight) per endpoint
+- Which HTTP method (GET/POST/DELETE)
+- Which authentication level (public vs private)
+
+**Location**: `/python/ccxt/abstract/<exchange>.py`
+
+Example snippet from `abstract/bybit.py`:
+```python
+class ImplicitAPI:
+    public_get_spot_v3_public_symbols = Entry('spot/v3/public/symbols', 'public', 'GET', {'cost': 1})
+    public_get_v5_market_tickers = Entry('v5/market/tickers', 'public', 'GET', {'cost': 5})
+    private_get_v5_account_wallet_balance = Entry('v5/account/wallet-balance', 'private', 'GET', {'cost': 1})
+    private_post_v5_order_create = Entry('v5/order/create', 'private', 'POST', {'cost': 1})
+```
+
+This tells you:
+- Method name: `public_get_spot_v3_public_symbols`
+- REST path: `spot/v3/public/symbols`
+- Access: `public` (no auth) or `private` (needs API key)
+- HTTP method: `GET` or `POST`
+- Cost: `1` (rate limit weight)
+
+These Python methods are **automatically mapped** to the exchange's HTTP endpoints.
+
+### 4. Check the Generated `describe()['has']` for Support
+
+The `has` dictionary tells you which **unified methods** are available and whether they're fully implemented, emulated, or not available:
+
+```python
+exchange = ccxt.bybit()
+info = exchange.describe()
+
+has = info['has']
+print('Support levels:')
+for method, supported in has.items():
+    if supported is True:
+        print(f"  ✅ {method}")
+    elif supported == 'emulated':
+        print(f"  ⚠️  {method} (emulated)")
+    elif supported in (False, None):
+        print(f"  ❌ {method}")
+```
+
+**Interpretation**:
+- `True` → Fully implemented, use it
+- `'emulated'` → Not directly available, CCXT simulates it using other endpoints (may have limitations)
+- `False` or `None` → Not supported
+
+### 5. Use `help()` and `__doc__`
+
+```python
+# Get method signature
+help(exchange.fetch_balance)
+
+# Or inspect directly
+print(exchange.fetch_balance.__doc__)
+```
+
+**Example output**:
+```
+Help on method fetch_balance in module ccxt.bybit:
+
+fetch_balance(params={}) method of ccxt.bybit.bybit instance
+    Fetch balance for all currencies
+
+    :param dict [params]: extra parameters specific to the exchange API endpoint
+    :param str [params.type]: *spot only* 'spot', 'funding'
+    :param str [params.settle]: *contract only* 'USDT', 'USDC'
+    :returns dict: a `balance structure <https://docs.ccxt.com/?id=balance-structure>`
+```
+
+The docstring tells you:
+- Which parameters are accepted (`params.type`, `params.settle`)
+- What the return structure is
+- Any special notes (e.g., "*spot only*")
+
+### 6. Examine Unified API Response Structures
+
+Response formats are standardized across all exchanges. Key structures:
+
+**Balance**: https://docs.ccxt.com/?id=balance-structure
+```python
+{
+  'BTC': {'free': 1.0, 'used': 0.5, 'total': 1.5},
+  'USDT': {'free': 10000.0, 'used': 5000.0, 'total': 15000.0},
+  'timestamp': 1672376496682,
+  'datetime': '2023-01-01T12:00:00.000Z',
+  'info': {}  # raw exchange response
+}
+```
+
+**Order**: https://docs.ccxt.com/?id=order-structure
+```python
+{
+  'id': '123456',
+  'symbol': 'BTC/USDT:USDT',
+  'side': 'buy',
+  'type': 'limit',
+  'amount': 1.0,
+  'price': 50000.0,
+  'status': 'open',
+  'filled': 0.0,
+  'remaining': 1.0,
+  'timestamp': ...,
+  'datetime': ...,
+  'info': {}
+}
+```
+
+**Ticker**: https://docs.ccxt.com/#ticker-structure
+```python
+{
+  'symbol': 'BTC/USDT',
+  'last': 50000.0,
+  'high': 51000.0,
+  'low': 49000.0,
+  'bid': 49990.0,
+  'ask': 50010.0,
+  'volume': 1234.5,
+  'quoteVolume': 61725000.0,
+  'timestamp': ...,
+  'datetime': ...,
+}
+```
+
+**Order Book**: https://docs.ccxt.com/#order-book-structure
+```python
+{
+  'symbol': 'BTC/USDT',
+  'bids': [[50000.0, 1.0], [49990.0, 2.0], ...],
+  'asks': [[50010.0, 1.5], [50020.0, 1.0], ...],
+  'timestamp': ...,
+  'nonce': ...
+}
+```
+
+Documentation: https://docs.ccxt.com (official unified API reference)
+
+### 7. Search the Codebase
+
+When you have the CCXT repo cloned (as we do in `/tmp/pi-github-repos/ccxt/ccxt`):
+
+```bash
+# Find all methods containing "order" in bybit implementation
+grep -n "def.*order" python/ccxt/bybit.py | head -20
+
+# Search for specific parameter handling
+grep -rn "positionIdx" python/ccxt/bybit.py
+
+# Find all fetch methods
+grep -n "def fetch" python/ccxt/binance.py | head -20
+
+# Look at error code mappings
+grep -n "'-1003'" python/ccxt/binance.py
+```
+
+### 8. Check Examples Directory
+
+CCXT has extensive examples in `/examples/py/`:
+
+```bash
+ls examples/py/ | grep bybit
+# Output:
+# bybit-updated.md
+# bybit-USDC-create-option-order.md
+# bybit-conditional-orders.md
+# bybit-positions.md
+# bybit-trailling.md
+# async-bybit-transfer.md
+```
+
+These are **real working examples** showing specific use cases. Always check here first for exchange-specific patterns.
+
+### 9. Read the Implied `sign()` Method
+
+The `sign()` method constructs the actual HTTP request. It reveals:
+
+- Which endpoints are called for each unified method
+- How parameters are mapped
+- Authentication signature generation
+
+```python
+# In exchange class (e.g., python/ccxt/bybit.py)
+def sign(self, path, api='public', method='GET', params={}, headers=None, body=None):
+    # Look at how path is constructed
+    # How params are formatted
+    # Which headers are added (signature, timestamp)
+```
+
+### 10. Understand the Method Resolution Order
+
+When you call `exchange.fetch_balance()`:
+
+1. **Base Exchange** (`base/exchange.py`) provides the default unified implementation
+2. **Exchange-specific override** may replace it (check `python/ccxt/binance.py` for `def fetch_balance(self, params={})`)
+3. **Abstract class** (`abstract/<exchange>.py`) defines low-level endpoints (`privateGetV5AccountWalletBalance`, etc.)
+4. **`sign()`** maps the method to actual REST call
+
+If a method isn't working as expected, trace through these layers.
+
+### 11. Check `errors.py` for Exchange-Specific Error Codes
+
+Each exchange may override error mapping:
+
+```python
+# In binance.py, look for:
+exact = {
+    '-1003': RateLimitExceeded,
+    '-1021': InvalidNonce,
+    # ...
+}
+
+# In bybit.py:
+exact = {
+    '-1': OperationFailed,
+    '-4000': InvalidOrder,
+    # ...
+}
+```
+
+Understanding these helps you catch specific error conditions.
+
+### 12. Use Interactive Python REPL
+
+```python
+$ python
+>>> import ccxt
+>>> binance = ccxt.binance()
+>>> binance.load_markets()
+>>> help(binance.fetch_balance)  # See docstring
+>>> binance.fetch_balance.__doc__
+>>> binance.markets['BTC/USDT']  # Inspect market structure
+```
+
+### 13. Read the Official Manual
+
+The CCXT manual in the repo (`wiki/Manual.md`) covers:
+
+- Unified API concepts
+- Rate limiting
+- Authentication
+- Proxy configuration
+- Error handling
+- Troubleshooting
+
+**Online version**: https://github.com/ccxt/ccxt/wiki/Manual
+
+### 14. Quick Reference Cheat Sheet
+
+**Goal** → **How to discover**:
+
+| "How do I..." | Search/Lookup |
+|---------------|---------------|
+| Check if exchange supports futures? | `info['has']['swap']` or `info['has']['future']` |
+| Find available timeframes? | `exchange.timeframes` |
+| See all market symbols? | `exchange.markets.keys()` |
+| Get market precision/limits? | `exchange.markets['BTC/USDT:USDT']['precision']`, `['limits']` |
+| Discover endpoint cost/rate limits? | Check `abstract/<exchange>.py` → `Entry(..., {'cost': N})` |
+| Find exchange-specific params? | Read method docstring or check examples/ |
+| Understand error codes? | `grep` in `<exchange>.py` for error mappings |
+| See raw API response? | Check `info['info']` field in any return value |
+| Find which endpoint is called? | Search `def fetch_<method>` in `<exchange>.py` for `self.public` or `self.private` calls |
+
+### 15. When Documentation is Missing
+
+1. **Check the unified method exists**: `has['methodName']`
+2. **Try calling it** with minimal params (testnet!)
+3. **Inspect `.info` field** in response for raw exchange data
+4. **Search the file** for similar implementations in other exchanges
+5. **Open an issue** on GitHub if truly missing
+
+### Example Discovery Session
+
+```python
+# "Can Bybit fetch option chains?"
+exchange = ccxt.bybit()
+info = exchange.describe()
+print(info['has']['fetchOptionChain'])  # Output: True
+
+# "What parameters does it take?"
+help(exchange.fetch_option_chain)
+# Docstring says: symbol, params={}, returns option chain
+
+# "What does it return?"
+# → Fetch option chain on testnet, inspect structure
+
+# "Which REST endpoint is used?"
+# Grep: grep -n "fetchOptionChain" python/ccxt/bybit.py
+# Find: return self.publicGetV5MarketOptionChain(params)
+```
+
+---
+
+
+
+## 10. Timeframes
 
 ### Binance Timeframes
 
@@ -522,7 +1316,7 @@ timeframes = exchange.timeframes
 
 ---
 
-## 10. Error Handling
+## 11. Error Handling
 
 ### Error Hierarchy
 
@@ -661,7 +1455,7 @@ except Exception as e:
 
 ---
 
-## 11. Proxy Configuration
+## 12. Proxy Configuration
 
 ### Setting Proxies
 
@@ -696,7 +1490,7 @@ exchange.socksProxy = 'socks5://127.0.0.1:1080'
 
 ---
 
-## 12. WebSocket Streaming (Real-Time Data)
+## 13. WebSocket Streaming (Real-Time Data)
 
 CCXT Pro provides WebSocket support via `asyncio` in Python.
 
@@ -759,7 +1553,7 @@ tickers = await exchange.watch_tickers(['BTC/USDT', 'ETH/USDT', 'XRP/USDT'])
 
 ---
 
-## 13. Testnet / Sandbox Mode
+## 14. Testnet / Sandbox Mode
 
 ### Binance Testnet
 
@@ -794,7 +1588,7 @@ exchange.set_sandbox_mode(True)  # or: config['sandbox'] = True
 
 ---
 
-## 14. Key Implementation Notes
+## 15. Key Implementation Notes
 
 ### 1. Market Loading
 
@@ -852,7 +1646,7 @@ exchange.privateGetV5AccountWalletBalance()  # Bybit balance endpoint
 
 ---
 
-## 15. Important Limitations & Gotchas
+## 16. Important Limitations & Gotchas
 
 ### Binance-Specific
 
@@ -883,7 +1677,7 @@ exchange.privateGetV5AccountWalletBalance()  # Bybit balance endpoint
 
 ---
 
-## 16. Example: Complete Trading Bot Setup
+## 17. Example: Complete Trading Bot Setup
 
 ```python
 import ccxt
@@ -1017,7 +1811,7 @@ if __name__ == '__main__':
 
 ---
 
-## 17. File References (CCXT Repository)
+## 18. File References (CCXT Repository)
 
 ### Core Implementation Files
 
@@ -1042,7 +1836,7 @@ if __name__ == '__main__':
 
 ---
 
-## 18. Summary Checklist for Integration
+## 19. Summary Checklist for Integration
 
 - [ ] **Install**: `pip install ccxt` (or language equivalent)
 - [ ] **Credentials**: Obtain API key + secret from exchange (testnet first)

@@ -134,6 +134,14 @@ COINGECKO_API_KEY=your-coingecko-api-key
 CCXT_AUTO_TRADE_LOOKBACK_HOURS=24
 # Cursor overlap to avoid missing fills near sync boundaries
 CCXT_AUTO_TRADE_OVERLAP_MINUTES=15
+# Binance market segments included in trade import
+# Futures-like segments (future/delivery/swap) are imported as tx_type=HEDGE by default.
+CCXT_BINANCE_TRADE_TYPES=spot,margin,future
+# Optional cap for markets scanned per profile during trade sync (0 = no cap)
+CCXT_SYNC_MAX_MARKETS_PER_PROFILE=0
+# For derivatives profiles, include all quote currencies by default.
+# Set true to only scan markets matching CCXT_DEFAULT_QUOTE.
+CCXT_DERIVATIVES_DEFAULT_QUOTE_ONLY=false
 # Binance wallet segments included in balance reconciliation
 # Includes spot balances plus futures wallet collateral (walletBalance only, excludes unrealized PnL).
 # Add others only if needed (e.g. spot,future,margin or spot,untyped).

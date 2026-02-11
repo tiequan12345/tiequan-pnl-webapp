@@ -9,6 +9,9 @@ import { ensureAssetsBySymbol, updateAssetStatusesForAccount } from '@/lib/asset
 
 export type CcxtSyncMode = 'trades' | 'balances' | 'full';
 
+type TradeLedgerType = 'TRADE' | 'HEDGE';
+type TradeMarketScope = 'spotLike' | 'derivatives' | 'all';
+
 type NormalizedCcxtTrade = {
   exchangeId: CcxtExchangeId;
   tradeId: string;
@@ -22,6 +25,8 @@ type NormalizedCcxtTrade = {
   feeCurrency?: string;
   feeCost?: number;
   timestamp: Date;
+  txType: TradeLedgerType;
+  referenceScope?: string;
   raw?: unknown;
 };
 
@@ -269,7 +274,13 @@ function isSupportedExchangeId(value: string): value is CcxtExchangeId {
   return value === 'binance' || value === 'bybit';
 }
 
-function parseTrade(trade: any, exchangeId: CcxtExchangeId): NormalizedCcxtTrade | null {
+function parseTrade(params: {
+  trade: any;
+  exchangeId: CcxtExchangeId;
+  txType: TradeLedgerType;
+  referenceScope?: string;
+}): NormalizedCcxtTrade | null {
+  const { trade, exchangeId, txType, referenceScope } = params;
   const tradeId = trade.id?.toString().trim();
   const symbol = trade.symbol?.trim();
   const timestampMs = trade.timestamp;
@@ -307,6 +318,8 @@ function parseTrade(trade: any, exchangeId: CcxtExchangeId): NormalizedCcxtTrade
     feeCurrency,
     feeCost,
     timestamp: new Date(timestampMs),
+    txType,
+    referenceScope,
     raw: trade.info,
   };
 }
@@ -383,6 +396,10 @@ function toLedgerRows(params: {
     return rows;
   }
 
+  const tradeReferencePrefix = trade.referenceScope
+    ? `CCXT:${trade.exchangeId}:${trade.referenceScope}:${trade.tradeId}`
+    : `CCXT:${trade.exchangeId}:${trade.tradeId}`;
+
   const baseQty = trade.side === 'buy' ? trade.amount : -trade.amount;
   const quoteCost =
     typeof trade.cost === 'number' && Number.isFinite(trade.cost)
@@ -400,9 +417,9 @@ function toLedgerRows(params: {
     account_id: accountId,
     asset_id: baseAssetId,
     quantity: String(baseQty),
-    tx_type: 'TRADE',
-    external_reference: `CCXT:${trade.exchangeId}:${trade.tradeId}:BASE`,
-    notes: `CCXT ${trade.exchangeId} ${trade.symbol} ${trade.side}`,
+    tx_type: trade.txType,
+    external_reference: `${tradeReferencePrefix}:BASE`,
+    notes: `CCXT ${trade.exchangeId}${trade.referenceScope ? ` ${trade.referenceScope.toLowerCase()}` : ''} ${trade.symbol} ${trade.side}`,
     ...(typeof trade.price === 'number' ? { unit_price_in_base: String(trade.price) } : {}),
     total_value_in_base: String(Math.abs(quoteCost)),
   });
@@ -414,9 +431,9 @@ function toLedgerRows(params: {
     account_id: accountId,
     asset_id: quoteAssetId,
     quantity: String(quoteQty),
-    tx_type: 'TRADE',
-    external_reference: `CCXT:${trade.exchangeId}:${trade.tradeId}:QUOTE`,
-    notes: `CCXT ${trade.exchangeId} ${trade.symbol} ${trade.side} quote leg`,
+    tx_type: trade.txType,
+    external_reference: `${tradeReferencePrefix}:QUOTE`,
+    notes: `CCXT ${trade.exchangeId}${trade.referenceScope ? ` ${trade.referenceScope.toLowerCase()}` : ''} ${trade.symbol} ${trade.side} quote leg`,
     total_value_in_base: String(Math.abs(quoteCost)),
   });
 
@@ -430,8 +447,8 @@ function toLedgerRows(params: {
         asset_id: feeAssetId,
         quantity: String(-trade.feeCost),
         tx_type: 'TRADE_FEE',
-        external_reference: `CCXT:${trade.exchangeId}:${trade.tradeId}:FEE`,
-        notes: `CCXT ${trade.exchangeId} ${trade.symbol} fee ${trade.feeCurrency}`,
+        external_reference: `${tradeReferencePrefix}:FEE`,
+        notes: `CCXT ${trade.exchangeId}${trade.referenceScope ? ` ${trade.referenceScope.toLowerCase()}` : ''} ${trade.symbol} fee ${trade.feeCurrency}`,
       });
     }
   }
@@ -474,27 +491,108 @@ function toMovementLedgerRows(params: {
 async function fetchTradesForSync(params: {
   exchange: any;
   since?: Date;
+  marketScope?: TradeMarketScope;
 }): Promise<any[]> {
-  const { exchange, since } = params;
+  const { exchange, since, marketScope = 'all' } = params;
   const sinceTs = getDefaultSince(since).getTime();
 
   const trades: any[] = [];
 
   const defaultQuote = (process.env.CCXT_DEFAULT_QUOTE ?? 'USDT').trim().toUpperCase();
-  const symbols = Object.keys(exchange.markets ?? {}).filter((symbol) => symbol.endsWith(`/${defaultQuote}`));
+  const derivativesDefaultQuoteOnly =
+    String(process.env.CCXT_DERIVATIVES_DEFAULT_QUOTE_ONLY ?? 'false').toLowerCase() === 'true';
 
-  const targets = symbols.slice(0, 300);
+  const pageLimitRaw = Number(process.env.CCXT_SYNC_TRADE_PAGE_LIMIT ?? '200');
+  const pageLimit =
+    Number.isFinite(pageLimitRaw) && pageLimitRaw > 0
+      ? Math.min(Math.trunc(pageLimitRaw), 1000)
+      : 200;
+
+  const maxPagesRaw = Number(process.env.CCXT_SYNC_TRADE_MAX_PAGES_PER_SYMBOL ?? '5');
+  const maxPagesPerSymbol =
+    Number.isFinite(maxPagesRaw) && maxPagesRaw > 0
+      ? Math.trunc(maxPagesRaw)
+      : 5;
+
+  const markets = Object.values(exchange.markets ?? {}) as any[];
+  const candidateSymbols = markets
+    .filter((market) => {
+      const symbol = String(market?.symbol ?? '').trim();
+      if (!symbol) {
+        return false;
+      }
+
+      const isContract = Boolean(market?.contract);
+      if (marketScope === 'spotLike' && isContract) {
+        return false;
+      }
+      if (marketScope === 'derivatives' && !isContract) {
+        return false;
+      }
+
+      const quote = String(market?.quote ?? '').trim().toUpperCase();
+      if (!quote) {
+        return false;
+      }
+
+      if (marketScope === 'derivatives') {
+        return derivativesDefaultQuoteOnly ? quote === defaultQuote : true;
+      }
+
+      return quote === defaultQuote;
+    })
+    .map((market) => String(market.symbol).trim())
+    .filter(Boolean);
+
+  const maxSymbolsRaw = Number(process.env.CCXT_SYNC_MAX_MARKETS_PER_PROFILE ?? '0');
+  const maxSymbols = Number.isFinite(maxSymbolsRaw) && maxSymbolsRaw > 0 ? maxSymbolsRaw : null;
+
+  const uniqueSymbols = Array.from(new Set(candidateSymbols));
+  const targets = maxSymbols ? uniqueSymbols.slice(0, maxSymbols) : uniqueSymbols;
+
+  const fetchSymbolTrades = async (symbol?: string): Promise<void> => {
+    let cursorSince = sinceTs;
+
+    for (let page = 0; page < maxPagesPerSymbol; page += 1) {
+      const result = await exchange.fetchMyTrades(symbol, cursorSince, pageLimit);
+      if (!Array.isArray(result) || result.length === 0) {
+        return;
+      }
+
+      trades.push(...result);
+
+      if (result.length < pageLimit) {
+        return;
+      }
+
+      let maxTimestamp = cursorSince;
+      for (const trade of result) {
+        const ts = toFiniteNumber((trade as any)?.timestamp);
+        if (ts !== null && ts > maxTimestamp) {
+          maxTimestamp = ts;
+        }
+      }
+
+      if (!(maxTimestamp > cursorSince)) {
+        return;
+      }
+
+      cursorSince = Math.trunc(maxTimestamp) + 1;
+    }
+  };
 
   if (targets.length === 0) {
-    const unscoped = await exchange.fetchMyTrades(undefined, sinceTs, 200);
-    trades.push(...unscoped);
+    try {
+      await fetchSymbolTrades(undefined);
+    } catch {
+      // Some exchange/profile combinations do not support unscoped fetchMyTrades.
+    }
     return trades;
   }
 
   for (const symbol of targets) {
     try {
-      const result = await exchange.fetchMyTrades(symbol, sinceTs, 200);
-      trades.push(...result);
+      await fetchSymbolTrades(symbol);
     } catch {
       // Best effort per symbol.
     }
@@ -718,7 +816,7 @@ export async function syncCcxtAccount(params: {
   const connectionOptions = parseOptionsJson(connection.options_json);
 
   const buildExchangeForSync = (params?: {
-    defaultTypeOverride?: 'spot' | 'margin';
+    defaultTypeOverride?: 'spot' | 'margin' | 'swap' | 'future' | 'delivery' | 'option';
     forceSpotWalletProfile?: boolean;
   }) => {
     const { defaultTypeOverride, forceSpotWalletProfile } = params ?? {};
@@ -756,32 +854,96 @@ export async function syncCcxtAccount(params: {
   let latestTradeCursor: { tradeId: string; timestamp: Date } | null = null;
 
   if (mode === 'trades' || mode === 'full') {
-    const exchangesForTradeSync =
+    type TradeSyncProfile = {
+      defaultTypeOverride?: 'spot' | 'margin' | 'swap' | 'future' | 'delivery' | 'option';
+      txType: TradeLedgerType;
+      marketScope: TradeMarketScope;
+      referenceScope?: string;
+    };
+
+    const tradeSyncProfiles: TradeSyncProfile[] =
       exchangeId === 'binance'
-        ? [buildExchangeForSync({ defaultTypeOverride: 'spot' }), buildExchangeForSync({ defaultTypeOverride: 'margin' })]
-        : [buildExchangeForSync()];
+        ? (() => {
+            const configuredTypes = (process.env.CCXT_BINANCE_TRADE_TYPES ?? 'spot,margin,future')
+              .split(',')
+              .map((value) => value.trim().toLowerCase())
+              .filter(Boolean);
 
-    const fetchedTrades: any[] = [];
+            const profiles: TradeSyncProfile[] = [];
+            const seen = new Set<string>();
+            const addProfile = (key: string, profile: TradeSyncProfile) => {
+              if (seen.has(key)) {
+                return;
+              }
+              seen.add(key);
+              profiles.push(profile);
+            };
 
-    for (const exchange of exchangesForTradeSync) {
+            for (const configuredType of configuredTypes) {
+              if (configuredType === 'spot') {
+                addProfile('spot', { defaultTypeOverride: 'spot', txType: 'TRADE', marketScope: 'spotLike' });
+                continue;
+              }
+
+              if (configuredType === 'margin') {
+                addProfile('margin', { defaultTypeOverride: 'margin', txType: 'TRADE', marketScope: 'spotLike' });
+                continue;
+              }
+
+              if (configuredType === 'future' || configuredType === 'futures') {
+                addProfile('future', { defaultTypeOverride: 'future', txType: 'HEDGE', marketScope: 'derivatives', referenceScope: 'FUTURE' });
+                continue;
+              }
+
+              if (configuredType === 'delivery') {
+                addProfile('delivery', { defaultTypeOverride: 'delivery', txType: 'HEDGE', marketScope: 'derivatives', referenceScope: 'DELIVERY' });
+                continue;
+              }
+
+              if (configuredType === 'swap') {
+                addProfile('swap', { defaultTypeOverride: 'swap', txType: 'HEDGE', marketScope: 'derivatives', referenceScope: 'SWAP' });
+              }
+            }
+
+            if (profiles.length === 0) {
+              return [{ defaultTypeOverride: 'spot', txType: 'TRADE', marketScope: 'spotLike' }];
+            }
+
+            return profiles;
+          })()
+        : [{ txType: 'TRADE', marketScope: 'all' }];
+
+    const fetchedTrades: Array<{ trade: any; profile: TradeSyncProfile }> = [];
+
+    for (const profile of tradeSyncProfiles) {
+      const exchange = buildExchangeForSync({
+        ...(profile.defaultTypeOverride ? { defaultTypeOverride: profile.defaultTypeOverride } : {}),
+      });
+
       await initializeCcxtExchange(exchange);
       await exchange.loadMarkets();
 
       const trades = await fetchTradesForSync({
         exchange,
         since: params.since,
+        marketScope: profile.marketScope,
       });
 
-      fetchedTrades.push(...trades);
+      fetchedTrades.push(...trades.map((trade) => ({ trade, profile })));
     }
 
     const normalized = fetchedTrades
-      .map((trade) => parseTrade(trade, exchangeId))
+      .map(({ trade, profile }) => parseTrade({
+        trade,
+        exchangeId,
+        txType: profile.txType,
+        referenceScope: profile.referenceScope,
+      }))
       .filter((trade): trade is NormalizedCcxtTrade => Boolean(trade));
 
     const seenTradeKeys = new Set<string>();
     const deduped = normalized.filter((trade) => {
-      const key = `${trade.exchangeId}:${trade.tradeId}:${trade.symbol}:${trade.timestamp.toISOString()}:${trade.side}:${trade.amount}`;
+      const key = `${trade.exchangeId}:${trade.referenceScope ?? 'SPOT'}:${trade.tradeId}:${trade.symbol}:${trade.timestamp.toISOString()}:${trade.side}:${trade.amount}:${trade.txType}`;
       if (seenTradeKeys.has(key)) return false;
       seenTradeKeys.add(key);
       return true;

@@ -12,7 +12,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:generate": "prisma generate",
     "backup": "node scripts/backup.js",
-    "backup-service": "node scripts/backup-service.js"
+    "backup-service": "node scripts/backup-service.js",
+    "debug:binance-sync": "node scripts/debug/binance-sync-throwaway.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.600.0",
