@@ -637,6 +637,326 @@ async function fetchMovementsForSync(params: {
   return results;
 }
 
+function extractBaseSymbolFromCcxtSymbol(symbolRaw: unknown): string | null {
+  const symbol = String(symbolRaw ?? '').trim();
+  if (!symbol) {
+    return null;
+  }
+
+  const base = symbol.split('/')[0]?.split(':')[0]?.trim().toUpperCase();
+  return base || null;
+}
+
+function extractSignedPositionContracts(position: any): number | null {
+  const rawPositionAmt = toFiniteNumber(position?.info?.positionAmt);
+  if (rawPositionAmt !== null && Number.isFinite(rawPositionAmt)) {
+    return rawPositionAmt;
+  }
+
+  const contracts = toFiniteNumber(position?.contracts);
+  if (contracts === null || !Number.isFinite(contracts)) {
+    return null;
+  }
+
+  if (contracts === 0) {
+    return 0;
+  }
+
+  const side = String(position?.side ?? '')
+    .trim()
+    .toLowerCase();
+
+  if (side === 'short') {
+    return -Math.abs(contracts);
+  }
+
+  if (side === 'long') {
+    return Math.abs(contracts);
+  }
+
+  return contracts;
+}
+
+async function reconcileCcxtFuturesPositions(params: {
+  accountId: number;
+  exchangeId: CcxtExchangeId;
+  exchange: any;
+  asOf: Date;
+}): Promise<number> {
+  if (typeof params.exchange?.fetchPositions !== 'function') {
+    return 0;
+  }
+
+  let fetchedPositions: any[] = [];
+  try {
+    const positions = await params.exchange.fetchPositions();
+    fetchedPositions = Array.isArray(positions) ? positions : [];
+  } catch {
+    return 0;
+  }
+
+  const targetBySymbol = new Map<string, number>();
+  const futuresSnapshotBySymbol = new Map<string, {
+    contracts: number;
+    unrealizedPnl: number;
+    contractsAbs: number;
+    entryNotionalAbs: number;
+    markNotionalAbs: number;
+  }>();
+  const epsilon = 1e-8;
+
+  for (const position of fetchedPositions) {
+    const baseSymbol =
+      extractBaseSymbolFromCcxtSymbol(position?.symbol) ??
+      extractBaseSymbolFromCcxtSymbol(position?.info?.symbol);
+    if (!baseSymbol) {
+      continue;
+    }
+
+    const signedContracts = extractSignedPositionContracts(position);
+    if (signedContracts === null || !Number.isFinite(signedContracts) || Math.abs(signedContracts) < epsilon) {
+      continue;
+    }
+
+    targetBySymbol.set(baseSymbol, (targetBySymbol.get(baseSymbol) ?? 0) + signedContracts);
+
+    const unrealizedPnl =
+      toFiniteNumber(position?.unrealizedPnl) ??
+      toFiniteNumber(position?.info?.unRealizedProfit) ??
+      0;
+
+    const entryPrice = toFiniteNumber(position?.entryPrice) ?? toFiniteNumber(position?.info?.entryPrice);
+    const markPrice = toFiniteNumber(position?.markPrice) ?? toFiniteNumber(position?.info?.markPrice);
+    const contractSizeRaw = toFiniteNumber(position?.contractSize) ?? toFiniteNumber(position?.info?.contractSize);
+    const contractSize = contractSizeRaw !== null && Number.isFinite(contractSizeRaw) && contractSizeRaw > 0
+      ? contractSizeRaw
+      : 1;
+
+    const contractsAbs = Math.abs(signedContracts);
+    const entryNotionalAbs =
+      entryPrice !== null && Number.isFinite(entryPrice) && entryPrice > 0
+        ? contractsAbs * entryPrice * contractSize
+        : 0;
+    const markNotionalAbs =
+      markPrice !== null && Number.isFinite(markPrice) && markPrice > 0
+        ? contractsAbs * markPrice * contractSize
+        : 0;
+
+    const existing = futuresSnapshotBySymbol.get(baseSymbol) ?? {
+      contracts: 0,
+      unrealizedPnl: 0,
+      contractsAbs: 0,
+      entryNotionalAbs: 0,
+      markNotionalAbs: 0,
+    };
+
+    existing.contracts += signedContracts;
+    existing.unrealizedPnl += unrealizedPnl;
+    existing.contractsAbs += contractsAbs;
+    existing.entryNotionalAbs += entryNotionalAbs;
+    existing.markNotionalAbs += markNotionalAbs;
+
+    futuresSnapshotBySymbol.set(baseSymbol, existing);
+  }
+
+  const positionReferencePrefix = `CCXT:${params.exchangeId}:POSITION:${params.accountId}:`;
+  const legacyPositionQuoteReferencePrefix = `CCXT:${params.exchangeId}:POSITION_QUOTE:${params.accountId}:`;
+
+  // Rebuild synthetic position reconciliation rows from scratch each run.
+  await prisma.ledgerTransaction.deleteMany({
+    where: {
+      account_id: params.accountId,
+      OR: [
+        { external_reference: { startsWith: positionReferencePrefix } },
+        { external_reference: { startsWith: legacyPositionQuoteReferencePrefix } },
+      ],
+    },
+  });
+
+  const ledgerRows = await prisma.ledgerTransaction.findMany({
+    where: { account_id: params.accountId },
+    select: {
+      quantity: true,
+      tx_type: true,
+      external_reference: true,
+      asset: {
+        select: {
+          symbol: true,
+        },
+      },
+    },
+  });
+
+  const hedgeBaseSymbols = new Set<string>();
+  for (const row of ledgerRows) {
+    const symbol = row.asset.symbol.trim().toUpperCase();
+    if (!symbol) {
+      continue;
+    }
+
+    const externalReference = typeof row.external_reference === 'string' ? row.external_reference : '';
+    const isHedgeBaseLeg = row.tx_type === 'HEDGE' && externalReference.includes(':BASE');
+
+    if (isHedgeBaseLeg) {
+      hedgeBaseSymbols.add(symbol);
+    }
+  }
+
+  const positionSymbols = new Set<string>([...targetBySymbol.keys(), ...hedgeBaseSymbols]);
+  if (positionSymbols.size === 0) {
+    return 0;
+  }
+
+  const ledgerBySymbol = new Map<string, number>();
+  for (const row of ledgerRows) {
+    const symbol = row.asset.symbol.trim().toUpperCase();
+    if (!symbol || !positionSymbols.has(symbol)) {
+      continue;
+    }
+
+    const quantity = Number(row.quantity);
+    if (!Number.isFinite(quantity)) {
+      continue;
+    }
+
+    ledgerBySymbol.set(symbol, (ledgerBySymbol.get(symbol) ?? 0) + quantity);
+  }
+
+  const symbolList = Array.from(positionSymbols);
+  const assetMap = await ensureAssetsBySymbol(
+    symbolList.map((symbol) => ({
+      symbol,
+      assetType: symbol === 'USD' ? 'CASH' : symbol === 'USDT' || symbol === 'USDC' ? 'STABLE' : 'CRYPTO',
+    })),
+  );
+
+  const dateKey = formatDateKey(params.asOf);
+  let reconciled = 0;
+
+  for (const symbol of symbolList) {
+    const assetId = assetMap.get(symbol);
+    if (!assetId) {
+      continue;
+    }
+
+    const targetQty = targetBySymbol.get(symbol) ?? 0;
+    const ledgerQty = ledgerBySymbol.get(symbol) ?? 0;
+    const delta = targetQty - ledgerQty;
+
+    if (!Number.isFinite(delta) || Math.abs(delta) < epsilon) {
+      continue;
+    }
+
+    await prisma.ledgerTransaction.create({
+      data: {
+        date_time: params.asOf,
+        account_id: params.accountId,
+        asset_id: assetId,
+        quantity: String(delta),
+        tx_type: 'HEDGE',
+        external_reference: `${positionReferencePrefix}${symbol}:${dateKey}`,
+        notes: `CCXT futures position reconcile ${symbol} ${dateKey}: exchange=${targetQty} ledger=${ledgerQty}`,
+      },
+    });
+    reconciled += 1;
+  }
+
+  const futuresBalanceSnapshots: Array<{
+    symbol: string;
+    walletBalance: number;
+    unrealizedPnl: number;
+    marginBalance: number;
+    availableBalance: number | null;
+  }> = [];
+
+  try {
+    const futuresBalance = await params.exchange.fetchBalance({ type: 'future' });
+    const rows = Array.isArray(futuresBalance?.info?.assets) ? futuresBalance.info.assets : [];
+
+    for (const row of rows) {
+      const symbol = String(row?.asset ?? '').trim().toUpperCase();
+      if (!symbol) {
+        continue;
+      }
+
+      const walletBalance = toFiniteNumber(row?.walletBalance) ?? 0;
+      const unrealizedPnl = toFiniteNumber(row?.unrealizedProfit) ?? 0;
+      const marginBalance = toFiniteNumber(row?.marginBalance) ?? walletBalance + unrealizedPnl;
+      const availableBalance = toFiniteNumber(row?.availableBalance);
+
+      if (
+        Math.abs(walletBalance) < epsilon &&
+        Math.abs(unrealizedPnl) < epsilon &&
+        Math.abs(marginBalance) < epsilon
+      ) {
+        continue;
+      }
+
+      futuresBalanceSnapshots.push({
+        symbol,
+        walletBalance,
+        unrealizedPnl,
+        marginBalance,
+        availableBalance: availableBalance !== null && Number.isFinite(availableBalance) ? availableBalance : null,
+      });
+    }
+  } catch {
+    // Best effort snapshot capture.
+  }
+
+  const positionSnapshots = Array.from(futuresSnapshotBySymbol.entries())
+    .map(([symbol, stats]) => {
+      const contractsAbs = Math.abs(stats.contracts);
+      const entryPrice = contractsAbs > epsilon ? stats.entryNotionalAbs / contractsAbs : null;
+      const markPrice = contractsAbs > epsilon ? stats.markNotionalAbs / contractsAbs : null;
+
+      return {
+        symbol,
+        contracts: stats.contracts,
+        unrealizedPnl: stats.unrealizedPnl,
+        entryPrice,
+        markPrice,
+      };
+    })
+    .filter((item) => Math.abs(item.contracts) > epsilon || Math.abs(item.unrealizedPnl) > epsilon);
+
+  const totalUnrealizedPnl = positionSnapshots.reduce((sum, item) => sum + item.unrealizedPnl, 0);
+
+  const existingConnection = await prisma.ccxtConnection.findUnique({
+    where: { account_id: params.accountId },
+    select: { metadata_json: true },
+  });
+
+  let metadata: Record<string, unknown> = {};
+  if (existingConnection?.metadata_json) {
+    try {
+      const parsed = JSON.parse(existingConnection.metadata_json);
+      if (parsed && typeof parsed === 'object') {
+        metadata = parsed as Record<string, unknown>;
+      }
+    } catch {
+      metadata = {};
+    }
+  }
+
+  metadata.futuresSnapshot = {
+    asOf: params.asOf.toISOString(),
+    exchangeId: params.exchangeId,
+    positions: positionSnapshots,
+    balances: futuresBalanceSnapshots,
+    totalUnrealizedPnl,
+  };
+
+  await prisma.ccxtConnection.update({
+    where: { account_id: params.accountId },
+    data: {
+      metadata_json: JSON.stringify(metadata),
+    },
+  });
+
+  return reconciled;
+}
+
 async function reconcileCcxtBalances(params: {
   accountId: number;
   exchangeId: CcxtExchangeId;
@@ -690,10 +1010,15 @@ async function reconcileCcxtBalances(params: {
     });
   }
 
+  const reconciliationReferencePrefix = `CCXT:${params.exchangeId}:BALANCE:${params.accountId}:`;
+
   const ledgerRows = await prisma.ledgerTransaction.findMany({
     where: { account_id: params.accountId },
     select: {
+      asset_id: true,
+      tx_type: true,
       quantity: true,
+      external_reference: true,
       asset: {
         select: {
           symbol: true,
@@ -702,10 +1027,57 @@ async function reconcileCcxtBalances(params: {
     },
   });
 
+  const positionReferencePrefix = `CCXT:${params.exchangeId}:POSITION:${params.accountId}:`;
+
+  const hedgeAssetIds = new Set<number>();
+  const hedgeSymbols = new Set<string>();
+
+  for (const row of ledgerRows) {
+    if (row.tx_type !== 'HEDGE') {
+      continue;
+    }
+
+    const externalReference = typeof row.external_reference === 'string' ? row.external_reference : '';
+    const isDerivativeBaseHedge =
+      externalReference.includes(':BASE') || externalReference.startsWith(positionReferencePrefix);
+
+    if (!isDerivativeBaseHedge) {
+      continue;
+    }
+
+    hedgeAssetIds.add(row.asset_id);
+    const symbol = row.asset.symbol.trim().toUpperCase();
+    if (symbol) {
+      hedgeSymbols.add(symbol);
+    }
+  }
+
+  if (hedgeAssetIds.size > 0) {
+    await prisma.ledgerTransaction.deleteMany({
+      where: {
+        account_id: params.accountId,
+        tx_type: 'RECONCILIATION',
+        asset_id: { in: Array.from(hedgeAssetIds) },
+        external_reference: { startsWith: reconciliationReferencePrefix },
+      },
+    });
+  }
+
   const ledgerBySymbol = new Map<string, number>();
   for (const row of ledgerRows) {
     const symbol = row.asset.symbol.trim().toUpperCase();
     if (!symbol) continue;
+
+    const isRemovedHedgeReconciliation =
+      row.tx_type === 'RECONCILIATION' &&
+      hedgeAssetIds.has(row.asset_id) &&
+      typeof row.external_reference === 'string' &&
+      row.external_reference.startsWith(reconciliationReferencePrefix);
+
+    if (isRemovedHedgeReconciliation) {
+      continue;
+    }
+
     const quantity = Number(row.quantity);
     if (!Number.isFinite(quantity)) continue;
     ledgerBySymbol.set(symbol, (ledgerBySymbol.get(symbol) ?? 0) + quantity);
@@ -730,6 +1102,12 @@ async function reconcileCcxtBalances(params: {
   let reconciled = 0;
 
   for (const symbol of symbolList) {
+    // Derivatives positions are represented by HEDGE transactions, not wallet balances.
+    // Skip balance reconciliation for those assets so futures exposure remains visible.
+    if (hedgeSymbols.has(symbol)) {
+      continue;
+    }
+
     const assetId = assetMap.get(symbol);
     if (!assetId) {
       continue;
@@ -743,7 +1121,7 @@ async function reconcileCcxtBalances(params: {
       continue;
     }
 
-    const externalReference = `CCXT:${params.exchangeId}:BALANCE:${params.accountId}:${symbol}:${dateKey}`;
+    const externalReference = `${reconciliationReferencePrefix}${symbol}:${dateKey}`;
     const notes = `CCXT balance reconcile ${symbol} ${dateKey}: exchange=${exchangeQty} ledger=${ledgerQty}`;
 
     const existing = await prisma.ledgerTransaction.findFirst({
@@ -1065,6 +1443,17 @@ export async function syncCcxtAccount(params: {
   }
 
   if (mode === 'balances' || mode === 'full') {
+    if (exchangeId === 'binance') {
+      const futuresExchange = buildExchangeForSync({ defaultTypeOverride: 'future' });
+      await initializeCcxtExchange(futuresExchange);
+      reconciled += await reconcileCcxtFuturesPositions({
+        accountId: params.accountId,
+        exchangeId,
+        exchange: futuresExchange,
+        asOf: now,
+      });
+    }
+
     const balanceExchange =
       exchangeId === 'binance'
         ? buildExchangeForSync({ forceSpotWalletProfile: true })

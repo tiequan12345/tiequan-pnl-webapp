@@ -23,12 +23,17 @@ type StatusPayload = {
   } | null;
 };
 
-type SyncQueueResponse = {
+type SyncResponse = {
   error?: string;
   queued?: boolean;
+  completed?: boolean;
   deduped?: boolean;
   jobId?: number;
   status?: 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'FAILED';
+  created?: number;
+  updated?: number;
+  reconciled?: number;
+  lastSyncAt?: string;
 };
 
 type SyncJobStatusResponse = {
@@ -54,7 +59,7 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [manualSyncMode, setManualSyncMode] = useState<CcxtSyncMode>('trades');
+  const [manualSyncMode, setManualSyncMode] = useState<CcxtSyncMode>('balances');
   const [syncSince, setSyncSince] = useState('');
   const [manualSyncSinceOverride, setManualSyncSinceOverride] = useState('');
   const [message, setMessage] = useState<string | null>(null);
@@ -198,24 +203,32 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
         }),
       });
 
-      const queued = (await response.json().catch(() => null)) as SyncQueueResponse | null;
+      const payload = (await response.json().catch(() => null)) as SyncResponse | null;
 
       if (!response.ok) {
-        setMessage(queued?.error ?? 'Manual sync failed to queue.');
+        setMessage(payload?.error ?? 'Manual sync failed.');
         return;
       }
 
-      if (!queued?.jobId) {
-        setMessage('Manual sync was queued, but job id was missing.');
+      if (payload?.completed) {
+        setMessage(
+          `Manual ${manualSyncMode} sync complete. Created ${payload.created ?? 0} ledger rows, reconciled ${payload.reconciled ?? 0} balances.`,
+        );
+        await loadStatus();
         return;
       }
 
-      setMessage(`Manual ${manualSyncMode} sync queued (job #${queued.jobId}). Waiting for completion...`);
+      if (!payload?.jobId) {
+        setMessage('Manual sync started, but no completion or job id was returned.');
+        return;
+      }
 
-      const job = await pollSyncJob(queued.jobId);
+      setMessage(`Manual ${manualSyncMode} sync queued (job #${payload.jobId}). Waiting for completion...`);
+
+      const job = await pollSyncJob(payload.jobId);
 
       if (!job) {
-        setMessage(`Manual ${manualSyncMode} sync queued (job #${queued.jobId}). Still running — refresh status in a moment.`);
+        setMessage(`Manual ${manualSyncMode} sync queued (job #${payload.jobId}). Still running — refresh status in a moment.`);
         return;
       }
 

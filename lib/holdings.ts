@@ -254,6 +254,63 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
     return [];
   }
 
+  const accountIds = Array.from(new Set(transactions.map((tx) => tx.account_id)));
+
+  const futuresUnrealizedByAccountAndSymbol = new Map<number, Map<string, number>>();
+
+  if (accountIds.length > 0) {
+    const ccxtConnections = await prisma.ccxtConnection.findMany({
+      where: {
+        account_id: { in: accountIds },
+        exchange_id: 'binance',
+      },
+      select: {
+        account_id: true,
+        metadata_json: true,
+      },
+    });
+
+    for (const connection of ccxtConnections) {
+      if (!connection.metadata_json) {
+        continue;
+      }
+
+      try {
+        const parsed = JSON.parse(connection.metadata_json) as {
+          futuresSnapshot?: {
+            positions?: Array<{ symbol?: string; unrealizedPnl?: number | string | null }>;
+          };
+        };
+
+        const positionsSnapshot = parsed?.futuresSnapshot?.positions;
+        if (!Array.isArray(positionsSnapshot)) {
+          continue;
+        }
+
+        const bySymbol = new Map<string, number>();
+        for (const position of positionsSnapshot) {
+          const symbol = String(position?.symbol ?? '').trim().toUpperCase();
+          if (!symbol) {
+            continue;
+          }
+
+          const unrealizedRaw = Number(position?.unrealizedPnl ?? 0);
+          if (!Number.isFinite(unrealizedRaw)) {
+            continue;
+          }
+
+          bySymbol.set(symbol, (bySymbol.get(symbol) ?? 0) + unrealizedRaw);
+        }
+
+        if (bySymbol.size > 0) {
+          futuresUnrealizedByAccountAndSymbol.set(connection.account_id, bySymbol);
+        }
+      } catch {
+        // Ignore malformed metadata snapshots.
+      }
+    }
+  }
+
   const positions = new Map<string, HoldingPosition>();
 
   const isCashLikeAsset = (asset: LedgerTransactionWithRelations['asset']): boolean => {
@@ -418,6 +475,21 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
 
     return position;
   };
+
+  const hedgeBasePositionKeys = new Set<string>();
+  for (const tx of transactions) {
+    if (tx.tx_type !== 'HEDGE') {
+      continue;
+    }
+
+    const reference = (tx.external_reference ?? '').trim();
+    const isBaseLeg = reference.includes(':BASE') || reference.includes(':POSITION:');
+    if (!isBaseLeg) {
+      continue;
+    }
+
+    hedgeBasePositionKeys.add(buildPositionKey(tx.asset_id, tx.account_id));
+  }
 
   const transferGroups = new Map<string, LedgerTransactionWithRelations[]>();
   for (const tx of transactions) {
@@ -610,7 +682,19 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
 
     const price = isValidPrice(priceResolution.price) ? priceResolution.price : null;
     const multiplier = getContractMultiplier(asset);
-    const marketValue = price !== null ? quantity * price * multiplier : null;
+
+    let marketValue = price !== null ? quantity * price * multiplier : null;
+
+    const positionKey = buildPositionKey(asset.id, account.id);
+    const isHedgeBasePosition = hedgeBasePositionKeys.has(positionKey);
+
+    if (isHedgeBasePosition) {
+      const accountSnapshot = futuresUnrealizedByAccountAndSymbol.get(account.id);
+      const snapshotUnrealized = accountSnapshot?.get(asset.symbol.trim().toUpperCase());
+      if (typeof snapshotUnrealized === 'number' && Number.isFinite(snapshotUnrealized)) {
+        marketValue = snapshotUnrealized;
+      }
+    }
 
     const totalCostBasis = position.costBasisKnown ? position.costBasis : null;
     const costBasisStatus = position.costBasisStatus;

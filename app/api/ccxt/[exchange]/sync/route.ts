@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { type CcxtSyncMode } from '@/lib/ccxt/sync';
-import { enqueueCcxtSyncJob } from '@/lib/ccxt/syncJobs';
+import { syncCcxtAccount, type CcxtSyncMode } from '@/lib/ccxt/sync';
 import { prisma } from '@/lib/db';
 import { isMissingSyncSinceColumnError, parseIsoInstant } from '@/lib/datetime';
 
@@ -163,26 +162,23 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
-    const queued = await enqueueCcxtSyncJob({
+    const result = await syncCcxtAccount({
       accountId,
-      exchangeId: exchange,
       mode,
       since,
-      requestedBy: 'MANUAL',
     });
 
-    return NextResponse.json(
-      {
-        queued: true,
-        deduped: queued.deduped,
-        jobId: queued.jobId,
-        status: queued.status,
-        accountId,
-        exchange,
-        mode,
-      },
-      { status: 202 },
-    );
+    return NextResponse.json({
+      queued: false,
+      completed: true,
+      accountId,
+      exchange,
+      mode,
+      created: result.created,
+      updated: result.updated,
+      reconciled: result.reconciled,
+      lastSyncAt: result.lastSyncAt.toISOString(),
+    });
   } catch (error) {
     if (isMissingSyncSinceColumnError(error)) {
       return NextResponse.json(
