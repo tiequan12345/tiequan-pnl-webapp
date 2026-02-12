@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, useCallback, type FormEvent } from 'react';
 import { datetimeLocalToUtcIso, toLocalDateTimeInput } from '@/lib/datetime';
 import { DateTimePicker } from '@/app/(authenticated)/_components/ui/DateTimePicker';
 
@@ -84,7 +84,7 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
     [accountId, exchangeId],
   );
 
-  async function loadStatus() {
+  const loadStatus = useCallback(async () => {
     setLoadingStatus(true);
     try {
       const response = await fetch(statusUrl, { cache: 'no-store' });
@@ -112,11 +112,11 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
     } finally {
       setLoadingStatus(false);
     }
-  }
+  }, [statusUrl]);
 
   useEffect(() => {
     loadStatus();
-  }, [statusUrl]);
+  }, [loadStatus]);
 
   async function handleSaveCredentials(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

@@ -799,7 +799,6 @@ export function LedgerForm({
         });
 
         // Use the parsed quantity which handles commas properly
-        const qtyString = qtyParsed!;
         const transferPayload = {
           ...buildCommonPayload({
             assetId: assetNumeric, // Will be ignored for multi-leg transfers
@@ -909,16 +908,6 @@ export function LedgerForm({
           setSubmitting(false);
           return;
         }
-
-        const payload = buildCommonPayload({
-          assetId: assetInNumeric, // This will be ignored for multi-leg trades
-          quantity: '0', // This will be ignored for multi-leg trades
-        }, effectiveDateTime);
-
-        const payloadOut = buildCommonPayload({
-          assetId: assetOutNumeric,
-          quantity: (-Math.abs(outQtyNumber!)).toString(),
-        }, effectiveDateTime);
 
         // Use the new multi-leg API
         const assetInValuations = buildValuationPayload({

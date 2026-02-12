@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Badge } from '../ui/Badge';
 import { usePrivacy } from '../../_contexts/PrivacyContext';
 import { ArrowUpRight, ArrowDownRight, RefreshCw, Clock } from 'lucide-react';
 import type { HoldingsSummary } from '@/lib/holdings';

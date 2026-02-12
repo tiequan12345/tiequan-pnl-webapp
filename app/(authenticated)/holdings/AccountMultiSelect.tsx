@@ -72,7 +72,6 @@ export function AccountMultiSelect({
 
   const selectedCount = selectedIds.length;
   const isAllSelected = accounts.length > 0 && selectedCount === accounts.length;
-  const isAllFilteredSelected = filteredAccounts.length > 0 && filteredAccounts.every(a => selectedIds.includes(String(a.id)));
 
   return (
     <div className="flex items-center gap-4">

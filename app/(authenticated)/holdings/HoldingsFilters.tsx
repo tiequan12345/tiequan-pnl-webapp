@@ -189,10 +189,6 @@ export function HoldingsFilters({
     });
   };
 
-  const updateHideSmall = (hideSmall: boolean) => {
-    router.push(buildUrl({ hideSmall }));
-  };
-
   return (
     <div className="space-y-4">
       {!hideViewToggle && (

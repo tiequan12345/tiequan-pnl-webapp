@@ -29,10 +29,6 @@ export function DateRangePicker({
   // Sync internal state with props to highlight correct preset
   useEffect(() => {
     if (!from) {
-      if (to === undefined && selectedPreset !== 'all') {
-        // Technically "All Time" corresponds to from=Epoch, but if props come in empty
-        // it might be initial state. We'll let the parent control "All" via the Epoch date.
-      }
       return;
     }
 
@@ -176,7 +172,7 @@ export function DateRangePicker({
                 onClick={(e) => {
                   try {
                     (e.target as any).showPicker();
-                  } catch (err) {
+                  } catch {
                     // fall back to default behavior
                   }
                 }}
@@ -192,7 +188,7 @@ export function DateRangePicker({
                 onClick={(e) => {
                   try {
                     (e.target as any).showPicker();
-                  } catch (err) {
+                  } catch {
                     // fall back to default behavior
                   }
                 }}

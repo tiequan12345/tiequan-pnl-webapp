@@ -156,19 +156,32 @@ export async function POST(req: NextRequest) {
                 });
             }
 
-            const toCreate = rows.filter(r => r.will_create).map(row => ({
-                date_time: asOf,
-                account_id: row.account_id,
-                asset_id: row.asset_id,
-                quantity: row.delta_quantity,
-                tx_type: 'RECONCILIATION',
-                external_reference: payload.external_reference,
-                notes: payload.notes ?? null,
-                // Valuation fields intentionally null
-                unit_price_in_base: null,
-                total_value_in_base: null,
-                fee_in_base: null,
-            }));
+            const batchNotes = typeof payload.notes === 'string' && payload.notes.trim().length > 0
+                ? payload.notes.trim()
+                : null;
+
+            const toCreate = rows
+                .map((row, index) => ({ row, target: targets[index] }))
+                .filter(({ row }) => row.will_create)
+                .map(({ row, target }) => {
+                    const targetNotes = typeof target?.notes === 'string' && target.notes.trim().length > 0
+                        ? target.notes.trim()
+                        : null;
+
+                    return {
+                        date_time: asOf,
+                        account_id: row.account_id,
+                        asset_id: row.asset_id,
+                        quantity: row.delta_quantity,
+                        tx_type: 'RECONCILIATION',
+                        external_reference: payload.external_reference,
+                        notes: targetNotes ?? batchNotes,
+                        // Valuation fields intentionally null
+                        unit_price_in_base: null,
+                        total_value_in_base: null,
+                        fee_in_base: null,
+                    };
+                });
 
             let createdCount = 0;
             if (toCreate.length > 0) {

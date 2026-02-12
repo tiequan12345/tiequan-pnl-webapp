@@ -180,13 +180,6 @@ async function apiGet<T>(path: string, accessToken: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-function formatMMDDYYYY(date: Date): string {
-  const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(date.getUTCDate()).padStart(2, '0');
-  const yyyy = String(date.getUTCFullYear());
-  return `${mm}-${dd}-${yyyy}`;
-}
-
 function extractOrdersFromResponse(json: unknown): { orders: TsOrder[]; nextToken?: string } {
   if (Array.isArray(json)) {
     return { orders: json as TsOrder[] };

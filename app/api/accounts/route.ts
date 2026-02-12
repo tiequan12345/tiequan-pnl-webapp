@@ -103,7 +103,8 @@ export async function GET() {
     });
 
     // Remove the ledger_transactions from the response since we only needed it for sorting
-    const responseAccounts = sortedAccounts.map(({ ledger_transactions, ...account }) => account);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const responseAccounts = sortedAccounts.map(({ ledger_transactions: _, ...account }) => account);
 
     return NextResponse.json(responseAccounts);
   } catch {

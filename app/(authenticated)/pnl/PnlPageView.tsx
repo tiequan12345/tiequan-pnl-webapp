@@ -259,18 +259,6 @@ export default function PnlPageView() {
     return () => abortController.abort();
   }, []);
 
-  const handleParamUpdate = (key: string, value: string) => {
-    const params = new URLSearchParams(searchKey);
-    if (value) {
-      params.set(key, value);
-    } else {
-      params.delete(key);
-    }
-    const target = pathname ?? '/pnl';
-    const query = params.toString();
-    router.push(query ? `${target}?${query}` : target);
-  };
-
   const handleDateRangeChange = (range: DateRange) => {
     const params = new URLSearchParams(searchKey);
     if (range.from) {

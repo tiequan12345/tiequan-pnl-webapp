@@ -5,7 +5,8 @@ import path from 'path';
 
 const execAsync = promisify(exec);
 
-export async function POST(request: NextRequest) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function POST(_: NextRequest) {
   try {
     // Execute the backup script
     const scriptPath = path.join(process.cwd(), 'scripts', 'backup.js');
@@ -41,7 +42,8 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET(request: NextRequest) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function GET(_: NextRequest) {
   try {
     // Read backup logs
     const fs = require('fs');

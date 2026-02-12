@@ -37,7 +37,6 @@ export function ReconciliationCard() {
     const [isPreviewing, setIsPreviewing] = useState(false);
     const [isCommitting, setIsCommitting] = useState(false);
     const [externalRef, setExternalRef] = useState<string>('');
-    const [batchNotes, setBatchNotes] = useState<string>('');
     const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
     // Data for potential dropdowns
@@ -102,7 +101,6 @@ export function ReconciliationCard() {
                     notes: t.notes,
                 })),
                 external_reference: externalRef || null,
-                notes: batchNotes || null,
                 mode: 'PREVIEW',
             };
 
@@ -141,7 +139,6 @@ export function ReconciliationCard() {
                     notes: t.notes
                 })),
                 external_reference: externalRef || null,
-                notes: batchNotes || null,
                 mode: 'COMMIT',
                 replace_existing: true,
             };

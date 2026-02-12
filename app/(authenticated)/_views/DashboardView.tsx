@@ -95,7 +95,7 @@ export function DashboardView() {
   const { isPrivacyMode } = usePrivacy();
   const [state, setState] = useState<DashboardState>(INITIAL_STATE);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [holdingsError, setHoldingsError] = useState<string | null>(null);
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [ledgerError, setLedgerError] = useState<string | null>(null);
   const [pnlPoints, setPnlPoints] = useState<PnlTimeSeriesPoint[]>([]);
@@ -126,7 +126,7 @@ export function DashboardView() {
 
   const fetchHoldings = useCallback(async () => {
     setLoading(true);
-    setError(null);
+    setHoldingsError(null);
 
     try {
       const response = await fetch('/api/holdings?view=consolidated', {
@@ -165,7 +165,7 @@ export function DashboardView() {
       }));
     } catch (fetchError) {
       console.error(fetchError);
-      setError('Unable to load holdings right now.');
+      setHoldingsError('Unable to load holdings right now.');
     } finally {
       setLoading(false);
     }
@@ -433,6 +433,10 @@ export function DashboardView() {
         {loading ? (
           <div className="px-4 py-8 text-center text-sm text-zinc-500">
             Loading holdings…
+          </div>
+        ) : holdingsError ? (
+          <div className="px-4 py-8 text-center text-sm text-rose-300">
+            {holdingsError}
           </div>
         ) : (
           <div className="overflow-x-auto">

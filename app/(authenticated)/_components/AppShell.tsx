@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
@@ -71,10 +72,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <aside className="w-64 border-r border-zinc-800 bg-zinc-950 hidden md:flex flex-col">
           <div className="p-6">
             <div className="flex items-center gap-2 text-xl font-bold tracking-tight">
-              <img
+              <Image
                 src="/tiequan-logo.png"
                 alt="Tiequan"
-                className="w-8 h-8 rounded-lg object-contain"
+                width={32}
+                height={32}
+                className="rounded-lg object-contain"
               />
               Tiequan Portfolio
             </div>

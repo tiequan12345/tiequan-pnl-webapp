@@ -1,7 +1,5 @@
 import React, { Suspense } from 'react';
-import Link from 'next/link';
 import { Card } from '../_components/ui/Card';
-import { Badge } from '../_components/ui/Badge';
 import { HoldingsList } from './HoldingsList';
 import { HoldingsFilters } from './HoldingsFilters';
 import { PortfolioHero } from '../_components/holdings/PortfolioHero';
@@ -10,7 +8,6 @@ import {
   consolidateHoldingsByAsset,
   getHoldings,
   summarizeHoldings,
-  type HoldingRow,
 } from '@/lib/holdings';
 import { getAppSettings } from '@/lib/settings';
 
@@ -24,13 +21,6 @@ type HoldingsPageProps = {
     hideSmall?: string;
   }>;
 };
-
-function formatCurrency(value: number, currency: string) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-  }).format(value);
-}
 
 function parseNumberList(value?: string) {
   if (!value) {

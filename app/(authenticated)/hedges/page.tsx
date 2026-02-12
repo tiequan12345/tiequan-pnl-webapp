@@ -1,7 +1,6 @@
 import { prisma } from '@/lib/db';
 import { Card } from '../_components/ui/Card';
 import {
-  HedgeTransactionsTable,
   type HedgeTableRow,
   NetExposureTable,
   type NetExposureRow,

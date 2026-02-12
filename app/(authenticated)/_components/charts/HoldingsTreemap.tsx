@@ -1,8 +1,7 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { ResponsiveContainer, Treemap, Tooltip } from 'recharts';
-import { Card } from '../ui/Card';
 import type { HoldingRow } from '@/lib/holdings';
 import { usePrivacy } from '../../_contexts/PrivacyContext';
 
@@ -14,20 +13,12 @@ type HoldingsTreemapProps = {
     baseCurrency: string;
 };
 
-type TreemapData = {
-    name: string;
-    size: number; // Market Value
-    pnl: number;  // PnL Amount
-    pnlPct: number; // PnL Percent
-    children?: TreemapData[];
-};
-
 /* --------------------------------------------------------------------------------
  * Content Renderer
  * - Custom SVG implementation for the Treemap cells
  * -------------------------------------------------------------------------------- */
 const CustomContent = (props: any) => {
-    const { root, depth, x, y, width, height, index, name, pnlPct, size } = props;
+    const { x, y, width, height, name, pnlPct } = props;
     const safePnlPct = Number.isFinite(pnlPct) ? pnlPct : 0;
 
     // Simple color scale based on P&L %
@@ -94,7 +85,7 @@ const CustomContent = (props: any) => {
 /* --------------------------------------------------------------------------------
  * Tooltip
  * -------------------------------------------------------------------------------- */
-const CustomTooltip = ({ active, payload, label, baseCurrency, isPrivacyMode }: any) => {
+const CustomTooltip = ({ active, payload, baseCurrency, isPrivacyMode }: any) => {
     if (active && payload && payload.length) {
         const data = payload[0].payload;
         const safePnlPct = Number.isFinite(data.pnlPct) ? data.pnlPct : 0;
@@ -143,14 +134,7 @@ export function HoldingsTreemap({ rows, baseCurrency }: HoldingsTreemapProps) {
 
         // Transform for Recharts
         // Structure: [ { name: 'Holdings', children: [ ...items ] } ]
-        const children = validRows.map((row, index) => ({
-            // Use a combination of symbol and index/account to ensure uniqueness if needed,
-            // but for display "name" should be the symbol.
-            // Recharts might use name as key, so duplicate names cause issues.
-            // We can pass a separate 'displayName' and use unique 'name' for the key?
-            // Or just let it be for now and focus on visual fix.
-            // Let's stick to symbol for the name as that's what shows in the box.
-            // Duplicate keys warning is secondary to the visual bug.
+        const children = validRows.map((row) => ({
             name: row.assetSymbol,
             size: row.marketValue || 0,
             pnl: row.unrealizedPnl || 0,
