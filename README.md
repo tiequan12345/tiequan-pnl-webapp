@@ -324,6 +324,8 @@ This only prices option contracts that appear in **current positions**.
 
 CCXT routes are protected by the same session middleware used by the rest of the app (`app_session` cookie).
 
+Release note / rollout checklist: [`docs/release-note-2026-02-11-ccxt-queue-hardening.md`](docs/release-note-2026-02-11-ccxt-queue-hardening.md)
+
 ### Sync window and UTC behavior
 
 - `CcxtConnection.sync_since` is persisted as an absolute UTC timestamp.
