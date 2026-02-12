@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 
 import { Card } from '../_components/ui/Card';
 import { UnmatchedDiagnosticsViewer, type EnrichedDiagnostic } from './_components/UnmatchedDiagnosticsViewer';
+import { DateTimePicker } from '../_components/ui/DateTimePicker';
 
 type SettingsState = {
   baseCurrency: string;
@@ -344,15 +345,12 @@ export default function SettingsPage() {
               <option value="HONOR_RESETS">HONOR_RESETS (apply existing resets)</option>
             </select>
           </label>
-          <label className="space-y-2">
-            <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">As Of (optional)</span>
-            <input
-              type="datetime-local"
-              value={recalcAsOf}
-              onChange={(e) => setRecalcAsOf(e.target.value)}
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-            />
-          </label>
+          <DateTimePicker
+            label="As Of (optional)"
+            value={recalcAsOf}
+            onChange={setRecalcAsOf}
+            className="w-full"
+          />
           <label className="space-y-2">
             <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">External Reference (optional)</span>
             <input

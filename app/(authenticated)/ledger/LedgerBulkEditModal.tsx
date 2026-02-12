@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ALLOWED_TX_TYPES, type LedgerTxType } from '@/lib/ledger';
+import { DateTimePicker } from '@/app/(authenticated)/_components/ui/DateTimePicker';
 
 type LedgerBulkEditModalProps = {
     isOpen: boolean;
@@ -93,12 +94,12 @@ export function LedgerBulkEditModal({
                             />
                         </div>
                         <div className="flex-1">
-                            <label className="block text-sm font-medium text-zinc-400 mb-1">Date & Time</label>
-                            <input
-                                type="datetime-local"
+                            <DateTimePicker
+                                label="Date & Time"
+                                value={updates.date_time ?? ''}
+                                onChange={(val) => setUpdates(p => ({ ...p, date_time: val }))}
                                 disabled={!enabledFields.date_time}
-                                className="w-full bg-zinc-800 border-zinc-700 rounded-md text-zinc-200 disabled:opacity-50 focus:border-blue-500 focus:ring-blue-500/20 p-2"
-                                onChange={e => setUpdates(p => ({ ...p, date_time: e.target.value }))}
+                                required={enabledFields.date_time}
                             />
                         </div>
                     </div>

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { datetimeLocalToUtcIso, toLocalDateTimeInput } from '@/lib/datetime';
+import { DateTimePicker } from '@/app/(authenticated)/_components/ui/DateTimePicker';
 
 type ExchangeConnectionClientProps = {
   accountId: number;
@@ -92,10 +93,10 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
 
       const parsedOptions = data.connection?.options_json
         ? (JSON.parse(data.connection.options_json) as {
-            defaultType?: string;
-            defaultSubType?: string;
-            defaultSettle?: string;
-          })
+          defaultType?: string;
+          defaultSubType?: string;
+          defaultSettle?: string;
+        })
         : null;
 
       if (parsedOptions?.defaultType) setDefaultType(parsedOptions.defaultType);
@@ -377,27 +378,23 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
             </select>
           </label>
 
-          <label className="space-y-1 text-sm text-zinc-300">
-            <span>Sync From (optional)</span>
-            <input
-              type="datetime-local"
+          <div className="space-y-1">
+            <DateTimePicker
+              label="Sync From (optional)"
               value={syncSince}
-              onChange={(event) => setSyncSince(event.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100"
+              onChange={setSyncSince}
             />
             <p className="text-xs text-zinc-500">Only sync trades/movements from this date onwards. Saved and applied in UTC. Leave empty to use default lookback. You can change this without re-entering API credentials.</p>
-          </label>
+          </div>
 
-          <label className="space-y-1 text-sm text-zinc-300">
-            <span>Manual Sync Override (optional)</span>
-            <input
-              type="datetime-local"
+          <div className="space-y-1">
+            <DateTimePicker
+              label="Manual Sync Override (optional)"
               value={manualSyncSinceOverride}
-              onChange={(event) => setManualSyncSinceOverride(event.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100"
+              onChange={setManualSyncSinceOverride}
             />
             <p className="text-xs text-zinc-500">Manual sync uses saved Sync From by default. Set this only to override for one run.</p>
-          </label>
+          </div>
         </div>
 
         <label className="inline-flex items-center gap-2 text-sm text-zinc-300">

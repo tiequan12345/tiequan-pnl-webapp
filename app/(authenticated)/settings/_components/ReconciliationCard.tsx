@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Card } from '../../_components/ui/Card';
+import { DateTimePicker } from '@/app/(authenticated)/_components/ui/DateTimePicker';
 
 type Account = { id: number; name: string };
 type Asset = { id: number; symbol: string; name: string };
@@ -180,8 +181,8 @@ export function ReconciliationCard() {
             {message && (
                 <div
                     className={`text-xs border rounded-lg px-3 py-2 ${message.type === 'error'
-                            ? 'text-rose-400 bg-rose-500/10 border-rose-500/40'
-                            : 'text-green-400 bg-green-500/10 border-green-500/40'
+                        ? 'text-rose-400 bg-rose-500/10 border-rose-500/40'
+                        : 'text-green-400 bg-green-500/10 border-green-500/40'
                         }`}
                 >
                     {message.text}
@@ -189,17 +190,12 @@ export function ReconciliationCard() {
             )}
 
             <div className="grid gap-4 md:grid-cols-2">
-                <label className="space-y-2">
-                    <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
-                        As Of Date/Time
-                    </span>
-                    <input
-                        type="datetime-local"
-                        value={asOf}
-                        onChange={(e) => setAsOf(e.target.value)}
-                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    />
-                </label>
+                <DateTimePicker
+                    label="As Of Date/Time"
+                    value={asOf}
+                    onChange={setAsOf}
+                    className="w-full"
+                />
                 <label className="space-y-2">
                     <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
                         External Reference (Optional)

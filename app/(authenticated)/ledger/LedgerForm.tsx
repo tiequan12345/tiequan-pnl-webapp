@@ -3,6 +3,8 @@
 import React, { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ALLOWED_TX_TYPES, LedgerTxType, shortenLedgerPrecision, parseLedgerDecimal, decimalValueToNumber } from '@/lib/ledger';
+import { DateTimePicker } from '@/app/(authenticated)/_components/ui/DateTimePicker';
+import { toLocalDateTimeInput } from '@/lib/datetime';
 
 type LedgerFormMode = 'create' | 'edit';
 
@@ -92,23 +94,6 @@ const TX_TYPE_LABELS: Record<LedgerTxType, string> = {
   RECONCILIATION: 'Reconciliation (True-Up)',
 };
 
-function getDefaultDateTimeLocal(): string {
-  const now = new Date();
-  const offsetMs = now.getTimezoneOffset() * 60000;
-  const local = new Date(now.getTime() - offsetMs);
-  return local.toISOString().slice(0, 16);
-}
-
-function toLocalDateTimeInput(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return getDefaultDateTimeLocal();
-  }
-  const offsetMs = date.getTimezoneOffset() * 60000;
-  const local = new Date(date.getTime() - offsetMs);
-  return local.toISOString().slice(0, 16);
-}
-
 // Helper function to parse numbers with comma support for auto-calculations
 function parseFiniteNumberWithCommas(input: string): number | null {
   const trimmed = input.trim();
@@ -133,10 +118,11 @@ export function LedgerForm({
   const isEditMode = mode === 'edit';
 
   const [dateTime, setDateTime] = useState<string>(() => {
+    const nowLocal = toLocalDateTimeInput(new Date().toISOString()) || '';
     if (initialValues?.date_time) {
-      return toLocalDateTimeInput(initialValues.date_time);
+      return toLocalDateTimeInput(initialValues.date_time) ?? nowLocal;
     }
-    return getDefaultDateTimeLocal();
+    return nowLocal;
   });
 
   const [accountId, setAccountId] = useState<string>(() => {
@@ -586,7 +572,7 @@ export function LedgerForm({
     setSubmitting(true);
 
     // Use current time at submission if user hasn't modified the date/time field
-    const effectiveDateTime = dateTimeTouched ? dateTime : getDefaultDateTimeLocal();
+    const effectiveDateTime = dateTimeTouched ? dateTime : (toLocalDateTimeInput(new Date().toISOString()) || '');
 
     if (!dateTime || !accountId) {
       setError('Date/time and account are required.');
@@ -815,7 +801,7 @@ export function LedgerForm({
         // Use the parsed quantity which handles commas properly
         const qtyString = qtyParsed!;
         const transferPayload = {
-        ...buildCommonPayload({
+          ...buildCommonPayload({
             assetId: assetNumeric, // Will be ignored for multi-leg transfers
             quantity: '0', // Will be ignored for multi-leg transfers
           }, effectiveDateTime),
@@ -929,7 +915,7 @@ export function LedgerForm({
           quantity: '0', // This will be ignored for multi-leg trades
         }, effectiveDateTime);
 
-      const payloadOut = buildCommonPayload({
+        const payloadOut = buildCommonPayload({
           assetId: assetOutNumeric,
           quantity: (-Math.abs(outQtyNumber!)).toString(),
         }, effectiveDateTime);
@@ -947,7 +933,7 @@ export function LedgerForm({
         });
 
         const tradePayload = {
-        ...buildCommonPayload({
+          ...buildCommonPayload({
             assetId: assetInNumeric, // This will be ignored for multi-leg trades
             quantity: '0', // This will be ignored for multi-leg trades
           }, effectiveDateTime),
@@ -1161,22 +1147,16 @@ export function LedgerForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Date / Time */}
-        <div className="space-y-2">
-          <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
-            Date / Time
-          </label>
-          <input
-            type="datetime-local"
-            value={dateTime}
-            onChange={(event) => {
-              setDateTimeTouched(true);
-              setDateTime(event.target.value);
-            }}
-            required
-            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-          />
-        </div>
+        <DateTimePicker
+          label="Date / Time"
+          value={dateTime}
+          onChange={(val) => {
+            setDateTimeTouched(true);
+            setDateTime(val);
+          }}
+          required
+          className="w-full"
+        />
 
         {/* Account */}
         <div className="space-y-2">
