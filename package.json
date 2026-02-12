@@ -13,7 +13,9 @@
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:generate": "prisma generate",
     "backup": "node scripts/backup.js",
-    "backup-service": "node scripts/backup-service.js"
+    "backup-service": "node scripts/backup-service.js",
+    "ccxt:status": "bash scripts/debug/ccxt-status.sh",
+    "ccxt:statu": "bash scripts/debug/ccxt-statu.sh"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.600.0",
