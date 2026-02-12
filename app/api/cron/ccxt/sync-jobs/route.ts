@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { processNextCcxtSyncJob } from '@/lib/ccxt/syncJobs';
+import { processNextCcxtSyncJob, type CcxtSupportedExchange } from '@/lib/ccxt/syncJobs';
 
 export const runtime = 'nodejs';
 export const maxDuration = 1800;
 
 type WorkerPayload = {
   maxJobs?: number;
+  exchange?: CcxtSupportedExchange;
 };
 
 function requireCronAuth(request: NextRequest): NextResponse | null {
@@ -37,6 +38,19 @@ function getMaxJobsOverride(payload: WorkerPayload | null): number {
   return 1;
 }
 
+function parseExchangeOverride(payload: WorkerPayload | null): CcxtSupportedExchange | null | undefined {
+  const exchangeRaw = (payload?.exchange ?? '').trim().toLowerCase();
+  if (!exchangeRaw) {
+    return undefined;
+  }
+
+  if (exchangeRaw === 'binance' || exchangeRaw === 'bybit') {
+    return exchangeRaw;
+  }
+
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   const unauthorized = requireCronAuth(request);
   if (unauthorized) {
@@ -45,11 +59,16 @@ export async function POST(request: NextRequest) {
 
   const payload = (await request.json().catch(() => null)) as WorkerPayload | null;
   const maxJobs = getMaxJobsOverride(payload);
+  const exchange = parseExchangeOverride(payload);
+
+  if (exchange === null) {
+    return NextResponse.json({ error: "exchange must be 'binance' or 'bybit' when provided." }, { status: 400 });
+  }
 
   const results: Array<{ jobId?: number; status?: string; error?: string; retryScheduledFor?: string }> = [];
 
   for (let i = 0; i < maxJobs; i += 1) {
-    const outcome = await processNextCcxtSyncJob();
+    const outcome = await processNextCcxtSyncJob(exchange);
     if (!outcome.processed) {
       break;
     }
@@ -64,6 +83,7 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     ok: true,
+    exchange: exchange ?? 'any',
     processedCount: results.length,
     maxJobs,
     results,

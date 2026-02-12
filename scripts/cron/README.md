@@ -96,6 +96,8 @@ CCXT_SYNC_ENDPOINT_URL="https://port.tiequan.app/api/cron/ccxt/sync"
 # Worker endpoint
 CCXT_SYNC_WORKER_ENDPOINT_URL="https://port.tiequan.app/api/cron/ccxt/sync-jobs"
 CCXT_SYNC_WORKER_MAX_JOBS="1"
+# Optional default target queue for worker (override per cron line)
+# CCXT_SYNC_WORKER_EXCHANGE="binance"
 
 # You can define enqueue defaults here and override per cron line
 CCXT_SYNC_ACCOUNT_ID="4"
@@ -115,8 +117,9 @@ chmod +x /path/to/repo/scripts/cron/run-ccxt-sync-worker.sh
 Example cron entries:
 
 ```cron
-# Worker: process queued jobs every minute
-* * * * * ENV_FILE=/etc/tiequan-pnl-webapp.env /bin/bash /path/to/repo/scripts/cron/run-ccxt-sync-worker.sh >> /var/log/tiequan-ccxt-worker.log 2>&1
+# Workers: run in parallel, one per exchange (recommended for rate limits)
+* * * * * ENV_FILE=/etc/tiequan-pnl-webapp.env CCXT_SYNC_WORKER_EXCHANGE=binance /bin/bash /path/to/repo/scripts/cron/run-ccxt-sync-worker.sh >> /var/log/tiequan-ccxt-worker-binance.log 2>&1
+* * * * * ENV_FILE=/etc/tiequan-pnl-webapp.env CCXT_SYNC_WORKER_EXCHANGE=bybit /bin/bash /path/to/repo/scripts/cron/run-ccxt-sync-worker.sh >> /var/log/tiequan-ccxt-worker-bybit.log 2>&1
 
 # Binance trades enqueue every 15 minutes
 */15 * * * * ENV_FILE=/etc/tiequan-pnl-webapp.env CCXT_SYNC_ACCOUNT_ID=4 CCXT_SYNC_EXCHANGE=binance CCXT_SYNC_MODE=trades /bin/bash /path/to/repo/scripts/cron/run-ccxt-sync.sh >> /var/log/tiequan-ccxt-binance-trades-enqueue.log 2>&1
@@ -132,6 +135,7 @@ Notes:
 - If `CCXT_SYNC_SINCE` is omitted, the app uses saved `sync_since` by default.
 - Use absolute paths in cron entries.
 - Both scripts use `flock` (if available) to prevent overlapping runs.
+- Worker lock files are exchange-scoped when `CCXT_SYNC_WORKER_EXCHANGE` is set, so Binance + Bybit workers can run at the same time.
 
 ## TradeStation daily cash reconciliation
 

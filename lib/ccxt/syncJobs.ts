@@ -1,10 +1,13 @@
 import { randomUUID } from 'node:crypto';
 
+import { Prisma } from '@prisma/client';
+
 import { prisma } from '@/lib/db';
 import { syncCcxtAccount, type CcxtSyncMode } from '@/lib/ccxt/sync';
 
 export type CcxtSyncJobStatus = 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'FAILED';
 export type CcxtSyncJobRequestedBy = 'MANUAL' | 'CRON';
+export type CcxtSupportedExchange = 'binance' | 'bybit';
 
 type QueueInput = {
   accountId: number;
@@ -30,6 +33,19 @@ type SyncJobProgress = {
   message?: string;
   [key: string]: unknown;
 };
+
+function normalizeCcxtExchange(value?: string | null): CcxtSupportedExchange | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'binance' || normalized === 'bybit') {
+    return normalized;
+  }
+
+  return undefined;
+}
 
 function readPositiveIntFromEnv(key: string, fallback: number): number {
   const raw = Number(process.env[key] ?? String(fallback));
@@ -188,19 +204,26 @@ export async function enqueueCcxtSyncJob(input: QueueInput): Promise<{
   };
 }
 
-export async function claimNextCcxtSyncJob(): Promise<ClaimedCcxtSyncJob | null> {
+export async function claimNextCcxtSyncJob(
+  exchangeId?: CcxtSupportedExchange,
+): Promise<ClaimedCcxtSyncJob | null> {
   await markStaleRunningCcxtJobsAsFailed();
+
+  const normalizedExchange = normalizeCcxtExchange(exchangeId);
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const now = new Date();
+    const queueWhere: Prisma.CcxtSyncJobWhereInput = {
+      status: 'QUEUED',
+      OR: [
+        { next_run_at: null },
+        { next_run_at: { lte: now } },
+      ],
+      ...(normalizedExchange ? { exchange_id: normalizedExchange } : {}),
+    };
+
     const candidate = await prisma.ccxtSyncJob.findFirst({
-      where: {
-        status: 'QUEUED',
-        OR: [
-          { next_run_at: null },
-          { next_run_at: { lte: now } },
-        ],
-      },
+      where: queueWhere,
       orderBy: [{ next_run_at: 'asc' }, { created_at: 'asc' }, { id: 'asc' }],
       select: {
         id: true,
@@ -430,14 +453,14 @@ export async function runClaimedCcxtSyncJob(job: ClaimedCcxtSyncJob): Promise<{
   }
 }
 
-export async function processNextCcxtSyncJob(): Promise<{
+export async function processNextCcxtSyncJob(exchangeId?: CcxtSupportedExchange): Promise<{
   processed: boolean;
   jobId?: number;
   status?: CcxtSyncJobStatus;
   error?: string;
   retryScheduledFor?: string;
 }> {
-  const claimed = await claimNextCcxtSyncJob();
+  const claimed = await claimNextCcxtSyncJob(exchangeId);
   if (!claimed) {
     return { processed: false };
   }
