@@ -544,12 +544,43 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
 
     if (tx.tx_type === 'RECONCILIATION') {
       const position = getOrCreatePosition(tx);
-      const quantity = decimalToNumber(tx.quantity);
-      position.quantity += quantity;
+      const quantityDelta = decimalToNumber(tx.quantity);
+      const quantityBefore = position.quantity;
+      const quantityAfter = quantityBefore + quantityDelta;
+
+      position.quantity = quantityAfter;
+
+      if (position.costBasisKnown) {
+        if (isCashLikeAsset(tx.asset)) {
+          if (quantityDelta > 0) {
+            position.costBasis += Math.abs(quantityDelta);
+          } else if (quantityDelta < 0) {
+            position.costBasis -= Math.abs(quantityDelta);
+            if (position.costBasis < 0) {
+              position.costBasis = 0;
+            }
+          }
+        } else if (Math.abs(quantityBefore) > 1e-12) {
+          const averageCostPerUnit = position.costBasis / quantityBefore;
+          if (Number.isFinite(averageCostPerUnit)) {
+            position.costBasis = averageCostPerUnit * quantityAfter;
+          } else {
+            position.costBasisKnown = false;
+            markCostBasisStatus(position, 'UNKNOWN');
+          }
+        } else if (Math.abs(quantityDelta) > 1e-12) {
+          // No prior quantity and reconciliation entries do not carry valuation, so
+          // basis for non-cash assets cannot be inferred.
+          position.costBasisKnown = false;
+          markCostBasisStatus(position, 'UNKNOWN');
+        }
+      }
 
       // Clean up dust and ghost basis
       if (Math.abs(position.quantity) <= 1e-12) {
         position.quantity = 0;
+        position.costBasis = 0;
+      } else if (Math.abs(position.costBasis) <= 1e-12) {
         position.costBasis = 0;
       }
 

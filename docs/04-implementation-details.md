@@ -69,7 +69,7 @@ All core phases (0-6) are complete with the following key features implemented:
 - **Transfer Transaction Type**: Move assets between accounts with cost basis preservation
 
 ### ✅ Phase 7 – Ledger Reconciliation
-- **RECONCILIATION Transaction Type**: Adjust quantities without affecting cost basis
+- **RECONCILIATION Transaction Type**: Adjust quantities and rebalance cost basis (cash-like assets stay ~1:1; non-cash preserves average cost)
 - **Batch Reconciliation API**: Preview and commit true-ups across accounts/assets
 - **Settings UI**: `ReconciliationCard` for batch true-up workflows
 - **Auto-Zero Logic**: `LedgerForm` support for zeroing out entire accounts with one click
@@ -197,12 +197,16 @@ All core phases (0-6) are complete with the following key features implemented:
 **Problem**: Impermanent loss from LP positions or other external factors causes ledger quantities to drift from actual wallet balances. Previous transfer/trade logic required equal-and-opposite value, which IL violates.
 
 **Solution**: Implemented `RECONCILIATION` transaction type:
-- **Quantity-Only**: Adjusts holdings counts without affecting cost basis. If quantity becomes zero, cost basis is also zeroed.
+- **Quantity + Basis Rebalance**: Adjusts holdings quantities and updates basis structurally.
+  - Cash-like assets (`CASH`/`STABLE`/USD-family symbols) keep near 1:1 quantity:basis behavior.
+  - Non-cash assets preserve pre-reconciliation average cost by scaling basis with quantity.
+  - If reconciliation changes non-cash quantity from a zero baseline, basis is marked unknown (no valuation to infer from).
+  - If quantity converges to zero, cost basis is zeroed.
 - **Idempotent API**: `/api/ledger/reconcile` supports preview/commit workflows with `external_reference` tracking.
 - **UI Tooling**: 
   - Dedicated **Reconciliation Card** in Settings for batch multi-account true-ups.
   - **Single-Click Zero-Out** in `LedgerForm`: Selecting Reconciliation type hides fields and zeros out the entire account balance upon submission.
-- **Use Case**: Allows precise quantity correction (e.g. +1.2 BTC, -2000 USDC) to match external reality without distorting historical cost.
+- **Use Case**: Allows precise quantity correction (e.g. +1.2 BTC, -2000 USDC) while keeping portfolio basis math internally consistent.
 
 ## Technical Architecture
 

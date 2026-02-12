@@ -1,22 +1,25 @@
 # Ledger Reconciliation Guide
 
-This guide explains how to use the ledger reconciliation feature to true-up holdings to actual balances without changing cost basis. It is written for someone downloading and using the repo for the first time.
+This guide explains how to use the ledger reconciliation feature to true-up holdings to actual balances while keeping cost-basis math internally consistent. It is written for someone downloading and using the repo for the first time.
 
 ## What reconciliation does
 
 - Creates **RECONCILIATION** ledger transactions.
-- Adjusts quantities **only**; cost basis is preserved.
+- Adjusts quantity and updates cost basis according to asset class:
+  - **Cash-like assets**: quantity and basis move together (near 1:1).
+  - **Non-cash assets**: average cost per unit is preserved by scaling basis with the quantity change.
 - If an adjustment brings quantity to zero, cost basis is zeroed.
+- If non-cash quantity changes from a zero baseline, cost basis is marked unknown (reconciliation rows have no valuation fields).
 - Provides an idempotent workflow by using an external reference.
 
-This is designed for situations like LP impermanent loss, wallet drift, or manual balance corrections where you want holdings to match reality without altering historical trade valuations.
+This is designed for situations like LP impermanent loss, wallet drift, or manual balance corrections where you want holdings to match reality without rewriting historical trade records.
 
 ## When to use reconciliation
 
 Use reconciliation when:
 - Your ledger balance drifts from on-chain or broker balances.
 - You need to true-up quantities after a large import.
-- You need to close out a position without affecting cost basis.
+- You need to close out or resize a position while preserving coherent basis math.
 
 Do **not** use reconciliation for normal transfers or trades—use standard ledger entries for those.
 
@@ -101,4 +104,4 @@ Commit response includes `created` count:
 
 - **No rows created**: Your deltas are below `epsilon` or targets match current quantities.
 - **Unexpected deltas**: Verify you’re using the correct account and asset IDs.
-- **Cost basis looks wrong**: Reconciliation does not alter cost basis; run the cost basis recalculation if needed.
+- **Cost basis looks wrong**: Reconciliation now rebalances basis with quantity. If basis is still off, run cost basis recalculation and inspect transfer/reconciliation history.

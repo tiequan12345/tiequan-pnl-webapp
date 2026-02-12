@@ -171,7 +171,7 @@ export function ReconciliationCard() {
                 <h2 className="text-lg font-semibold">Reconciliation</h2>
                 <p className="text-sm text-zinc-400">
                     True-up quantities to match actual balances (e.g. for impermanent loss or closing positions).
-                    This creates RECONCILIATION entries that adjust quantity without affecting cost basis.
+                    This creates RECONCILIATION entries that adjust quantity and rebalance cost basis proportionally.
                 </p>
             </div>
 

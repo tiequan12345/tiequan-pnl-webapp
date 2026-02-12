@@ -147,13 +147,40 @@ function applyReconciliationTransaction(
   tx: RecalcTransaction,
 ): void {
   const position = getOrCreatePosition(positions, tx);
-  const quantity = toNumber(tx.quantity) ?? 0;
+  const quantityDelta = toNumber(tx.quantity) ?? 0;
+  const quantityBefore = position.quantity;
+  const quantityAfter = quantityBefore + quantityDelta;
 
-  position.quantity += quantity;
+  position.quantity = quantityAfter;
 
-  // Match holdings.ts behavior
+  if (position.costBasisKnown) {
+    if (isCashLikeAsset(tx.asset)) {
+      if (quantityDelta > 0) {
+        position.costBasis += Math.abs(quantityDelta);
+      } else if (quantityDelta < 0) {
+        position.costBasis -= Math.abs(quantityDelta);
+        if (position.costBasis < 0) {
+          position.costBasis = 0;
+        }
+      }
+    } else if (Math.abs(quantityBefore) > 1e-12) {
+      const averageCostPerUnit = position.costBasis / quantityBefore;
+      if (Number.isFinite(averageCostPerUnit)) {
+        position.costBasis = averageCostPerUnit * quantityAfter;
+      } else {
+        position.costBasisKnown = false;
+      }
+    } else if (Math.abs(quantityDelta) > 1e-12) {
+      // Reconciliation entries do not include valuation, so basis for non-cash
+      // assets cannot be inferred from a zero baseline quantity.
+      position.costBasisKnown = false;
+    }
+  }
+
   if (Math.abs(position.quantity) <= 1e-12) {
     position.quantity = 0;
+    position.costBasis = 0;
+  } else if (Math.abs(position.costBasis) <= 1e-12) {
     position.costBasis = 0;
   }
 }
