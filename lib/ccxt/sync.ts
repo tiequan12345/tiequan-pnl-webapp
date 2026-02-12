@@ -594,10 +594,13 @@ async function fetchTradesForSync(params: {
 
   const uniqueSymbols = Array.from(new Set(candidateSymbols));
   const targets = maxSymbols ? uniqueSymbols.slice(0, maxSymbols) : uniqueSymbols;
+  const supportsUnscopedFetchMyTrades = EXCHANGES_WITH_UNSCOPED_MY_TRADES.has(exchangeId);
 
   await reportProgress(onProgress, {
     stage: 'trades.symbols',
-    message: `Scanning ${targets.length || 1} market target(s).`,
+    message: supportsUnscopedFetchMyTrades
+      ? `Prepared ${targets.length || 1} fallback market target(s); using unscoped trade fetch first.`
+      : `Scanning ${targets.length || 1} market target(s).`,
     symbolCount: targets.length || 1,
     marketScope,
   });
@@ -688,8 +691,6 @@ async function fetchTradesForSync(params: {
     await fetchWindow(sinceTs);
   };
 
-  const supportsUnscopedFetchMyTrades = EXCHANGES_WITH_UNSCOPED_MY_TRADES.has(exchangeId);
-
   if (supportsUnscopedFetchMyTrades) {
     const unscopedRequests: Array<{ label: string; params?: Record<string, unknown> }> =
       exchangeId === 'bybit'
@@ -700,6 +701,7 @@ async function fetchTradesForSync(params: {
         : [{ label: 'default' }];
 
     let unscopedFetched = 0;
+    let unscopedFailures = 0;
 
     for (const request of unscopedRequests) {
       try {
@@ -707,11 +709,16 @@ async function fetchTradesForSync(params: {
         await fetchSymbolTrades(undefined, 1, request.params);
         unscopedFetched += trades.length - before;
       } catch (error) {
+        unscopedFailures += 1;
         console.warn(
-          `[ccxt-sync] Unscoped fetchMyTrades failed for ${exchangeId} (${marketScope}, ${request.label}); falling back to per-symbol sync.`,
+          `[ccxt-sync] Unscoped fetchMyTrades failed for ${exchangeId} (${marketScope}, ${request.label}); may fall back to per-symbol sync.`,
           error,
         );
       }
+    }
+
+    if (unscopedFailures === 0) {
+      return trades;
     }
 
     if (unscopedFetched > 0 || targets.length === 0) {
@@ -719,7 +726,7 @@ async function fetchTradesForSync(params: {
     }
 
     console.warn(
-      `[ccxt-sync] Unscoped fetchMyTrades returned no trades for ${exchangeId} (${marketScope}); falling back to per-symbol sync.`,
+      `[ccxt-sync] Unscoped fetchMyTrades failed for ${exchangeId} (${marketScope}); falling back to per-symbol sync.`,
     );
   }
 

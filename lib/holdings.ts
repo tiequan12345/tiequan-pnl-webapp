@@ -256,13 +256,16 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
 
   const accountIds = Array.from(new Set(transactions.map((tx) => tx.account_id)));
 
-  const futuresUnrealizedByAccountAndSymbol = new Map<number, Map<string, number>>();
+  const futuresSnapshotByAccountAndSymbol = new Map<
+    number,
+    Map<string, { contracts: number; unrealizedPnl: number }>
+  >();
 
   if (accountIds.length > 0) {
     const ccxtConnections = await prisma.ccxtConnection.findMany({
       where: {
         account_id: { in: accountIds },
-        exchange_id: 'binance',
+        exchange_id: { in: ['binance', 'bybit'] },
       },
       select: {
         account_id: true,
@@ -278,7 +281,11 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
       try {
         const parsed = JSON.parse(connection.metadata_json) as {
           futuresSnapshot?: {
-            positions?: Array<{ symbol?: string; unrealizedPnl?: number | string | null }>;
+            positions?: Array<{
+              symbol?: string;
+              contracts?: number | string | null;
+              unrealizedPnl?: number | string | null;
+            }>;
           };
         };
 
@@ -287,23 +294,31 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
           continue;
         }
 
-        const bySymbol = new Map<string, number>();
+        const bySymbol = new Map<string, { contracts: number; unrealizedPnl: number }>();
         for (const position of positionsSnapshot) {
           const symbol = String(position?.symbol ?? '').trim().toUpperCase();
           if (!symbol) {
             continue;
           }
 
+          const contractsRaw = Number(position?.contracts ?? 0);
           const unrealizedRaw = Number(position?.unrealizedPnl ?? 0);
-          if (!Number.isFinite(unrealizedRaw)) {
-            continue;
+
+          const existing = bySymbol.get(symbol) ?? { contracts: 0, unrealizedPnl: 0 };
+
+          if (Number.isFinite(contractsRaw)) {
+            existing.contracts += contractsRaw;
           }
 
-          bySymbol.set(symbol, (bySymbol.get(symbol) ?? 0) + unrealizedRaw);
+          if (Number.isFinite(unrealizedRaw)) {
+            existing.unrealizedPnl += unrealizedRaw;
+          }
+
+          bySymbol.set(symbol, existing);
         }
 
         if (bySymbol.size > 0) {
-          futuresUnrealizedByAccountAndSymbol.set(connection.account_id, bySymbol);
+          futuresSnapshotByAccountAndSymbol.set(connection.account_id, bySymbol);
         }
       } catch {
         // Ignore malformed metadata snapshots.
@@ -673,8 +688,19 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
     const account = position.account;
     const quantity = position.quantity;
 
+    const positionKey = buildPositionKey(asset.id, account.id);
+    const isHedgeBasePosition = hedgeBasePositionKeys.has(positionKey);
+    const symbolKey = asset.symbol.trim().toUpperCase();
+    const snapshotStats = futuresSnapshotByAccountAndSymbol.get(account.id)?.get(symbolKey);
+
+    const snapshotContracts = snapshotStats?.contracts;
+    const effectiveQuantity =
+      isHedgeBasePosition && typeof snapshotContracts === 'number' && Number.isFinite(snapshotContracts)
+        ? snapshotContracts
+        : quantity;
+
     // Suppress dust/fully reconciled ghost rows from historical transactions.
-    if (Math.abs(quantity) <= HOLDING_ZERO_THRESHOLD) {
+    if (Math.abs(effectiveQuantity) <= HOLDING_ZERO_THRESHOLD) {
       continue;
     }
 
@@ -689,14 +715,10 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
     const price = isValidPrice(priceResolution.price) ? priceResolution.price : null;
     const multiplier = getContractMultiplier(asset);
 
-    let marketValue = price !== null ? quantity * price * multiplier : null;
-
-    const positionKey = buildPositionKey(asset.id, account.id);
-    const isHedgeBasePosition = hedgeBasePositionKeys.has(positionKey);
+    let marketValue = price !== null ? effectiveQuantity * price * multiplier : null;
 
     if (isHedgeBasePosition) {
-      const accountSnapshot = futuresUnrealizedByAccountAndSymbol.get(account.id);
-      const snapshotUnrealized = accountSnapshot?.get(asset.symbol.trim().toUpperCase());
+      const snapshotUnrealized = snapshotStats?.unrealizedPnl;
       if (typeof snapshotUnrealized === 'number' && Number.isFinite(snapshotUnrealized)) {
         marketValue = snapshotUnrealized;
       }
@@ -709,8 +731,8 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
     // - Display per-share premium for options (divide by contract multiplier)
     // - Otherwise per-unit
     const averageCost =
-      totalCostBasis !== null && quantity !== 0
-        ? (totalCostBasis / quantity) / multiplier
+      totalCostBasis !== null && effectiveQuantity !== 0
+        ? (totalCostBasis / effectiveQuantity) / multiplier
         : null;
 
     const unrealizedPnl =
@@ -737,7 +759,7 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
       manualPrice: asset.manual_price ? decimalToNumber(asset.manual_price) : null,
       accountId: account.id,
       accountName: account.name,
-      quantity,
+      quantity: effectiveQuantity,
       price,
       priceSource: priceResolution.source,
       lastUpdated: priceResolution.lastUpdated,
