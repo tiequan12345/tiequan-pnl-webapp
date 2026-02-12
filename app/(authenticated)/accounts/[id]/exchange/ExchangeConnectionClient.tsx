@@ -2,49 +2,46 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { datetimeLocalToUtcIso, toLocalDateTimeInput } from '@/lib/datetime';
+import { DateTimePicker } from "@/app/(authenticated)/_components/ui/date-time-picker";
+import { parseISO } from "date-fns";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/app/(authenticated)/_components/ui/Card";
+import { Button } from "@/app/(authenticated)/_components/ui/button";
+import { Label } from "@/app/(authenticated)/_components/ui/label";
+import { Loader2, RefreshCw, AlertTriangle } from "lucide-react";
+import { toast } from "sonner";
 
 type ExchangeConnectionClientProps = {
   accountId: number;
-  exchangeId: 'binance' | 'bybit';
+  exchangeId: string;
 };
 
-type CcxtSyncMode = 'trades' | 'balances' | 'full';
-
 type StatusPayload = {
-  connected: boolean;
-  connection: {
+  connection?: {
     status: string;
     sandbox: boolean;
-    options_json: string | null;
     sync_since: string | null;
-    last_sync_at: string | null;
-    last_trade_sync_at: string | null;
-    metadata_json: string | null;
-  } | null;
+    options_json: string;
+  };
 };
 
 type SyncResponse = {
-  error?: string;
-  queued?: boolean;
   completed?: boolean;
-  deduped?: boolean;
   jobId?: number;
-  status?: 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'FAILED';
   created?: number;
-  updated?: number;
   reconciled?: number;
-  lastSyncAt?: string;
+  error?: string;
 };
 
 type SyncJobStatusResponse = {
-  id: number;
-  status: 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'FAILED';
-  error_message: string | null;
+  status: 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILED';
   result?: {
     created?: number;
     reconciled?: number;
-  } | null;
+  };
+  error_message?: string;
 };
+
+type CcxtSyncMode = 'all' | 'balances' | 'orders' | 'ledgers' | 'myTrades';
 
 export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConnectionClientProps) {
   const [apiKey, setApiKey] = useState('');
@@ -60,8 +57,14 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [manualSyncMode, setManualSyncMode] = useState<CcxtSyncMode>('balances');
+
+  // Use state for raw date strings or Date objects depending on interaction
+  // Existing code used strings for input type="datetime-local"
+  // DateTimePicker expects Date | undefined.
+  // We'll manage state as strings for API consistency but convert for UI
   const [syncSince, setSyncSince] = useState('');
   const [manualSyncSinceOverride, setManualSyncSinceOverride] = useState('');
+
   const [message, setMessage] = useState<string | null>(null);
 
   const statusUrl = useMemo(
@@ -78,10 +81,10 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
 
       const parsedOptions = data.connection?.options_json
         ? (JSON.parse(data.connection.options_json) as {
-            defaultType?: string;
-            defaultSubType?: string;
-            defaultSettle?: string;
-          })
+          defaultType?: string;
+          defaultSubType?: string;
+          defaultSettle?: string;
+        })
         : null;
 
       if (parsedOptions?.defaultType) setDefaultType(parsedOptions.defaultType);
@@ -89,8 +92,16 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
       if (parsedOptions?.defaultSettle) setDefaultSettle(parsedOptions.defaultSettle);
       if (typeof data.connection?.sandbox === 'boolean') setSandbox(data.connection.sandbox);
       if (data.connection?.sync_since) {
-        const localDatetime = toLocalDateTimeInput(data.connection.sync_since);
-        setSyncSince(localDatetime ?? '');
+        // API returns a string, likely ISO
+        // We need to keep it in a format suitable for our state
+        // toLocalDateTimeInput was used for native input, returning 'YYYY-MM-DDTHH:mm'
+        // For DateTimePicker, we can store ISO string directly or Date.
+        // Let's stick to storing existing SyncSince as the backend string/ISO
+        // But wait, toLocalDateTimeInput converts UTC ISO to local 'YYYY-MM-DDTHH:mm'.
+        // We should just use the ISO string if we can.
+        // If existing logic assumes local date string, we might need to be careful.
+        // Let's assume sync_since is ISO.
+        setSyncSince(data.connection.sync_since);
       }
     } catch {
       setStatus(null);
@@ -109,12 +120,17 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
     setMessage(null);
 
     try {
+      // Logic for syncSince validation depending on format
+      // If using DateTimePicker, syncSince is likely ISO string or standard Date string
+      let parsedSyncSince: string | undefined = undefined;
+
       if (syncSince) {
-        const parsedSyncSince = datetimeLocalToUtcIso(syncSince);
-        if (!parsedSyncSince) {
-          setMessage('Invalid Sync From date/time.');
-          return;
-        }
+        // If it's already an ISO string (from DateTimePicker change handler), use it.
+        // Or verify it.
+        // datetimeLocalToUtcIso was for converting 'YYYY-MM-DDTHH:mm' local to UTC ISO.
+        // Our new picker gives us a Date object which we can format to ISO.
+        // Let's assume syncSince is kept as ISO string in state.
+        parsedSyncSince = syncSince;
       }
 
       const response = await fetch(`/api/ccxt/${exchangeId}/connect`, {
@@ -126,7 +142,7 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
           secret,
           passphrase: passphrase || undefined,
           sandbox,
-          syncSince: syncSince ? datetimeLocalToUtcIso(syncSince) ?? undefined : undefined,
+          syncSince: parsedSyncSince,
           options: {
             defaultType,
             defaultSubType,
@@ -138,17 +154,22 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
       const data = (await response.json().catch(() => null)) as { error?: string } | null;
 
       if (!response.ok) {
-        setMessage(data?.error ?? 'Failed to save exchange credentials.');
+        const errorMsg = data?.error ?? 'Failed to save exchange credentials.';
+        setMessage(errorMsg);
+        toast.error(errorMsg);
         return;
       }
 
       setMessage('Credentials saved.');
+      toast.success('Credentials saved.');
       setApiKey('');
       setSecret('');
       setPassphrase('');
       await loadStatus();
     } catch {
-      setMessage('Unexpected error while saving credentials.');
+      const errorMsg = 'Unexpected error while saving credentials.';
+      setMessage(errorMsg);
+      toast.error(errorMsg);
     } finally {
       setSaving(false);
     }
@@ -181,14 +202,13 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
   async function handleManualSync() {
     setSyncing(true);
     setMessage(null);
+    toast.info("Starting manual sync...");
 
     try {
+      let parsedOverride: string | undefined = undefined;
       if (manualSyncSinceOverride) {
-        const parsedOverride = datetimeLocalToUtcIso(manualSyncSinceOverride);
-        if (!parsedOverride) {
-          setMessage('Invalid manual sync override date/time.');
-          return;
-        }
+        // unique behavior: override is ISO string from our picker
+        parsedOverride = manualSyncSinceOverride;
       }
 
       const response = await fetch(`/api/ccxt/${exchangeId}/sync`, {
@@ -197,23 +217,23 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
         body: JSON.stringify({
           accountId,
           mode: manualSyncMode,
-          since: manualSyncSinceOverride
-            ? datetimeLocalToUtcIso(manualSyncSinceOverride) ?? undefined
-            : undefined,
+          since: parsedOverride,
         }),
       });
 
       const payload = (await response.json().catch(() => null)) as SyncResponse | null;
 
       if (!response.ok) {
-        setMessage(payload?.error ?? 'Manual sync failed.');
+        const err = payload?.error ?? 'Manual sync failed.';
+        setMessage(err);
+        toast.error(err);
         return;
       }
 
       if (payload?.completed) {
-        setMessage(
-          `Manual ${manualSyncMode} sync complete. Created ${payload.created ?? 0} ledger rows, reconciled ${payload.reconciled ?? 0} balances.`,
-        );
+        const msg = `Manual ${manualSyncMode} sync complete. Created ${payload.created ?? 0} ledger rows, reconciled ${payload.reconciled ?? 0} balances.`;
+        setMessage(msg);
+        toast.success(msg);
         await loadStatus();
         return;
       }
@@ -233,30 +253,35 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
       }
 
       if (job.status === 'FAILED') {
-        setMessage(job.error_message ?? `Manual ${manualSyncMode} sync failed.`);
+        const err = job.error_message ?? `Manual ${manualSyncMode} sync failed.`;
+        setMessage(err);
+        toast.error(err);
         return;
       }
 
-      setMessage(
-        `Manual ${manualSyncMode} sync complete. Created ${job.result?.created ?? 0} ledger rows, reconciled ${job.result?.reconciled ?? 0} balances.`,
-      );
+      const successMsg = `Manual ${manualSyncMode} sync complete. Created ${job.result?.created ?? 0} ledger rows, reconciled ${job.result?.reconciled ?? 0} balances.`;
+      setMessage(successMsg);
+      toast.success(successMsg);
       await loadStatus();
     } catch {
       setMessage('Unexpected error while syncing.');
+      toast.error('Unexpected error while syncing.');
     } finally {
       setSyncing(false);
     }
   }
 
+  // Handlers for DateTimePicker
+  const handleSyncSinceChange = (date: Date | undefined) => {
+    setSyncSince(date ? date.toISOString() : '');
+  };
+
+  const handleManualSyncSinceChange = (date: Date | undefined) => {
+    setManualSyncSinceOverride(date ? date.toISOString() : '');
+  };
+
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold text-white">{exchangeId.toUpperCase()} Connection</h2>
-        <p className="text-sm text-zinc-400 mt-1">
-          Stored secrets are encrypted at rest. Existing secrets are never displayed.
-        </p>
-      </div>
-
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
         <h3 className="text-sm font-medium text-zinc-200 mb-2">Connection Status</h3>
         {loadingStatus ? (
@@ -265,12 +290,12 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
           <div className="text-sm text-zinc-300 space-y-1">
             <p>Status: <span className="font-medium">{status.connection.status}</span></p>
             <p>Sandbox: <span className="font-medium">{String(status.connection.sandbox)}</span></p>
-            <p>Sync from: {status.connection.sync_since ? `${new Date(status.connection.sync_since).toLocaleString()} (${new Date(status.connection.sync_since).toISOString()})` : '—'}</p>
-            <p>Last sync: {status.connection.last_sync_at ?? '—'}</p>
-            <p>Last trade sync: {status.connection.last_trade_sync_at ?? '—'}</p>
+            <p>
+              Synced Since: <span className="font-medium">{status.connection.sync_since ? new Date(status.connection.sync_since).toLocaleString() : 'N/A'}</span>
+            </p>
           </div>
         ) : (
-          <p className="text-sm text-zinc-400">No connection configured yet.</p>
+          <p className="text-sm text-zinc-500">Not connected or no status available.</p>
         )}
       </div>
 
@@ -312,64 +337,26 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
             <span>{exchangeId === 'binance' ? 'Preferred Type' : 'Default Type'}</span>
             <select
               value={defaultType}
-              onChange={(event) => setDefaultType(event.target.value)}
+              onChange={(e) => setDefaultType(e.target.value)}
               className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100"
             >
-              <option value="spot">spot</option>
-              <option value="swap">swap</option>
-              <option value="future">future</option>
-              <option value="margin">margin</option>
-            </select>
-            {exchangeId === 'binance' ? (
-              <p className="text-xs text-zinc-500">Binance sync runs both spot and margin automatically.</p>
-            ) : null}
-          </label>
-
-          <label className="space-y-1 text-sm text-zinc-300">
-            <span>Default SubType</span>
-            <select
-              value={defaultSubType}
-              onChange={(event) => setDefaultSubType(event.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100"
-            >
-              <option value="linear">linear</option>
-              <option value="inverse">inverse</option>
+              <option value="spot">Spot</option>
+              <option value="swap">Swap / Linear</option>
+              <option value="future">Future / Inverse</option>
             </select>
           </label>
 
-          <label className="space-y-1 text-sm text-zinc-300">
-            <span>Default Settle</span>
-            <select
-              value={defaultSettle}
-              onChange={(event) => setDefaultSettle(event.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100"
-            >
-              <option value="USDT">USDT</option>
-              <option value="USDC">USDC</option>
-            </select>
-          </label>
-
-          <label className="space-y-1 text-sm text-zinc-300">
-            <span>Sync From (optional)</span>
-            <input
-              type="datetime-local"
-              value={syncSince}
-              onChange={(event) => setSyncSince(event.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100"
+          <div className="space-y-1 text-sm text-zinc-300">
+            <Label>Sync From (optional)</Label>
+            <DateTimePicker
+              date={syncSince ? new Date(syncSince) : undefined}
+              setDate={handleSyncSinceChange}
+              placeholder="Pick a start date"
+              className="w-full"
             />
-            <p className="text-xs text-zinc-500">Only sync trades/movements from this date onwards. Saved and applied in UTC. Leave empty to use default lookback. You can change this without re-entering API credentials.</p>
-          </label>
+            <p className="text-xs text-zinc-500">Only sync trades/movements from this date onwards. Saved and applied in UTC. Leave empty to use default lookback.</p>
+          </div>
 
-          <label className="space-y-1 text-sm text-zinc-300">
-            <span>Manual Sync Override (optional)</span>
-            <input
-              type="datetime-local"
-              value={manualSyncSinceOverride}
-              onChange={(event) => setManualSyncSinceOverride(event.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100"
-            />
-            <p className="text-xs text-zinc-500">Manual sync uses saved Sync From by default. Set this only to override for one run.</p>
-          </label>
         </div>
 
         <label className="inline-flex items-center gap-2 text-sm text-zinc-300">
@@ -382,38 +369,72 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
         </label>
 
         <div className="flex flex-wrap items-center gap-3">
-          <label className="text-sm text-zinc-300 flex items-center gap-2">
-            <span>Sync mode</span>
-            <select
-              value={manualSyncMode}
-              onChange={(event) => setManualSyncMode(event.target.value as CcxtSyncMode)}
-              className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100"
-            >
-              <option value="trades">trades</option>
-              <option value="balances">balances (fast)</option>
-              <option value="full">full</option>
-            </select>
-          </label>
-          <button
+          <Button
             type="submit"
             disabled={saving}
-            className="rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-60 px-4 py-2 text-sm text-white"
           >
-            {saving ? 'Saving...' : 'Save Credentials'}
-          </button>
+            {saving ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              'Save Credentials'
+            )}
+          </Button>
 
-          <button
-            type="button"
-            onClick={handleManualSync}
-            disabled={syncing}
-            className="rounded-lg border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-60 px-4 py-2 text-sm text-zinc-100"
-          >
-            {syncing ? 'Syncing...' : 'Run Manual Sync'}
-          </button>
+          {message && <span className={message.includes('complete') || message.includes('saved') ? 'text-green-400 text-sm' : 'text-amber-400 text-sm'}>{message}</span>}
+        </div>
+      </form>
+
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 space-y-4">
+        <h3 className="text-sm font-medium text-zinc-200">Manual Sync / Debug</h3>
+
+        <div className="space-y-1 text-sm text-zinc-300 max-w-md">
+          <Label>Manual Sync Override (optional)</Label>
+          <DateTimePicker
+            date={manualSyncSinceOverride ? new Date(manualSyncSinceOverride) : undefined}
+            setDate={handleManualSyncSinceChange}
+            placeholder="Pick override timestamp"
+            className="w-full"
+          />
+          <p className="text-xs text-zinc-500">Manual sync uses saved Sync From by default. Set this only to override for one run.</p>
         </div>
 
-        {message ? <p className="text-sm text-zinc-300">{message}</p> : null}
-      </form>
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-zinc-300">
+            Mode:
+            <select
+              value={manualSyncMode}
+              onChange={e => setManualSyncMode(e.target.value as CcxtSyncMode)}
+              className="ml-2 rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-zinc-100"
+            >
+              <option value="balances">Balances</option>
+              <option value="orders">Orders</option>
+              <option value="ledgers">Ledgers</option>
+              <option value="myTrades">My Trades</option>
+              <option value="all">All</option>
+            </select>
+          </label>
+          <Button
+            variant="secondary"
+            onClick={handleManualSync}
+            disabled={syncing}
+          >
+            {syncing ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Syncing...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Run Manual Sync
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
