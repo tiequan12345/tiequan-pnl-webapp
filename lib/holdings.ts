@@ -483,8 +483,14 @@ export async function fetchHoldingRows(filters?: HoldingFilters): Promise<Holdin
     }
 
     const reference = (tx.external_reference ?? '').trim();
-    const isBaseLeg = reference.includes(':BASE') || reference.includes(':POSITION:');
-    if (!isBaseLeg) {
+    const isLegacyHedgeWithoutReference = reference.length === 0 && !isCashLikeAsset(tx.asset);
+    const isQuoteLeg = reference.includes(':QUOTE');
+    const isBaseLeg =
+      isLegacyHedgeWithoutReference ||
+      reference.includes(':BASE') ||
+      reference.includes(':POSITION:');
+
+    if (!isBaseLeg || isQuoteLeg) {
       continue;
     }
 

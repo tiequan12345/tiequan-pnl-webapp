@@ -11,10 +11,23 @@ set -euo pipefail
 
 ENV_FILE="${ENV_FILE:-/etc/tiequan-pnl-webapp.env}"
 
+# Preserve explicit runtime overrides (e.g. cron inline vars) so env-file defaults
+# do not clobber them.
+endpoint_override="${CCXT_SYNC_WORKER_ENDPOINT_URL-}"
+endpoint_override_set="${CCXT_SYNC_WORKER_ENDPOINT_URL+x}"
+max_jobs_override="${CCXT_SYNC_WORKER_MAX_JOBS-}"
+max_jobs_override_set="${CCXT_SYNC_WORKER_MAX_JOBS+x}"
+auth_override="${CCXT_SYNC_AUTH_HEADER-}"
+auth_override_set="${CCXT_SYNC_AUTH_HEADER+x}"
+
 if [[ -f "$ENV_FILE" ]]; then
   # shellcheck disable=SC1090
   source "$ENV_FILE"
 fi
+
+if [[ -n "$endpoint_override_set" ]]; then CCXT_SYNC_WORKER_ENDPOINT_URL="$endpoint_override"; fi
+if [[ -n "$max_jobs_override_set" ]]; then CCXT_SYNC_WORKER_MAX_JOBS="$max_jobs_override"; fi
+if [[ -n "$auth_override_set" ]]; then CCXT_SYNC_AUTH_HEADER="$auth_override"; fi
 
 : "${CCXT_SYNC_WORKER_ENDPOINT_URL:?CCXT_SYNC_WORKER_ENDPOINT_URL is required}"
 : "${CCXT_SYNC_AUTH_HEADER:?CCXT_SYNC_AUTH_HEADER is required}"

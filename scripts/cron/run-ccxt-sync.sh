@@ -21,10 +21,32 @@ set -euo pipefail
 
 ENV_FILE="${ENV_FILE:-/etc/tiequan-pnl-webapp.env}"
 
+# Preserve explicit runtime overrides (e.g. cron inline vars) so env-file defaults
+# do not clobber them.
+endpoint_override="${CCXT_SYNC_ENDPOINT_URL-}"
+endpoint_override_set="${CCXT_SYNC_ENDPOINT_URL+x}"
+account_override="${CCXT_SYNC_ACCOUNT_ID-}"
+account_override_set="${CCXT_SYNC_ACCOUNT_ID+x}"
+exchange_override="${CCXT_SYNC_EXCHANGE-}"
+exchange_override_set="${CCXT_SYNC_EXCHANGE+x}"
+mode_override="${CCXT_SYNC_MODE-}"
+mode_override_set="${CCXT_SYNC_MODE+x}"
+since_override="${CCXT_SYNC_SINCE-}"
+since_override_set="${CCXT_SYNC_SINCE+x}"
+auth_override="${CCXT_SYNC_AUTH_HEADER-}"
+auth_override_set="${CCXT_SYNC_AUTH_HEADER+x}"
+
 if [[ -f "$ENV_FILE" ]]; then
   # shellcheck disable=SC1090
   source "$ENV_FILE"
 fi
+
+if [[ -n "$endpoint_override_set" ]]; then CCXT_SYNC_ENDPOINT_URL="$endpoint_override"; fi
+if [[ -n "$account_override_set" ]]; then CCXT_SYNC_ACCOUNT_ID="$account_override"; fi
+if [[ -n "$exchange_override_set" ]]; then CCXT_SYNC_EXCHANGE="$exchange_override"; fi
+if [[ -n "$mode_override_set" ]]; then CCXT_SYNC_MODE="$mode_override"; fi
+if [[ -n "$since_override_set" ]]; then CCXT_SYNC_SINCE="$since_override"; fi
+if [[ -n "$auth_override_set" ]]; then CCXT_SYNC_AUTH_HEADER="$auth_override"; fi
 
 : "${CCXT_SYNC_ENDPOINT_URL:?CCXT_SYNC_ENDPOINT_URL is required}"
 : "${CCXT_SYNC_ACCOUNT_ID:?CCXT_SYNC_ACCOUNT_ID is required}"

@@ -794,8 +794,10 @@ async function reconcileCcxtFuturesPositions(params: {
       continue;
     }
 
-    const externalReference = typeof row.external_reference === 'string' ? row.external_reference : '';
-    const isHedgeBaseLeg = row.tx_type === 'HEDGE' && externalReference.includes(':BASE');
+    const externalReference = typeof row.external_reference === 'string' ? row.external_reference.trim() : '';
+    const isLegacyHedgeWithoutReference = externalReference.length === 0 && !USD_LIKE_SYMBOLS.has(symbol);
+    const isCcxtBaseLeg = externalReference.includes(':BASE');
+    const isHedgeBaseLeg = row.tx_type === 'HEDGE' && (isCcxtBaseLeg || isLegacyHedgeWithoutReference);
 
     if (isHedgeBaseLeg) {
       hedgeBaseSymbols.add(symbol);
@@ -1037,16 +1039,19 @@ async function reconcileCcxtBalances(params: {
       continue;
     }
 
-    const externalReference = typeof row.external_reference === 'string' ? row.external_reference : '';
+    const symbol = row.asset.symbol.trim().toUpperCase();
+    const externalReference = typeof row.external_reference === 'string' ? row.external_reference.trim() : '';
+    const isLegacyHedgeWithoutReference = externalReference.length === 0 && !USD_LIKE_SYMBOLS.has(symbol);
     const isDerivativeBaseHedge =
-      externalReference.includes(':BASE') || externalReference.startsWith(positionReferencePrefix);
+      isLegacyHedgeWithoutReference ||
+      externalReference.includes(':BASE') ||
+      externalReference.startsWith(positionReferencePrefix);
 
     if (!isDerivativeBaseHedge) {
       continue;
     }
 
     hedgeAssetIds.add(row.asset_id);
-    const symbol = row.asset.symbol.trim().toUpperCase();
     if (symbol) {
       hedgeSymbols.add(symbol);
     }
