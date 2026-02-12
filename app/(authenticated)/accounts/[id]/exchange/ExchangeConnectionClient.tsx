@@ -40,6 +40,20 @@ type SyncJobStatusResponse = {
   id: number;
   status: 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'FAILED';
   error_message: string | null;
+  attempts?: number;
+  heartbeat_at?: string | null;
+  next_run_at?: string | null;
+  progress?: {
+    stage?: string;
+    message?: string;
+    profile?: string;
+    page?: number;
+    pages?: number;
+    symbol?: string;
+    created?: number;
+    reconciled?: number;
+    [key: string]: unknown;
+  } | null;
   result?: {
     created?: number;
     reconciled?: number;
@@ -59,7 +73,7 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [manualSyncMode, setManualSyncMode] = useState<CcxtSyncMode>('balances');
+  const [manualSyncMode, setManualSyncMode] = useState<CcxtSyncMode>('trades');
   const [syncSince, setSyncSince] = useState('');
   const [manualSyncSinceOverride, setManualSyncSinceOverride] = useState('');
   const [message, setMessage] = useState<string | null>(null);
@@ -154,8 +168,11 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
     }
   }
 
-  async function pollSyncJob(jobId: number): Promise<SyncJobStatusResponse | null> {
-    const maxAttempts = 180;
+  async function pollSyncJob(
+    jobId: number,
+    onUpdate?: (job: SyncJobStatusResponse) => void,
+  ): Promise<SyncJobStatusResponse | null> {
+    const maxAttempts = 900;
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       const response = await fetch(`/api/ccxt/sync-jobs/${jobId}`, { cache: 'no-store' });
@@ -167,6 +184,8 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
       if (!data) {
         return null;
       }
+
+      onUpdate?.(data);
 
       if (data.status === 'SUCCESS' || data.status === 'FAILED') {
         return data;
@@ -210,22 +229,31 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
         return;
       }
 
-      if (payload?.completed) {
-        setMessage(
-          `Manual ${manualSyncMode} sync complete. Created ${payload.created ?? 0} ledger rows, reconciled ${payload.reconciled ?? 0} balances.`,
-        );
-        await loadStatus();
-        return;
-      }
-
       if (!payload?.jobId) {
-        setMessage('Manual sync started, but no completion or job id was returned.');
+        setMessage('Manual sync started, but no job id was returned.');
         return;
       }
 
-      setMessage(`Manual ${manualSyncMode} sync queued (job #${payload.jobId}). Waiting for completion...`);
+      setMessage(
+        `Manual ${manualSyncMode} sync queued (job #${payload.jobId})${payload.deduped ? ' using existing job' : ''}. Waiting for completion...`,
+      );
 
-      const job = await pollSyncJob(payload.jobId);
+      const job = await pollSyncJob(payload.jobId, (update) => {
+        const stage = update.progress?.stage ?? update.status.toLowerCase();
+        const stageMessage = update.progress?.message ?? '';
+        const symbolHint = typeof update.progress?.symbol === 'string' ? ` ${update.progress.symbol}` : '';
+
+        if (update.status === 'QUEUED' && update.next_run_at) {
+          setMessage(
+            `Manual ${manualSyncMode} sync queued (job #${payload.jobId}). Retry scheduled for ${new Date(update.next_run_at).toLocaleTimeString()}.`,
+          );
+          return;
+        }
+
+        setMessage(
+          `Manual ${manualSyncMode} sync job #${payload.jobId}: ${stage}${symbolHint}${stageMessage ? ` — ${stageMessage}` : ''}`,
+        );
+      });
 
       if (!job) {
         setMessage(`Manual ${manualSyncMode} sync queued (job #${payload.jobId}). Still running — refresh status in a moment.`);
@@ -382,18 +410,21 @@ export function ExchangeConnectionClient({ accountId, exchangeId }: ExchangeConn
         </label>
 
         <div className="flex flex-wrap items-center gap-3">
-          <label className="text-sm text-zinc-300 flex items-center gap-2">
-            <span>Sync mode</span>
-            <select
-              value={manualSyncMode}
-              onChange={(event) => setManualSyncMode(event.target.value as CcxtSyncMode)}
-              className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100"
-            >
-              <option value="trades">trades</option>
-              <option value="balances">balances (fast)</option>
-              <option value="full">full</option>
-            </select>
-          </label>
+          <div className="flex flex-col gap-1">
+            <label className="text-sm text-zinc-300 flex items-center gap-2">
+              <span>Sync mode</span>
+              <select
+                value={manualSyncMode}
+                onChange={(event) => setManualSyncMode(event.target.value as CcxtSyncMode)}
+                className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100"
+              >
+                <option value="trades">trades</option>
+                <option value="balances">balances (fast)</option>
+                <option value="full">full</option>
+              </select>
+            </label>
+            <p className="text-xs text-zinc-500">Balances mode reconciles balances only and does not import trades.</p>
+          </div>
           <button
             type="submit"
             disabled={saving}

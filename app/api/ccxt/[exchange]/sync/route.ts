@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { syncCcxtAccount, type CcxtSyncMode } from '@/lib/ccxt/sync';
+import { type CcxtSyncMode } from '@/lib/ccxt/sync';
+import { enqueueCcxtSyncJob } from '@/lib/ccxt/syncJobs';
 import { prisma } from '@/lib/db';
 import { isMissingSyncSinceColumnError, parseIsoInstant } from '@/lib/datetime';
 
 export const runtime = 'nodejs';
+export const maxDuration = 1800;
 
 type RouteContext = {
   params: Promise<{ exchange: string }>;
@@ -13,6 +15,7 @@ type SyncPayload = {
   accountId?: number;
   mode?: CcxtSyncMode;
   since?: string;
+  force?: boolean;
 };
 
 function isSupportedExchange(value: string): value is 'binance' | 'bybit' {
@@ -162,23 +165,29 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
-    const result = await syncCcxtAccount({
+    const force = Boolean(body?.force);
+
+    const queued = await enqueueCcxtSyncJob({
       accountId,
+      exchangeId: exchange,
       mode,
       since,
+      requestedBy: 'MANUAL',
+      force,
     });
 
     return NextResponse.json({
-      queued: false,
-      completed: true,
+      ok: true,
+      queued: true,
+      deduped: queued.deduped,
+      jobId: queued.jobId,
+      status: queued.status,
       accountId,
       exchange,
       mode,
-      created: result.created,
-      updated: result.updated,
-      reconciled: result.reconciled,
-      lastSyncAt: result.lastSyncAt.toISOString(),
-    });
+      usedSinceOverride: Boolean(since),
+      force,
+    }, { status: 202 });
   } catch (error) {
     if (isMissingSyncSinceColumnError(error)) {
       return NextResponse.json(

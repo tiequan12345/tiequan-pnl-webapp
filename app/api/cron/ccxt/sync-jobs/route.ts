@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { processNextCcxtSyncJob } from '@/lib/ccxt/syncJobs';
 
 export const runtime = 'nodejs';
+export const maxDuration = 1800;
 
 type WorkerPayload = {
   maxJobs?: number;
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
   const payload = (await request.json().catch(() => null)) as WorkerPayload | null;
   const maxJobs = getMaxJobsOverride(payload);
 
-  const results: Array<{ jobId?: number; status?: string; error?: string }> = [];
+  const results: Array<{ jobId?: number; status?: string; error?: string; retryScheduledFor?: string }> = [];
 
   for (let i = 0; i < maxJobs; i += 1) {
     const outcome = await processNextCcxtSyncJob();
@@ -57,6 +58,7 @@ export async function POST(request: NextRequest) {
       jobId: outcome.jobId,
       status: outcome.status,
       ...(outcome.error ? { error: outcome.error } : {}),
+      ...(outcome.retryScheduledFor ? { retryScheduledFor: outcome.retryScheduledFor } : {}),
     });
   }
 

@@ -29,9 +29,12 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       attempts: true,
       error_message: true,
       result_json: true,
+      progress_json: true,
       created_at: true,
       started_at: true,
+      heartbeat_at: true,
       finished_at: true,
+      next_run_at: true,
       updated_at: true,
     },
   });
@@ -52,8 +55,21 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     }
   })();
 
+  const parsedProgress = (() => {
+    if (!job.progress_json) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(job.progress_json);
+    } catch {
+      return { raw: job.progress_json };
+    }
+  })();
+
   return NextResponse.json({
     ...job,
     result: parsedResult,
+    progress: parsedProgress,
   });
 }

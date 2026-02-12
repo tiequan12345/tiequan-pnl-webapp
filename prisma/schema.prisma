@@ -96,26 +96,30 @@ model CcxtConnection {
 }
 
 model CcxtSyncJob {
-  id           Int      @id @default(autoincrement())
-  account_id   Int
-  exchange_id  String
-  mode         String
-  since        DateTime?
-  requested_by String   @default("MANUAL")
-  status       String   @default("QUEUED")
-  attempts     Int      @default(0)
-  claim_token  String?
-  result_json  String?
+  id            Int      @id @default(autoincrement())
+  account_id    Int
+  exchange_id   String
+  mode          String
+  since         DateTime?
+  requested_by  String   @default("MANUAL")
+  status        String   @default("QUEUED")
+  attempts      Int      @default(0)
+  claim_token   String?
+  result_json   String?
+  progress_json String?
   error_message String?
-  created_at   DateTime @default(now())
-  updated_at   DateTime @updatedAt
-  started_at   DateTime?
-  finished_at  DateTime?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+  started_at    DateTime?
+  heartbeat_at  DateTime?
+  finished_at   DateTime?
+  next_run_at   DateTime?
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
 
   @@index([status, created_at])
-  @@index([account_id, exchange_id, status])
+  @@index([status, next_run_at, created_at])
+  @@index([account_id, exchange_id, mode, status])
   @@index([created_at])
 }
 
@@ -141,7 +145,7 @@ model LedgerTransaction {
   @@index([account_id])
   @@index([asset_id])
   @@index([tx_type])
-  @@index([account_id, external_reference])
+  @@unique([account_id, external_reference])
 }
 
 model PriceLatest {

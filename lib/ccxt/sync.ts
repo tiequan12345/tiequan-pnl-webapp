@@ -41,6 +41,14 @@ type NormalizedCcxtMovement = {
   feeCurrency?: string;
 };
 
+type SyncProgressPayload = {
+  stage: string;
+  message?: string;
+  [key: string]: unknown;
+};
+
+type SyncProgressReporter = (payload: SyncProgressPayload) => Promise<void> | void;
+
 function toFiniteNumber(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
@@ -64,6 +72,21 @@ function getDefaultSince(since?: Date): Date {
 
 function formatDateKey(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+async function reportProgress(
+  onProgress: SyncProgressReporter | undefined,
+  payload: SyncProgressPayload,
+): Promise<void> {
+  if (!onProgress) {
+    return;
+  }
+
+  try {
+    await onProgress(payload);
+  } catch {
+    // Progress reporting is best effort and must never interrupt sync.
+  }
 }
 
 function extractBalanceTotals(balance: any): Map<string, number> {
@@ -396,9 +419,10 @@ function toLedgerRows(params: {
     return rows;
   }
 
+  const tradeTimestampIso = trade.timestamp.toISOString();
   const tradeReferencePrefix = trade.referenceScope
-    ? `CCXT:${trade.exchangeId}:${trade.referenceScope}:${trade.tradeId}`
-    : `CCXT:${trade.exchangeId}:${trade.tradeId}`;
+    ? `CCXT:${trade.exchangeId}:${trade.referenceScope}:${trade.symbol}:${tradeTimestampIso}:${trade.side}:${trade.amount}:${trade.tradeId}`
+    : `CCXT:${trade.exchangeId}:${trade.symbol}:${tradeTimestampIso}:${trade.side}:${trade.amount}:${trade.tradeId}`;
 
   const baseQty = trade.side === 'buy' ? trade.amount : -trade.amount;
   const quoteCost =
@@ -477,13 +501,15 @@ function toMovementLedgerRows(params: {
 
   const quantity = movement.movementType === 'DEPOSIT' ? movement.amount : -movement.amount;
 
+  const movementTimestampIso = movement.timestamp.toISOString();
+
   return [{
     date_time: movement.timestamp,
     account_id: accountId,
     asset_id: assetId,
     quantity: String(quantity),
     tx_type: movement.movementType,
-    external_reference: `CCXT:${movement.exchangeId}:${movement.movementType}:${movement.movementId}`,
+    external_reference: `CCXT:${movement.exchangeId}:${movement.movementType}:${movement.movementId}:${movement.currency}:${movementTimestampIso}:${movement.amount}`,
     notes: `CCXT ${movement.exchangeId} ${movement.movementType.toLowerCase()} ${movement.currency}`,
   }];
 }
@@ -492,8 +518,9 @@ async function fetchTradesForSync(params: {
   exchange: any;
   since?: Date;
   marketScope?: TradeMarketScope;
+  onProgress?: SyncProgressReporter;
 }): Promise<any[]> {
-  const { exchange, since, marketScope = 'all' } = params;
+  const { exchange, since, marketScope = 'all', onProgress } = params;
   const sinceTs = getDefaultSince(since).getTime();
 
   const trades: any[] = [];
@@ -539,6 +566,10 @@ async function fetchTradesForSync(params: {
         return derivativesDefaultQuoteOnly ? quote === defaultQuote : true;
       }
 
+      if (marketScope === 'all') {
+        return true;
+      }
+
       return quote === defaultQuote;
     })
     .map((market) => String(market.symbol).trim())
@@ -550,16 +581,40 @@ async function fetchTradesForSync(params: {
   const uniqueSymbols = Array.from(new Set(candidateSymbols));
   const targets = maxSymbols ? uniqueSymbols.slice(0, maxSymbols) : uniqueSymbols;
 
-  const fetchSymbolTrades = async (symbol?: string): Promise<void> => {
+  await reportProgress(onProgress, {
+    stage: 'trades.symbols',
+    message: `Scanning ${targets.length || 1} market target(s).`,
+    symbolCount: targets.length || 1,
+    marketScope,
+  });
+
+  const fetchSymbolTrades = async (symbol?: string, symbolIndex?: number): Promise<void> => {
     let cursorSince = sinceTs;
 
     for (let page = 0; page < maxPagesPerSymbol; page += 1) {
+      await reportProgress(onProgress, {
+        stage: 'trades.fetch',
+        symbol: symbol ?? '*',
+        symbolIndex,
+        page: page + 1,
+        pages: maxPagesPerSymbol,
+      });
+
       const result = await exchange.fetchMyTrades(symbol, cursorSince, pageLimit);
       if (!Array.isArray(result) || result.length === 0) {
         return;
       }
 
       trades.push(...result);
+
+      await reportProgress(onProgress, {
+        stage: 'trades.fetched',
+        symbol: symbol ?? '*',
+        symbolIndex,
+        page: page + 1,
+        fetched: result.length,
+        totalFetched: trades.length,
+      });
 
       if (result.length < pageLimit) {
         return;
@@ -583,16 +638,17 @@ async function fetchTradesForSync(params: {
 
   if (targets.length === 0) {
     try {
-      await fetchSymbolTrades(undefined);
+      await fetchSymbolTrades(undefined, 1);
     } catch {
       // Some exchange/profile combinations do not support unscoped fetchMyTrades.
     }
     return trades;
   }
 
-  for (const symbol of targets) {
+  for (let index = 0; index < targets.length; index += 1) {
+    const symbol = targets[index];
     try {
-      await fetchSymbolTrades(symbol);
+      await fetchSymbolTrades(symbol, index + 1);
     } catch {
       // Best effort per symbol.
     }
@@ -605,18 +661,79 @@ async function fetchMovementsForSync(params: {
   exchange: any;
   exchangeId: CcxtExchangeId;
   since?: Date;
+  onProgress?: SyncProgressReporter;
 }): Promise<NormalizedCcxtMovement[]> {
-  const { exchange, exchangeId, since } = params;
+  const { exchange, exchangeId, since, onProgress } = params;
   const sinceTs = getDefaultSince(since).getTime();
   const results: NormalizedCcxtMovement[] = [];
 
+  const pageLimitRaw = Number(process.env.CCXT_SYNC_MOVEMENT_PAGE_LIMIT ?? '1000');
+  const pageLimit = Number.isFinite(pageLimitRaw) && pageLimitRaw > 0
+    ? Math.min(Math.trunc(pageLimitRaw), 1000)
+    : 1000;
+
+  const maxPagesRaw = Number(process.env.CCXT_SYNC_MOVEMENT_MAX_PAGES ?? '5');
+  const maxPages = Number.isFinite(maxPagesRaw) && maxPagesRaw > 0
+    ? Math.trunc(maxPagesRaw)
+    : 5;
+
+  const fetchMovementPages = async (
+    movementType: 'DEPOSIT' | 'WITHDRAWAL',
+    fetcher: (code?: string, since?: number, limit?: number) => Promise<any[]>,
+  ): Promise<void> => {
+    let cursorSince = sinceTs;
+
+    for (let page = 0; page < maxPages; page += 1) {
+      await reportProgress(onProgress, {
+        stage: 'movements.fetch',
+        movementType,
+        page: page + 1,
+        pages: maxPages,
+      });
+
+      const pageRows = await fetcher(undefined, cursorSince, pageLimit);
+      if (!Array.isArray(pageRows) || pageRows.length === 0) {
+        return;
+      }
+
+      for (const movement of pageRows) {
+        const parsed = parseMovement({ movement, exchangeId, movementType });
+        if (parsed) {
+          results.push(parsed);
+        }
+      }
+
+      await reportProgress(onProgress, {
+        stage: 'movements.fetched',
+        movementType,
+        page: page + 1,
+        fetched: pageRows.length,
+        totalFetched: results.length,
+      });
+
+      if (pageRows.length < pageLimit) {
+        return;
+      }
+
+      let maxTimestamp = cursorSince;
+      for (const movement of pageRows) {
+        const ts = toFiniteNumber((movement as any)?.timestamp);
+        if (ts !== null && ts > maxTimestamp) {
+          maxTimestamp = ts;
+        }
+      }
+
+      if (!(maxTimestamp > cursorSince)) {
+        return;
+      }
+
+      cursorSince = Math.trunc(maxTimestamp) + 1;
+    }
+  };
+
   if (exchange.has?.fetchDeposits) {
     try {
-      const deposits = await exchange.fetchDeposits(undefined, sinceTs, 1000);
-      for (const deposit of deposits ?? []) {
-        const parsed = parseMovement({ movement: deposit, exchangeId, movementType: 'DEPOSIT' });
-        if (parsed) results.push(parsed);
-      }
+      await fetchMovementPages('DEPOSIT', exchange.fetchDeposits.bind(exchange));
     } catch {
       // Best effort.
     }
@@ -624,11 +741,7 @@ async function fetchMovementsForSync(params: {
 
   if (exchange.has?.fetchWithdrawals) {
     try {
-      const withdrawals = await exchange.fetchWithdrawals(undefined, sinceTs, 1000);
-      for (const withdrawal of withdrawals ?? []) {
-        const parsed = parseMovement({ movement: withdrawal, exchangeId, movementType: 'WITHDRAWAL' });
-        if (parsed) results.push(parsed);
-      }
+      await fetchMovementPages('WITHDRAWAL', exchange.fetchWithdrawals.bind(exchange));
     } catch {
       // Best effort.
     }
@@ -1174,6 +1287,7 @@ export async function syncCcxtAccount(params: {
   accountId: number;
   mode?: CcxtSyncMode;
   since?: Date;
+  onProgress?: SyncProgressReporter;
 }): Promise<{
   created: number;
   updated: number;
@@ -1182,6 +1296,7 @@ export async function syncCcxtAccount(params: {
 }> {
   const mode = params.mode ?? 'trades';
   const now = new Date();
+  const onProgress = params.onProgress;
 
   const connection = await prisma.ccxtConnection.findUnique({
     where: { account_id: params.accountId },
@@ -1191,8 +1306,34 @@ export async function syncCcxtAccount(params: {
     throw new Error('CCXT connection not found for account.');
   }
 
-  // Use explicit since param, or fall back to connection's sync_since setting
-  const effectiveSince = params.since ?? connection.sync_since ?? undefined;
+  const overlapMinutesRaw = Number(
+    process.env.CCXT_SYNC_TRADE_OVERLAP_MINUTES ??
+      process.env.CCXT_AUTO_TRADE_OVERLAP_MINUTES ??
+      '15',
+  );
+  const overlapMinutes = Number.isFinite(overlapMinutesRaw) && overlapMinutesRaw >= 0
+    ? overlapMinutesRaw
+    : 15;
+
+  const cursorSince = connection.last_trade_sync_at
+    ? new Date(connection.last_trade_sync_at.getTime() - overlapMinutes * 60 * 1000)
+    : null;
+
+  const fallbackSince = (() => {
+    const candidates: number[] = [];
+    if (connection.sync_since) {
+      candidates.push(connection.sync_since.getTime());
+    }
+    if (cursorSince) {
+      candidates.push(cursorSince.getTime());
+    }
+    if (candidates.length === 0) {
+      return undefined;
+    }
+    return new Date(Math.max(...candidates));
+  })();
+
+  const effectiveSince = params.since ?? fallbackSince;
 
   if (!isSupportedExchangeId(connection.exchange_id)) {
     throw new Error(`Unsupported exchange_id '${connection.exchange_id}'.`);
@@ -1200,6 +1341,14 @@ export async function syncCcxtAccount(params: {
 
   const exchangeId = connection.exchange_id as CcxtExchangeId;
   const connectionOptions = parseOptionsJson(connection.options_json);
+
+  await reportProgress(onProgress, {
+    stage: 'sync.init',
+    message: `Starting ${exchangeId} ${mode} sync.`,
+    exchangeId,
+    mode,
+    since: effectiveSince?.toISOString() ?? null,
+  });
 
   const buildExchangeForSync = (params?: {
     defaultTypeOverride?: 'spot' | 'margin' | 'swap' | 'future' | 'delivery' | 'option';
@@ -1301,7 +1450,16 @@ export async function syncCcxtAccount(params: {
 
     const fetchedTrades: Array<{ trade: any; profile: TradeSyncProfile }> = [];
 
-    for (const profile of tradeSyncProfiles) {
+    for (let profileIndex = 0; profileIndex < tradeSyncProfiles.length; profileIndex += 1) {
+      const profile = tradeSyncProfiles[profileIndex];
+
+      await reportProgress(onProgress, {
+        stage: 'trades.profile.start',
+        profile: profile.defaultTypeOverride ?? profile.marketScope,
+        profileIndex: profileIndex + 1,
+        profileCount: tradeSyncProfiles.length,
+      });
+
       const exchange = buildExchangeForSync({
         ...(profile.defaultTypeOverride ? { defaultTypeOverride: profile.defaultTypeOverride } : {}),
       });
@@ -1309,13 +1467,28 @@ export async function syncCcxtAccount(params: {
       await initializeCcxtExchange(exchange);
       await exchange.loadMarkets();
 
+      await reportProgress(onProgress, {
+        stage: 'trades.profile.markets_loaded',
+        profile: profile.defaultTypeOverride ?? profile.marketScope,
+        profileIndex: profileIndex + 1,
+        marketCount: Object.keys(exchange.markets ?? {}).length,
+      });
+
       const trades = await fetchTradesForSync({
         exchange,
         since: effectiveSince,
         marketScope: profile.marketScope,
+        onProgress,
       });
 
       fetchedTrades.push(...trades.map((trade) => ({ trade, profile })));
+
+      await reportProgress(onProgress, {
+        stage: 'trades.profile.complete',
+        profile: profile.defaultTypeOverride ?? profile.marketScope,
+        profileIndex: profileIndex + 1,
+        fetchedTrades: trades.length,
+      });
     }
 
     const normalized = fetchedTrades
@@ -1335,6 +1508,12 @@ export async function syncCcxtAccount(params: {
       return true;
     });
 
+    await reportProgress(onProgress, {
+      stage: 'trades.normalize',
+      normalized: normalized.length,
+      deduped: deduped.length,
+    });
+
     const symbolsToEnsure = new Set<string>();
 
     for (const trade of deduped) {
@@ -1351,32 +1530,42 @@ export async function syncCcxtAccount(params: {
       toLedgerRows({ accountId: params.accountId, assetMap, trade }),
     );
 
-    const refs = candidateRows.map((row) => row.external_reference);
+    await reportProgress(onProgress, {
+      stage: 'trades.persist.start',
+      candidateRows: candidateRows.length,
+    });
 
-    const existing = refs.length
-      ? await prisma.ledgerTransaction.findMany({
-          where: {
-            account_id: params.accountId,
-            external_reference: { in: refs },
-          },
-          select: { external_reference: true },
-        })
-      : [];
-
-    const existingRefs = new Set(
-      existing
-        .map((row) => row.external_reference)
-        .filter((value): value is string => Boolean(value)),
-    );
-
-    const toCreate = candidateRows.filter((row) => !existingRefs.has(row.external_reference));
-
-    if (toCreate.length) {
-      const result = await prisma.ledgerTransaction.createMany({
-        data: toCreate,
+    if (candidateRows.length) {
+      const refs = candidateRows.map((row) => row.external_reference);
+      const existingRows = await prisma.ledgerTransaction.findMany({
+        where: {
+          account_id: params.accountId,
+          external_reference: { in: refs },
+        },
+        select: { external_reference: true },
       });
-      created += result.count;
+
+      const existingRefs = new Set(
+        existingRows
+          .map((row) => row.external_reference)
+          .filter((value): value is string => Boolean(value)),
+      );
+
+      const rowsToCreate = candidateRows.filter((row) => !existingRefs.has(row.external_reference));
+
+      if (rowsToCreate.length > 0) {
+        const result = await prisma.ledgerTransaction.createMany({
+          data: rowsToCreate,
+        });
+        created += result.count;
+      }
     }
+
+    await reportProgress(onProgress, {
+      stage: 'trades.persist.complete',
+      created,
+      candidateRows: candidateRows.length,
+    });
 
     const movementExchange =
       exchangeId === 'binance'
@@ -1388,6 +1577,7 @@ export async function syncCcxtAccount(params: {
       exchange: movementExchange,
       exchangeId,
       since: effectiveSince,
+      onProgress,
     });
 
     if (movements.length > 0) {
@@ -1407,32 +1597,42 @@ export async function syncCcxtAccount(params: {
         }),
       );
 
-      const movementRefs = movementRows.map((row) => row.external_reference);
+      await reportProgress(onProgress, {
+        stage: 'movements.persist.start',
+        candidateRows: movementRows.length,
+      });
 
-      const existingMovementRows = movementRefs.length
-        ? await prisma.ledgerTransaction.findMany({
-            where: {
-              account_id: params.accountId,
-              external_reference: { in: movementRefs },
-            },
-            select: { external_reference: true },
-          })
-        : [];
-
-      const existingMovementRefs = new Set(
-        existingMovementRows
-          .map((row) => row.external_reference)
-          .filter((value): value is string => Boolean(value)),
-      );
-
-      const movementToCreate = movementRows.filter((row) => !existingMovementRefs.has(row.external_reference));
-
-      if (movementToCreate.length > 0) {
-        const movementResult = await prisma.ledgerTransaction.createMany({
-          data: movementToCreate,
+      if (movementRows.length > 0) {
+        const movementRefs = movementRows.map((row) => row.external_reference);
+        const existingMovementRows = await prisma.ledgerTransaction.findMany({
+          where: {
+            account_id: params.accountId,
+            external_reference: { in: movementRefs },
+          },
+          select: { external_reference: true },
         });
-        created += movementResult.count;
+
+        const existingMovementRefs = new Set(
+          existingMovementRows
+            .map((row) => row.external_reference)
+            .filter((value): value is string => Boolean(value)),
+        );
+
+        const movementRowsToCreate = movementRows.filter((row) => !existingMovementRefs.has(row.external_reference));
+
+        if (movementRowsToCreate.length > 0) {
+          const movementResult = await prisma.ledgerTransaction.createMany({
+            data: movementRowsToCreate,
+          });
+          created += movementResult.count;
+        }
       }
+
+      await reportProgress(onProgress, {
+        stage: 'movements.persist.complete',
+        created,
+        candidateRows: movementRows.length,
+      });
     }
 
     const lastTrade = deduped.length
@@ -1448,6 +1648,11 @@ export async function syncCcxtAccount(params: {
   }
 
   if (mode === 'balances' || mode === 'full') {
+    await reportProgress(onProgress, {
+      stage: 'balances.reconcile.start',
+      message: 'Reconciling balances.',
+    });
+
     if (exchangeId === 'binance') {
       const futuresExchange = buildExchangeForSync({ defaultTypeOverride: 'future' });
       await initializeCcxtExchange(futuresExchange);
@@ -1470,6 +1675,11 @@ export async function syncCcxtAccount(params: {
       exchange: balanceExchange,
       asOf: now,
     });
+
+    await reportProgress(onProgress, {
+      stage: 'balances.reconcile.complete',
+      reconciled,
+    });
   }
 
   await updateAssetStatusesForAccount(params.accountId);
@@ -1489,6 +1699,14 @@ export async function syncCcxtAccount(params: {
         : {}),
       status: 'ACTIVE',
     },
+  });
+
+  await reportProgress(onProgress, {
+    stage: 'sync.complete',
+    message: 'Sync completed successfully.',
+    created,
+    reconciled,
+    lastSyncAt: now.toISOString(),
   });
 
   return {

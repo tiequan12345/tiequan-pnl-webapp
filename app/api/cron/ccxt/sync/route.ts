@@ -5,12 +5,14 @@ import { enqueueCcxtSyncJob } from '@/lib/ccxt/syncJobs';
 import { isMissingSyncSinceColumnError, parseIsoInstant } from '@/lib/datetime';
 
 export const runtime = 'nodejs';
+export const maxDuration = 1800;
 
 type CronSyncPayload = {
   accountId?: number;
   exchange?: 'binance' | 'bybit';
   mode?: CcxtSyncMode;
   since?: string;
+  force?: boolean;
 };
 
 function isSupportedExchange(value: string): value is 'binance' | 'bybit' {
@@ -100,12 +102,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const force = Boolean(body?.force);
+
     const queued = await enqueueCcxtSyncJob({
       accountId,
       exchangeId: exchangeRaw,
       mode: modeRaw,
       since,
       requestedBy: 'CRON',
+      force,
     });
 
     return NextResponse.json({
@@ -118,6 +123,7 @@ export async function POST(request: NextRequest) {
       exchange: exchangeRaw,
       mode: modeRaw,
       usedSinceOverride: Boolean(since),
+      force,
     }, { status: 202 });
   } catch (error) {
     if (isMissingSyncSinceColumnError(error)) {

@@ -11,7 +11,7 @@ import { getAppSettings } from '@/lib/settings';
 import { createPortfolioSnapshot } from '@/lib/pnlSnapshots';
 import { fetchPositions, refreshToken } from '@/lib/tradestation/client';
 import { syncTradeStationAccount } from '@/lib/tradestation/sync';
-import { syncCcxtAccount } from '@/lib/ccxt/sync';
+import { enqueueCcxtSyncJob } from '@/lib/ccxt/syncJobs';
 import { getCoinGeckoIdFromMetadata } from '@/lib/assetMetadata';
 
 function isExpired(expiresAt: Date | null): boolean {
@@ -172,6 +172,19 @@ export async function POST(request: Request) {
 
       for (const connection of ccxtConnections) {
         try {
+          if (connection.exchange_id !== 'binance' && connection.exchange_id !== 'bybit') {
+            logPricingOperation(
+              'ccxt_sync_skipped',
+              {
+                accountId: connection.account_id,
+                exchangeId: connection.exchange_id,
+                reason: 'Unsupported exchange id in ccxtConnection.',
+              },
+              'warn',
+            );
+            continue;
+          }
+
           const cursorSince = connection.last_trade_sync_at
             ? new Date(connection.last_trade_sync_at.getTime() - overlapMinutes * 60 * 1000)
             : null;
@@ -179,18 +192,22 @@ export async function POST(request: Request) {
             ? new Date(Math.max(fallbackSince.getTime(), cursorSince.getTime()))
             : fallbackSince;
 
-          const result = await syncCcxtAccount({
-            accountId: connection.account_id,
-            mode: 'trades',
-            since,
-          });
-
-          logPricingOperation('ccxt_sync_complete', {
+          const queued = await enqueueCcxtSyncJob({
             accountId: connection.account_id,
             exchangeId: connection.exchange_id,
-            created: result.created,
+            mode: 'trades',
+            since,
+            requestedBy: isScheduledRun ? 'CRON' : 'MANUAL',
+          });
+
+          logPricingOperation('ccxt_sync_queued', {
+            accountId: connection.account_id,
+            exchangeId: connection.exchange_id,
+            mode: 'trades',
             since: since.toISOString(),
-            lastSyncAt: result.lastSyncAt.toISOString(),
+            jobId: queued.jobId,
+            deduped: queued.deduped,
+            status: queued.status,
           });
         } catch (syncError) {
           logPricingOperation(

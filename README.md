@@ -134,14 +134,32 @@ COINGECKO_API_KEY=your-coingecko-api-key
 CCXT_AUTO_TRADE_LOOKBACK_HOURS=24
 # Cursor overlap to avoid missing fills near sync boundaries
 CCXT_AUTO_TRADE_OVERLAP_MINUTES=15
+# Overlap used by queue worker incremental sync fallback
+CCXT_SYNC_TRADE_OVERLAP_MINUTES=15
 # Binance market segments included in trade import
 # Futures-like segments (future/delivery/swap) are imported as tx_type=HEDGE by default.
 CCXT_BINANCE_TRADE_TYPES=spot,margin,future
 # Optional cap for markets scanned per profile during trade sync (0 = no cap)
 CCXT_SYNC_MAX_MARKETS_PER_PROFILE=0
+CCXT_SYNC_TRADE_PAGE_LIMIT=200
+CCXT_SYNC_TRADE_MAX_PAGES_PER_SYMBOL=5
+CCXT_SYNC_MOVEMENT_PAGE_LIMIT=1000
+CCXT_SYNC_MOVEMENT_MAX_PAGES=5
 # For derivatives profiles, include all quote currencies by default.
 # Set true to only scan markets matching CCXT_DEFAULT_QUOTE.
 CCXT_DERIVATIVES_DEFAULT_QUOTE_ONLY=false
+# Queue worker behavior
+CCXT_SYNC_JOB_MAX_PER_RUN=1
+CCXT_SYNC_JOB_RUNNING_TIMEOUT_MINUTES=30
+CCXT_SYNC_JOB_MAX_RETRY_ATTEMPTS=3
+CCXT_SYNC_JOB_RETRY_BASE_SECONDS=30
+CCXT_SYNC_JOB_RETRY_MAX_SECONDS=900
+CCXT_SYNC_JOB_HEARTBEAT_SECONDS=10
+# Cron auth + endpoints
+CCXT_CRON_SYNC_TOKEN=your-random-token
+CCXT_SYNC_AUTH_HEADER="Authorization: Bearer your-random-token"
+CCXT_SYNC_ENDPOINT_URL=http://localhost:1373/api/cron/ccxt/sync
+CCXT_SYNC_WORKER_ENDPOINT_URL=http://localhost:1373/api/cron/ccxt/sync-jobs
 # Binance wallet segments included in balance reconciliation
 # Includes spot balances plus futures wallet collateral (walletBalance only, excludes unrealized PnL).
 # Add others only if needed (e.g. spot,future,margin or spot,untyped).
@@ -353,13 +371,27 @@ Important:
 - `/path/to/repo` must match the production machine path (it may differ from local dev).
 - Set `CCXT_CRON_SYNC_TOKEN` in app env and send matching `Authorization: Bearer ...` in cron env (`CCXT_SYNC_AUTH_HEADER`).
 - Configure `CCXT_SYNC_WORKER_ENDPOINT_URL` to `/api/cron/ccxt/sync-jobs`.
+- Worker `curl` timeout defaults to `1800` seconds; override with `CURL_MAX_TIME` if needed.
+- Worker now retries transient errors automatically (`network`/`timeout`/`rate limit`) using exponential backoff (`CCXT_SYNC_JOB_*` vars).
+- Queue dedupe key is `(account_id, exchange_id, mode, since)` for `QUEUED/RUNNING` jobs; set `force: true` to bypass dedupe.
 
 ### Manual sync behavior
 
 - `POST /api/ccxt/{exchange}/sync` enqueues an async sync job and returns `202` with `jobId`.
-- The endpoint uses saved `sync_since` by default.
+- UI default mode is `trades` (not `balances`) to avoid accidental “0 trades imported” runs.
+- `balances` mode only reconciles balances; it does not import trades.
+- The endpoint uses incremental fallback `since = max(sync_since, last_trade_sync_at - overlap)` when request `since` is not provided.
 - You can override that cutoff per run by passing `since` in the request body.
+- Pass `force: true` to enqueue a new job even when a matching queued/running job already exists.
 - `since`/`syncSince` must be ISO 8601 with timezone (`Z` or `±HH:MM`) to avoid timezone ambiguity.
+
+### Queue observability
+
+- `GET /api/ccxt/sync-jobs/{id}` now includes:
+  - `progress` (parsed `progress_json`)
+  - `heartbeat_at`
+  - `next_run_at` (when retry is scheduled)
+- Worker endpoint (`POST /api/cron/ccxt/sync-jobs`) returns `retryScheduledFor` when a transient error is requeued.
 
 ### API checks and migration note
 

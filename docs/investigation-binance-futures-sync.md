@@ -96,3 +96,11 @@ Root cause confirmed: futures trade ingestion was effectively capped to the firs
 - Add instrumentation to detect truncation risk (`result.length === pageLimit` repeatedly).
 - Alert when runs are `created=0` but fetched trades > 0 and dedupe hit-rate is high.
 - Document operator guidance: use `trades/full` for hedge generation; `balances` is reconciliation-only.
+
+## Follow-up hardening (2026-02-11)
+- Manual `POST /api/ccxt/{exchange}/sync` now enqueues queue jobs instead of executing sync inline.
+- Price refresh (`POST /api/prices/refresh`) now enqueues CCXT trade sync jobs instead of calling sync directly.
+- Queue now supports retry/backoff for transient failures with `next_run_at`, heartbeats, and progress payloads.
+- Worker timeout defaults updated to 1800 seconds in `scripts/cron/run-ccxt-sync-worker.sh`.
+- Trade/movement external references were strengthened and `LedgerTransaction(account_id, external_reference)` is now unique.
+- Movement ingestion now paginates (`CCXT_SYNC_MOVEMENT_PAGE_LIMIT`, `CCXT_SYNC_MOVEMENT_MAX_PAGES`).

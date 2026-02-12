@@ -7,6 +7,7 @@ set -euo pipefail
 #   CCXT_SYNC_WORKER_ENDPOINT_URL (required) e.g. https://<host>/api/cron/ccxt/sync-jobs
 #   CCXT_SYNC_AUTH_HEADER         (required) e.g. "Authorization: Bearer <token>"
 #   CCXT_SYNC_WORKER_MAX_JOBS     (optional) number of jobs to process per run (default: 1)
+#   CURL_MAX_TIME                 (optional) curl timeout in seconds (default: 1800)
 #   ENV_FILE                      (optional) path to env file to source
 
 ENV_FILE="${ENV_FILE:-/etc/tiequan-pnl-webapp.env}"
@@ -46,7 +47,7 @@ run_worker() {
     -H "Content-Type: application/json" \
     -H "$CCXT_SYNC_AUTH_HEADER" \
     --data "$payload" \
-    --fail --show-error --max-time "${CURL_MAX_TIME:-120}"
+    --fail --show-error --max-time "${CURL_MAX_TIME:-1800}"
 
   echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] ✅ CCXT sync worker completed"
 }
