@@ -49,6 +49,10 @@ type SyncProgressPayload = {
 
 type SyncProgressReporter = (payload: SyncProgressPayload) => Promise<void> | void;
 
+// Bybit v5 supports fetchMyTrades without a symbol, which dramatically reduces
+// sync API calls. Add exchanges here only after verifying unscoped support.
+const EXCHANGES_WITH_UNSCOPED_MY_TRADES = new Set<CcxtExchangeId>(['bybit']);
+
 function toFiniteNumber(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
@@ -516,11 +520,12 @@ function toMovementLedgerRows(params: {
 
 async function fetchTradesForSync(params: {
   exchange: any;
+  exchangeId: CcxtExchangeId;
   since?: Date;
   marketScope?: TradeMarketScope;
   onProgress?: SyncProgressReporter;
 }): Promise<any[]> {
-  const { exchange, since, marketScope = 'all', onProgress } = params;
+  const { exchange, exchangeId, since, marketScope = 'all', onProgress } = params;
   const sinceTs = getDefaultSince(since).getTime();
 
   const trades: any[] = [];
@@ -636,11 +641,27 @@ async function fetchTradesForSync(params: {
     }
   };
 
-  if (targets.length === 0) {
+  const supportsUnscopedFetchMyTrades = EXCHANGES_WITH_UNSCOPED_MY_TRADES.has(exchangeId);
+
+  if (supportsUnscopedFetchMyTrades) {
     try {
       await fetchSymbolTrades(undefined, 1);
-    } catch {
-      // Some exchange/profile combinations do not support unscoped fetchMyTrades.
+      return trades;
+    } catch (error) {
+      console.warn(
+        `[ccxt-sync] Unscoped fetchMyTrades failed for ${exchangeId} (${marketScope}); falling back to per-symbol sync.`,
+        error,
+      );
+    }
+  }
+
+  if (targets.length === 0) {
+    if (!supportsUnscopedFetchMyTrades) {
+      try {
+        await fetchSymbolTrades(undefined, 1);
+      } catch {
+        // Some exchange/profile combinations do not support unscoped fetchMyTrades.
+      }
     }
     return trades;
   }
@@ -1476,6 +1497,7 @@ export async function syncCcxtAccount(params: {
 
       const trades = await fetchTradesForSync({
         exchange,
+        exchangeId,
         since: effectiveSince,
         marketScope: profile.marketScope,
         onProgress,
