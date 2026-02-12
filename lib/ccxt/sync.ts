@@ -53,6 +53,15 @@ type SyncProgressReporter = (payload: SyncProgressPayload) => Promise<void> | vo
 // sync API calls. Add exchanges here only after verifying unscoped support.
 const EXCHANGES_WITH_UNSCOPED_MY_TRADES = new Set<CcxtExchangeId>(['bybit']);
 
+// Bybit private execution history enforces a max 7-day start/end window.
+const BYBIT_TRADE_QUERY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+const BYBIT_UNSCOPED_CATEGORIES_BY_SCOPE: Record<TradeMarketScope, string[]> = {
+  spotLike: ['spot'],
+  derivatives: ['linear', 'inverse', 'option'],
+  all: ['spot', 'linear', 'inverse', 'option'],
+};
+
 function toFiniteNumber(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
@@ -593,66 +602,125 @@ async function fetchTradesForSync(params: {
     marketScope,
   });
 
-  const fetchSymbolTrades = async (symbol?: string, symbolIndex?: number): Promise<void> => {
-    let cursorSince = sinceTs;
+  const fetchSymbolTrades = async (
+    symbol?: string,
+    symbolIndex?: number,
+    extraParams?: Record<string, unknown>,
+  ): Promise<void> => {
+    const fetchWindow = async (
+      windowSince: number,
+      windowEnd?: number,
+      windowIndex?: number,
+      windowCount?: number,
+    ): Promise<void> => {
+      let cursorSince = windowSince;
 
-    for (let page = 0; page < maxPagesPerSymbol; page += 1) {
-      await reportProgress(onProgress, {
-        stage: 'trades.fetch',
-        symbol: symbol ?? '*',
-        symbolIndex,
-        page: page + 1,
-        pages: maxPagesPerSymbol,
-      });
+      for (let page = 0; page < maxPagesPerSymbol; page += 1) {
+        await reportProgress(onProgress, {
+          stage: 'trades.fetch',
+          symbol: symbol ?? '*',
+          symbolIndex,
+          page: page + 1,
+          pages: maxPagesPerSymbol,
+          ...(windowIndex && windowCount ? { windowIndex, windowCount } : {}),
+        });
 
-      const result = await exchange.fetchMyTrades(symbol, cursorSince, pageLimit);
-      if (!Array.isArray(result) || result.length === 0) {
-        return;
-      }
+        const requestParams = {
+          ...(extraParams ?? {}),
+          ...(windowEnd !== undefined ? { endTime: windowEnd } : {}),
+        };
+        const result = await exchange.fetchMyTrades(symbol, cursorSince, pageLimit, requestParams);
+        if (!Array.isArray(result) || result.length === 0) {
+          return;
+        }
 
-      trades.push(...result);
+        trades.push(...result);
 
-      await reportProgress(onProgress, {
-        stage: 'trades.fetched',
-        symbol: symbol ?? '*',
-        symbolIndex,
-        page: page + 1,
-        fetched: result.length,
-        totalFetched: trades.length,
-      });
+        await reportProgress(onProgress, {
+          stage: 'trades.fetched',
+          symbol: symbol ?? '*',
+          symbolIndex,
+          page: page + 1,
+          fetched: result.length,
+          totalFetched: trades.length,
+          ...(windowIndex && windowCount ? { windowIndex, windowCount } : {}),
+        });
 
-      if (result.length < pageLimit) {
-        return;
-      }
+        if (result.length < pageLimit) {
+          return;
+        }
 
-      let maxTimestamp = cursorSince;
-      for (const trade of result) {
-        const ts = toFiniteNumber((trade as any)?.timestamp);
-        if (ts !== null && ts > maxTimestamp) {
-          maxTimestamp = ts;
+        let maxTimestamp = cursorSince;
+        for (const trade of result) {
+          const ts = toFiniteNumber((trade as any)?.timestamp);
+          if (ts !== null && ts > maxTimestamp) {
+            maxTimestamp = ts;
+          }
+        }
+
+        if (!(maxTimestamp > cursorSince)) {
+          return;
+        }
+
+        cursorSince = Math.trunc(maxTimestamp) + 1;
+
+        if (windowEnd !== undefined && cursorSince > windowEnd) {
+          return;
         }
       }
+    };
 
-      if (!(maxTimestamp > cursorSince)) {
-        return;
+    if (exchangeId === 'bybit') {
+      const nowTs = Date.now();
+      let windowSince = sinceTs;
+      const windowCount = Math.max(1, Math.ceil((nowTs - sinceTs + 1) / BYBIT_TRADE_QUERY_WINDOW_MS));
+      let windowIndex = 0;
+
+      while (windowSince <= nowTs) {
+        windowIndex += 1;
+        const windowEnd = Math.min(windowSince + BYBIT_TRADE_QUERY_WINDOW_MS - 1, nowTs);
+        await fetchWindow(windowSince, windowEnd, windowIndex, windowCount);
+        windowSince = windowEnd + 1;
       }
-
-      cursorSince = Math.trunc(maxTimestamp) + 1;
+      return;
     }
+
+    await fetchWindow(sinceTs);
   };
 
   const supportsUnscopedFetchMyTrades = EXCHANGES_WITH_UNSCOPED_MY_TRADES.has(exchangeId);
 
   if (supportsUnscopedFetchMyTrades) {
-    try {
-      await fetchSymbolTrades(undefined, 1);
-      return trades;
-    } catch (error) {
-      console.warn(
-        `[ccxt-sync] Unscoped fetchMyTrades failed for ${exchangeId} (${marketScope}); falling back to per-symbol sync.`,
-        error,
-      );
+    const unscopedRequests: Array<{ label: string; params?: Record<string, unknown> }> =
+      exchangeId === 'bybit'
+        ? BYBIT_UNSCOPED_CATEGORIES_BY_SCOPE[marketScope].map((category) => ({
+            label: category,
+            params: { category },
+          }))
+        : [{ label: 'default' }];
+
+    let unscopedFetched = 0;
+
+    for (const request of unscopedRequests) {
+      try {
+        const before = trades.length;
+        await fetchSymbolTrades(undefined, 1, request.params);
+        unscopedFetched += trades.length - before;
+      } catch (error) {
+        console.warn(
+          `[ccxt-sync] Unscoped fetchMyTrades failed for ${exchangeId} (${marketScope}, ${request.label}); falling back to per-symbol sync.`,
+          error,
+        );
+      }
     }
+
+    if (unscopedFetched > 0 || targets.length === 0) {
+      return trades;
+    }
+
+    console.warn(
+      `[ccxt-sync] Unscoped fetchMyTrades returned no trades for ${exchangeId} (${marketScope}); falling back to per-symbol sync.`,
+    );
   }
 
   if (targets.length === 0) {
@@ -822,11 +890,40 @@ async function reconcileCcxtFuturesPositions(params: {
   }
 
   let fetchedPositions: any[] = [];
-  try {
-    const positions = await params.exchange.fetchPositions();
-    fetchedPositions = Array.isArray(positions) ? positions : [];
-  } catch {
-    return 0;
+
+  if (params.exchangeId === 'bybit') {
+    const bybitCategories = ['linear', 'inverse', 'option'];
+    let fetchedAnyCategory = false;
+
+    for (const category of bybitCategories) {
+      try {
+        const positions = await params.exchange.fetchPositions(undefined, { category });
+        if (!Array.isArray(positions) || positions.length === 0) {
+          continue;
+        }
+
+        fetchedPositions.push(...positions);
+        fetchedAnyCategory = true;
+      } catch {
+        // Best effort per Bybit category.
+      }
+    }
+
+    if (!fetchedAnyCategory) {
+      try {
+        const positions = await params.exchange.fetchPositions();
+        fetchedPositions = Array.isArray(positions) ? positions : [];
+      } catch {
+        return 0;
+      }
+    }
+  } else {
+    try {
+      const positions = await params.exchange.fetchPositions();
+      fetchedPositions = Array.isArray(positions) ? positions : [];
+    } catch {
+      return 0;
+    }
   }
 
   const targetBySymbol = new Map<string, number>();
@@ -1675,8 +1772,12 @@ export async function syncCcxtAccount(params: {
       message: 'Reconciling balances.',
     });
 
-    if (exchangeId === 'binance') {
-      const futuresExchange = buildExchangeForSync({ defaultTypeOverride: 'future' });
+    if (exchangeId === 'binance' || exchangeId === 'bybit') {
+      const futuresExchange =
+        exchangeId === 'binance'
+          ? buildExchangeForSync({ defaultTypeOverride: 'future' })
+          : buildExchangeForSync({ defaultTypeOverride: 'swap' });
+
       await initializeCcxtExchange(futuresExchange);
       reconciled += await reconcileCcxtFuturesPositions({
         accountId: params.accountId,
