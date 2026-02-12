@@ -204,3 +204,96 @@ export async function POST(request: Request) {
     );
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const body = (await request.json().catch(() => null)) as { ids?: (number | string)[] } | null;
+
+    if (!body || !Array.isArray(body.ids) || body.ids.length === 0) {
+      return NextResponse.json(
+        { error: 'ids must be a non-empty array.' },
+        { status: 400 },
+      );
+    }
+
+    const parsedIds = body.ids
+      .map((id) => Number(id))
+      .filter((id) => Number.isFinite(id));
+
+    if (parsedIds.length !== body.ids.length) {
+      return NextResponse.json(
+        { error: 'ids must be numeric.' },
+        { status: 400 },
+      );
+    }
+
+    const uniqueIds = Array.from(new Set(parsedIds));
+
+    // Count associated records for user confirmation
+    const assetsWithRecords = await prisma.asset.findMany({
+      where: {
+        id: { in: uniqueIds },
+      },
+      select: {
+        id: true,
+        symbol: true,
+        _count: {
+          select: {
+            ledger_transactions: true,
+          },
+        },
+      },
+    });
+
+    const totalTransactions = assetsWithRecords.reduce(
+      (sum, asset) => sum + asset._count.ledger_transactions,
+      0
+    );
+
+    // Count PriceLatest entries separately
+    const totalPriceLatest = await prisma.priceLatest.count({
+      where: {
+        asset_id: { in: uniqueIds },
+      },
+    });
+
+    // Use a transaction to ensure atomic deletion
+    const result = await prisma.$transaction(async (tx) => {
+      // Delete associated price latest entries first
+      await tx.priceLatest.deleteMany({
+        where: {
+          asset_id: { in: uniqueIds },
+        },
+      });
+
+      // Delete associated ledger transactions first
+      await tx.ledgerTransaction.deleteMany({
+        where: {
+          asset_id: { in: uniqueIds },
+        },
+      });
+
+      // Then delete the assets
+      const deleted = await tx.asset.deleteMany({
+        where: { id: { in: uniqueIds } },
+      });
+
+      return {
+        deletedAssets: deleted.count,
+        deletedTransactions: totalTransactions,
+        deletedPriceLatest: totalPriceLatest
+      };
+    });
+
+    return NextResponse.json({
+      deleted: result.deletedAssets,
+      deletedTransactions: result.deletedTransactions,
+      deletedPriceLatest: result.deletedPriceLatest
+    });
+  } catch {
+    return NextResponse.json(
+      { error: 'Failed to delete assets.' },
+      { status: 500 },
+    );
+  }
+}

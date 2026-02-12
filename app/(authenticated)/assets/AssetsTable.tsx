@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { DataTable, type DataTableColumn } from '../_components/table/DataTable';
 import { Badge } from '../_components/ui/Badge';
@@ -43,6 +44,12 @@ export function AssetsTable({ rows, statusFilter = 'ACTIVE' }: AssetsTableProps)
   const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<Set<number | string>>(new Set());
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const dustAssetIds = useMemo(
     () =>
@@ -92,6 +99,50 @@ export function AssetsTable({ rows, statusFilter = 'ACTIVE' }: AssetsTableProps)
       window.alert('Unexpected error while updating asset status.');
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!confirm(`Are you sure you want to delete ${selectedIds.size} asset(s)? All associated ledger transactions will also be deleted.`)) {
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      const response = await fetch('/api/assets', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        window.alert(data?.error || 'Failed to delete assets.');
+        return;
+      }
+
+      const result = (await response.json()) as { deleted?: number; deletedTransactions?: number; deletedPriceLatest?: number } | null;
+      const deletedAssets = result?.deleted ?? 0;
+      const deletedTransactions = result?.deletedTransactions ?? 0;
+      const deletedPriceLatest = result?.deletedPriceLatest ?? 0;
+
+      if (deletedTransactions > 0 || deletedPriceLatest > 0) {
+        const parts = [];
+        if (deletedTransactions > 0) {
+          parts.push(`${deletedTransactions} ledger transaction(s)`);
+        }
+        if (deletedPriceLatest > 0) {
+          parts.push(`${deletedPriceLatest} price record(s)`);
+        }
+        window.alert(`Successfully deleted ${deletedAssets} asset(s) and ${parts.join(' and ')}.`);
+      }
+
+      setSelectedIds(new Set());
+      router.refresh();
+    } catch {
+      window.alert('Unexpected error while deleting assets.');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -205,58 +256,85 @@ export function AssetsTable({ rows, statusFilter = 'ACTIVE' }: AssetsTableProps)
   ];
 
   const toolbar = (
-    <div className="flex flex-wrap items-center gap-2">
-      <button
-        type="button"
-        onClick={() => setSelectedIds(new Set(dustAssetIds))}
-        className="text-xs px-2.5 py-1.5 rounded-md border border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800"
-      >
-        Select Dust (±$100)
-      </button>
-      <button
-        type="button"
-        onClick={() => setSelectedIds(new Set())}
-        className="text-xs px-2.5 py-1.5 rounded-md border border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800"
-      >
-        Clear Selection
-      </button>
-      {statusFilter === 'ACTIVE' ? (
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <span className="text-xs text-zinc-500">
+        {rows.length === 1 ? '1 asset' : `${rows.length} assets`}
+      </span>
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
-          disabled={selectedIds.size === 0 || isUpdating}
-          onClick={() => handleStatusUpdate('INACTIVE')}
-          className="text-xs px-2.5 py-1.5 rounded-md border border-rose-500/40 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20 disabled:opacity-50"
+          onClick={() => setSelectedIds(new Set(dustAssetIds))}
+          className="text-xs px-2.5 py-1.5 rounded-md border border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800"
         >
-          Mark Inactive
+          Select Dust (±$100)
         </button>
-      ) : (
         <button
           type="button"
-          disabled={selectedIds.size === 0 || isUpdating}
-          onClick={() => handleStatusUpdate('ACTIVE')}
-          className="text-xs px-2.5 py-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-50"
+          onClick={() => setSelectedIds(new Set())}
+          className="text-xs px-2.5 py-1.5 rounded-md border border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800"
         >
-          Mark Active
+          Clear Selection
         </button>
-      )}
-      <span className="text-xs text-zinc-500">{selectedIds.size} selected</span>
+        {selectedIds.size > 0 && (
+          <span className="text-xs text-zinc-500">{selectedIds.size} selected</span>
+        )}
+      </div>
     </div>
   );
 
   return (
-    <DataTable
-      columns={columns}
-      rows={rows}
-      keyFn={(row) => row.id}
-      defaultSort={{ columnId: 'symbol', direction: 'asc' }}
-      globalSearch={{ placeholder: 'Search assets' }}
-      emptyMessage={'No assets found. Use "Add Asset" to create your first asset.'}
-      rowClassName={() => 'hover:bg-zinc-800/30'}
-      enableSelection
-      selectedRowIds={selectedIds}
-      onSelectionChange={(next) => setSelectedIds(new Set(next))}
-      toolbar={toolbar}
-      stickyHeader
-    />
+    <>
+      <DataTable
+        columns={columns}
+        rows={rows}
+        keyFn={(row) => row.id}
+        defaultSort={{ columnId: 'symbol', direction: 'asc' }}
+        globalSearch={{ placeholder: 'Search assets' }}
+        emptyMessage={'No assets found. Use "Add Asset" to create your first asset.'}
+        rowClassName={() => 'hover:bg-zinc-800/30'}
+        enableSelection
+        selectedRowIds={selectedIds}
+        onSelectionChange={(next) => setSelectedIds(new Set(next))}
+        toolbar={toolbar}
+        stickyHeader
+      />
+
+      {mounted && selectedIds.size > 0 && createPortal(
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 bg-zinc-900 border border-zinc-700 rounded-full px-6 py-3 shadow-2xl animate-in slide-in-from-bottom-4 duration-200">
+          <span className="text-sm font-medium text-zinc-200 whitespace-nowrap">
+            {selectedIds.size} selected
+          </span>
+          <div className="h-4 w-px bg-zinc-700" />
+          {statusFilter === 'ACTIVE' ? (
+            <button
+              type="button"
+              disabled={isUpdating}
+              onClick={() => handleStatusUpdate('INACTIVE')}
+              className="text-sm text-orange-400 hover:text-orange-300 font-medium transition disabled:opacity-50"
+            >
+              {isUpdating ? 'Updating...' : 'Mark Inactive'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={isUpdating}
+              onClick={() => handleStatusUpdate('ACTIVE')}
+              className="text-sm text-emerald-400 hover:text-emerald-300 font-medium transition disabled:opacity-50"
+            >
+              {isUpdating ? 'Updating...' : 'Mark Active'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleBulkDelete}
+            disabled={isDeleting}
+            className="text-sm text-rose-400 hover:text-rose-300 font-medium transition disabled:opacity-50"
+          >
+            {isDeleting ? 'Deleting...' : 'Delete'}
+          </button>
+        </div>,
+        document.body
+      )}
+    </>
   );
 }
