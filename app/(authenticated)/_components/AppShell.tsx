@@ -78,6 +78,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 width={32}
                 height={32}
                 className="rounded-lg object-contain"
+                priority
               />
               Tiequan Portfolio
             </div>
