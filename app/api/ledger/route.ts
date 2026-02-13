@@ -680,31 +680,128 @@ export async function POST(request: Request) {
         }
       }
 
-      // Create all legs atomically using a transaction
-      const createdTransactions = await prisma.$transaction(
-        validLegs.map((leg) =>
-          prisma.ledgerTransaction.create({
-            data: {
-              date_time: dateTime,
-              account_id: leg.accountId,
-              asset_id: leg.assetId,
-              quantity: leg.quantityParsed,
-              tx_type: txType,
-              external_reference: externalReference,
-              notes,
-              unit_price_in_base: leg.unitPriceParsed,
-              total_value_in_base: leg.totalValueParsed,
-              fee_in_base: leg.feeParsed,
-            },
-          }),
-        ),
+      // Generate match_reference for TRANSFER transactions (Phase 1+)
+      // This ensures transfer legs are properly paired even if timestamps drift
+      const matchReference = txType === 'TRANSFER' ? `MATCH:${crypto.randomUUID()}` : null;
+
+      // Phase 4: Reverse order merge - convert matching CCXT movement legs,
+      // then create only the missing legs so each transfer ends with exactly two legs.
+      const transferMergeWindowMinutes = Number(
+        process.env.CCXT_TRANSFER_MERGE_WINDOW_MINUTES ?? '360',
+      );
+      const transferMergeWindowMs = transferMergeWindowMinutes * 60 * 1000;
+
+      const { convertedTransactionIds, createdTransactions } = await prisma.$transaction(
+        async (tx) => {
+          const convertedLegIndexes = new Set<number>();
+          const convertedTransactionIds: number[] = [];
+
+          if (txType === 'TRANSFER' && matchReference) {
+            const transferTime = dateTime.getTime();
+
+            // For each leg, look for an existing CCXT DEPOSIT/WITHDRAWAL to convert.
+            for (const [legIndex, leg] of validLegs.entries()) {
+              const legQty = decimalValueToNumber(leg.quantityParsed);
+              if (legQty === null || !Number.isFinite(legQty)) {
+                continue;
+              }
+
+              const targetCcxtType = legQty > 0 ? 'DEPOSIT' : 'WITHDRAWAL';
+
+              const existingCcxtMovement = await tx.ledgerTransaction.findFirst({
+                where: {
+                  account_id: leg.accountId,
+                  asset_id: leg.assetId,
+                  tx_type: targetCcxtType,
+                  external_reference: { startsWith: 'CCXT:' },
+                  date_time: {
+                    gte: new Date(transferTime - transferMergeWindowMs),
+                    lte: new Date(transferTime + transferMergeWindowMs),
+                  },
+                  match_reference: null,
+                },
+                orderBy: { date_time: 'desc' },
+              });
+
+              if (!existingCcxtMovement) {
+                continue;
+              }
+
+              const existingQty = Number(existingCcxtMovement.quantity);
+              if (!Number.isFinite(existingQty)) {
+                continue;
+              }
+
+              // Sign-aware quantity match. DEPOSIT must match +qty leg; WITHDRAWAL must match -qty leg.
+              const qtyMatch = Math.abs(existingQty - legQty) < 1e-8;
+              if (!qtyMatch) {
+                continue;
+              }
+
+              await tx.ledgerTransaction.update({
+                where: { id: existingCcxtMovement.id },
+                data: {
+                  tx_type: 'TRANSFER',
+                  match_reference: matchReference,
+                },
+              });
+
+              convertedLegIndexes.add(legIndex);
+              convertedTransactionIds.push(existingCcxtMovement.id);
+              console.log(
+                `[ledger] Converted CCXT ${targetCcxtType} ${existingCcxtMovement.id} to TRANSFER leg`,
+              );
+            }
+          }
+
+          const legsToCreate = validLegs.filter((_, index) => !convertedLegIndexes.has(index));
+          const createdTransactions = await Promise.all(
+            legsToCreate.map((leg) =>
+              tx.ledgerTransaction.create({
+                data: {
+                  date_time: dateTime,
+                  account_id: leg.accountId,
+                  asset_id: leg.assetId,
+                  quantity: leg.quantityParsed,
+                  tx_type: txType,
+                  external_reference: externalReference,
+                  match_reference: matchReference,
+                  notes,
+                  unit_price_in_base: leg.unitPriceParsed,
+                  total_value_in_base: leg.totalValueParsed,
+                  fee_in_base: leg.feeParsed,
+                },
+              }),
+            ),
+          );
+
+          return { convertedTransactionIds, createdTransactions };
+        },
       );
 
-      return NextResponse.json({
-        ids: createdTransactions.map((t) => t.id),
-        date_time: createdTransactions[0].date_time.toISOString(),
-        legs: createdTransactions.length,
-      });
+      const convertedCcxtRows = convertedTransactionIds.length;
+
+      const responseIds = [
+        ...convertedTransactionIds,
+        ...createdTransactions.map((transaction) => transaction.id),
+      ];
+
+      const response: {
+        ids: number[];
+        date_time: string;
+        legs: number;
+        convertedCcxtRows?: number;
+      } = {
+        ids: responseIds,
+        date_time: createdTransactions[0]?.date_time.toISOString() ?? dateTime.toISOString(),
+        legs: responseIds.length,
+      };
+
+      if (convertedCcxtRows > 0) {
+        response.convertedCcxtRows = convertedCcxtRows;
+      }
+
+      return NextResponse.json(response);
     }
 
     // Legacy single-transaction support

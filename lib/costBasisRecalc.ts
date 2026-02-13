@@ -12,6 +12,7 @@ export type RecalcTransaction = {
   quantity: string | number | DecimalLike;
   tx_type: string;
   external_reference: string | null;
+  match_reference: string | null;
   total_value_in_base: string | number | DecimalLike | null;
   unit_price_in_base: string | number | DecimalLike | null;
   asset: {
@@ -134,10 +135,18 @@ function getOrCreatePosition(
 }
 
 function buildTransferKey(tx: RecalcTransaction): string {
+  // First priority: use match_reference if present (Phase 1+)
+  const matchRef = tx.match_reference ?? '';
+  if (matchRef.trim().length > 0) {
+    return `${tx.asset_id}|${matchRef.trim()}`;
+  }
+  
+  // Fallback: check external_reference for legacy MATCH:* keys
   const reference = (tx.external_reference ?? '').trim();
   if (reference.startsWith('MATCH:')) {
     return `${tx.asset_id}|${reference}`;
   }
+  // Legacy fallback: group by asset + datetime + external_reference
   const dateKey = tx.date_time.toISOString();
   return `${tx.asset_id}|${dateKey}|${reference}`;
 }
@@ -320,7 +329,14 @@ export function recalcCostBasis(
     const qtyA = toNumber(legA.quantity);
     const qtyB = toNumber(legB.quantity);
 
-    const isManualMatch = (legA.external_reference || '').startsWith('MATCH:');
+    const isManualMatch = (() => {
+      // Check match_reference first (Phase 1+)
+      if ((tx.match_reference ?? '').trim().length > 0) {
+        return true;
+      }
+      // Fallback to legacy MATCH:* external_reference
+      return (legA.external_reference || '').startsWith('MATCH:');
+    })();
 
     const quantitiesValid = qtyA !== null && qtyB !== null;
     const signsDiffer = quantitiesValid && ((qtyA > 0 && qtyB < 0) || (qtyA < 0 && qtyB > 0));

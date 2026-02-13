@@ -62,6 +62,7 @@ export async function GET(request: Request) {
       quantity: tx.quantity,
       tx_type: tx.tx_type,
       external_reference: tx.external_reference,
+      match_reference: tx.match_reference,
       total_value_in_base: tx.total_value_in_base,
       unit_price_in_base: tx.unit_price_in_base,
       asset: {

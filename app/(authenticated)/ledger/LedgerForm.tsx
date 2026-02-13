@@ -25,7 +25,7 @@ type LedgerFormProps = {
   mode: LedgerFormMode;
   transactionId?: number;
   initialValues?: LedgerFormInitialValues;
-  accounts: { id: number; name: string; status?: string; usageCount?: number }[];
+  accounts: { id: number; name: string; status?: string; usageCount?: number; hasCcxtConnection?: boolean }[];
   assets: { id: number; symbol: string; name: string; usageCount?: number }[];
 };
 
@@ -1204,6 +1204,7 @@ export function LedgerForm({
                 {sortedAccounts.map((account) => (
                   <option key={account.id} value={account.id}>
                     {account.name}
+                    {account.hasCcxtConnection ? ' ⚠️' : ''}
                   </option>
                 ))}
               </select>
@@ -1222,9 +1223,22 @@ export function LedgerForm({
                 {sortedAccounts.map((account) => (
                   <option key={account.id} value={account.id}>
                     {account.name}
+                    {account.hasCcxtConnection ? ' ⚠️' : ''}
                   </option>
                 ))}
               </select>
+              {/* Warning for CCXT-connected accounts */}
+              {transferToAccountId && (() => {
+                const destAccount = accounts.find(a => a.id === Number(transferToAccountId));
+                if (destAccount?.hasCcxtConnection) {
+                  return (
+                    <div className="text-xs text-amber-400 bg-amber-900/20 border border-amber-900/50 rounded px-2 py-1.5">
+                      ⚠️ This account auto-syncs deposits/withdrawals. Transfers will be merged automatically.
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
 
             <div className="space-y-2">

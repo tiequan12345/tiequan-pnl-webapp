@@ -46,7 +46,7 @@ Go to **Settings → Cost Basis Recalculation** and follow these steps:
 
 If the recalculation reports transfer pairing issues, use the **Unmatched Diagnostics** panel in Settings:
 
-- **Match Together**: Forces two legs to pair (syncs timestamps and assigns a `MATCH:<uuid>` reference).
+- **Match Together**: Forces two legs to pair (syncs timestamps and assigns a `MATCH:<uuid>` `match_reference` pairing key while preserving any existing `external_reference`).
 - **Treat as Separate**: Converts to independent DEPOSIT/WITHDRAWAL entries to clear warnings.
 
 After resolving, run the recalculation again to verify diagnostics are cleared.

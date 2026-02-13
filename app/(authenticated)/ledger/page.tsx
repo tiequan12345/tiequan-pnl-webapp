@@ -129,7 +129,7 @@ export default async function LedgerPage(props: LedgerPageProps) {
     },
   });
 
-  // Get accounts with usage counts
+  // Get accounts with usage counts and CCXT connection status
   const accountsWithUsage = await prisma.account.findMany({
     select: {
       id: true,
@@ -138,6 +138,11 @@ export default async function LedgerPage(props: LedgerPageProps) {
       _count: {
         select: {
           ledger_transactions: true,
+        },
+      },
+      ccxt_connection: {
+        select: {
+          id: true,
         },
       },
     },
@@ -183,6 +188,7 @@ export default async function LedgerPage(props: LedgerPageProps) {
     name: account.name,
     status: account.status,
     usageCount: account._count.ledger_transactions,
+    hasCcxtConnection: account.ccxt_connection !== null,
   }));
 
   const assetsForSelect = assetsWithUsage.map((asset) => ({

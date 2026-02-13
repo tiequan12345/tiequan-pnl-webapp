@@ -35,25 +35,42 @@ export async function POST(request: Request) {
                 }
             }
 
+            // Use match_reference for transfer pairing (Phase 1+)
             const matchRef = `MATCH:${crypto.randomUUID()}`;
 
             await prisma.ledgerTransaction.updateMany({
                 where: { id: { in: legIds } },
                 data: {
                     date_time: maxDate,
-                    external_reference: matchRef,
+                    // Set only the dedicated pairing key; preserve source identity in external_reference
+                    match_reference: matchRef,
                 },
             });
 
             return NextResponse.json({ success: true, message: 'Matched transactions to ' + maxDate.toISOString() });
         } else if (action === 'SEPARATE') {
             // Logic: Change types to DEPOSIT / WITHDRAWAL
+            // Also clear the grouping key (match_reference and legacy MATCH:* in external_reference)
             const updates = transactions.map((tx) => {
                 const qty = Number(tx.quantity);
                 const newType = qty >= 0 ? 'DEPOSIT' : 'WITHDRAWAL';
+                
+                // Build update data - clear both match_reference and legacy MATCH:* external_reference
+                const updateData: { tx_type: string; match_reference: null; external_reference?: string | null } = {
+                    tx_type: newType,
+                    // Clear match_reference (Phase 1+)
+                    match_reference: null,
+                };
+                
+                // Clear external_reference if it starts with 'MATCH:' (legacy grouping key)
+                const externalRef = tx.external_reference;
+                if (externalRef && externalRef.startsWith('MATCH:')) {
+                    updateData.external_reference = null;
+                }
+                
                 return prisma.ledgerTransaction.update({
                     where: { id: tx.id },
-                    data: { tx_type: newType },
+                    data: updateData,
                 });
             });
 

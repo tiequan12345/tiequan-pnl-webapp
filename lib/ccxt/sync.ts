@@ -1728,7 +1728,50 @@ export async function syncCcxtAccount(params: {
         candidateRows: movementRows.length,
       });
 
+      // Phase 3: Check for existing TRANSFER legs to merge with (prevent duplicates)
+      // Get the configurable time window for matching
+      const transferMergeWindowMinutes = Number(
+        process.env.CCXT_TRANSFER_MERGE_WINDOW_MINUTES ?? '360',
+      );
+      const transferMergeWindowMs = transferMergeWindowMinutes * 60 * 1000;
+      
+      // Build a map of existing transfer legs by (asset_id, quantity) for quick lookup
+      const existingTransfers = await prisma.ledgerTransaction.findMany({
+        where: {
+          account_id: params.accountId,
+          tx_type: 'TRANSFER',
+          // Only match transfers that don't already have a CCXT reference
+          OR: [
+            { external_reference: null },
+            { external_reference: { not: { startsWith: 'CCXT:' } } },
+          ],
+        },
+        select: {
+          id: true,
+          asset_id: true,
+          quantity: true,
+          date_time: true,
+          external_reference: true,
+        },
+      });
+
+      // Index transfers by asset_id for quick lookup
+      const transfersByAsset = new Map<number, typeof existingTransfers>();
+      for (const transfer of existingTransfers) {
+        const list = transfersByAsset.get(transfer.asset_id) ?? [];
+        list.push(transfer);
+        transfersByAsset.set(transfer.asset_id, list);
+      }
+
+      // Track which movements should be merged (not created as new rows)
+      const mergedMovementIds = new Set<string>();
+      // Track transfers already consumed in this batch so we don't attach multiple movements to one leg
+      const claimedTransferIds = new Set<number>();
+      // Track movements that were attached to existing transfers
+      let movementsMerged = 0;
+
       if (movementRows.length > 0) {
+        // First check for existing movement refs (original idempotency check)
         const movementRefs = movementRows.map((row) => row.external_reference);
         const existingMovementRows = await prisma.ledgerTransaction.findMany({
           where: {
@@ -1744,13 +1787,100 @@ export async function syncCcxtAccount(params: {
             .filter((value): value is string => Boolean(value)),
         );
 
-        const movementRowsToCreate = movementRows.filter((row) => !existingMovementRefs.has(row.external_reference));
+        // Check each movement for potential merge with existing transfer
+        for (const movementRow of movementRows) {
+          // Skip if already exists (idempotency)
+          if (existingMovementRefs.has(movementRow.external_reference)) {
+            continue;
+          }
+
+          // Look for matching transfer leg
+          const transfersForAsset = transfersByAsset.get(movementRow.asset_id) ?? [];
+          const movementTime = movementRow.date_time.getTime();
+          
+          for (const transfer of transfersForAsset) {
+            if (claimedTransferIds.has(transfer.id)) {
+              continue;
+            }
+
+            const transferQty = Number(transfer.quantity);
+            const movementQty = Number(movementRow.quantity);
+            if (!Number.isFinite(transferQty) || !Number.isFinite(movementQty)) {
+              continue;
+            }
+
+            // Sign-aware quantity match (DEPOSIT=positive leg, WITHDRAWAL=negative leg)
+            const qtyMatch = Math.abs(transferQty - movementQty) < 1e-8;
+            if (!qtyMatch) {
+              continue;
+            }
+
+            // Check time window
+            const transferTime = transfer.date_time.getTime();
+            const timeDiff = Math.abs(movementTime - transferTime);
+            if (timeDiff > transferMergeWindowMs) {
+              continue;
+            }
+
+            // Found a match! Attach CCXT reference when transfer has no source identity yet.
+            const ccxtRef = movementRow.external_reference;
+            const transferExternalRef = (transfer.external_reference ?? '').trim();
+
+            if (!transferExternalRef) {
+              try {
+                await prisma.ledgerTransaction.update({
+                  where: { id: transfer.id },
+                  data: {
+                    external_reference: ccxtRef,
+                  },
+                });
+              } catch (error) {
+                const code =
+                  typeof error === 'object' && error !== null && 'code' in error
+                    ? String((error as { code?: unknown }).code)
+                    : '';
+
+                if (code !== 'P2002') {
+                  throw error;
+                }
+
+                console.warn(
+                  `[ccxt-sync] Could not attach ${ccxtRef} to transfer ${transfer.id} due to unique conflict; treating as merged`,
+                );
+              }
+            }
+
+            mergedMovementIds.add(movementRow.external_reference);
+            claimedTransferIds.add(transfer.id);
+            movementsMerged += 1;
+
+            // Log the merge for monitoring (Phase 6)
+            console.log(
+              `[ccxt-sync] Merged movement ${ccxtRef} into transfer ${transfer.id}${transferExternalRef ? ' (kept existing external_reference)' : ''}`,
+            );
+            break;
+          }
+        }
+
+        // Filter out movements that were merged
+        const movementRowsToCreate = movementRows.filter(
+          (row) => !existingMovementRefs.has(row.external_reference) && !mergedMovementIds.has(row.external_reference),
+        );
 
         if (movementRowsToCreate.length > 0) {
           const movementResult = await prisma.ledgerTransaction.createMany({
             data: movementRowsToCreate,
           });
           created += movementResult.count;
+        }
+        
+        // Log merge stats for monitoring
+        if (movementsMerged > 0) {
+          await reportProgress(onProgress, {
+            stage: 'movements.merged',
+            merged: movementsMerged,
+            created: movementRowsToCreate.length,
+          });
         }
       }
 

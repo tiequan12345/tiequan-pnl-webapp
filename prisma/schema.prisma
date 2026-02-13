@@ -131,6 +131,7 @@ model LedgerTransaction {
   quantity            Decimal
   tx_type             String
   external_reference  String?
+  match_reference    String?
   notes               String?
   unit_price_in_base  Decimal?
   total_value_in_base Decimal?
@@ -145,6 +146,7 @@ model LedgerTransaction {
   @@index([account_id])
   @@index([asset_id])
   @@index([tx_type])
+  @@index([match_reference])
   @@unique([account_id, external_reference])
 }
 

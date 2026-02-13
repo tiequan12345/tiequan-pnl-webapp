@@ -192,10 +192,20 @@ Create a one-off script (Node) under `scripts/`:
 
 ---
 
+## Implementation notes (current behavior)
+
+- `POST /api/ledger/resolve-transfer` now sets `match_reference` (not `external_reference`) for `MATCH` and preserves source identity.
+- `SEPARATE` now clears `match_reference` and also clears legacy `external_reference` values that start with `MATCH:`.
+- CCXT movement merge in `lib/ccxt/sync.ts` is sign-aware (`DEPOSIT` ↔ positive leg, `WITHDRAWAL` ↔ negative leg), and only writes `external_reference` when the transfer leg does not already have one.
+- Reverse-order merge in `POST /api/ledger` converts matching CCXT movement rows to `TRANSFER` and creates only missing legs so the final transfer group remains exactly two legs.
+- `scripts/backfill-match-reference.ts` now uses the same legacy grouping fallback as runtime recalc logic and only auto-pairs groups with exactly two opposite-direction legs.
+
+---
+
 ## Config knobs
 
 - `CCXT_TRANSFER_MERGE_WINDOW_MINUTES` (default 360)
-- (Optional) `CCXT_TRANSFER_MERGE_AMOUNT_REL_TOL` (default 0.001)
+- (Optional) `CCXT_TRANSFER_MERGE_AMOUNT_REL_TOL` (default 0.001, planned/not wired yet)
 
 ---
 
