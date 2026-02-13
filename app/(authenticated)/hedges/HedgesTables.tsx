@@ -34,6 +34,18 @@ export type AggregatedHedgeRow = {
   totalMarketValue: number | null;
 };
 
+export type AccountAggregatedHedgeRow = {
+  accountId: number;
+  accountName: string;
+  assetId: number;
+  assetSymbol: string;
+  assetName: string;
+  totalQuantity: string;
+  totalQuantityValue: number;
+  price: number | null;
+  totalMarketValue: number | null;
+};
+
 const HEDGE_DATE_FORMAT = new Intl.DateTimeFormat('en-US', {
   year: 'numeric',
   month: 'short',
@@ -92,10 +104,12 @@ export function NetExposureTable({ rows }: NetExposureTableProps) {
       accessor: (row) => row.price ?? -Infinity,
       cell: (row) => (
         <span className="text-zinc-300">
-          {row.price ? `$${row.price.toLocaleString(undefined, {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 6,
-          })}` : '—'}
+          {row.price
+            ? `$${row.price.toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 6,
+            })}`
+            : '—'}
         </span>
       ),
       sortable: true,
@@ -157,9 +171,7 @@ export function HedgeTransactionsTable({ rows }: HedgeTransactionsTableProps) {
       header: 'Date / Time',
       accessor: (row) => new Date(row.dateTime).getTime(),
       cell: (row) => (
-        <span className="text-zinc-300">
-          {HEDGE_DATE_FORMAT.format(new Date(row.dateTime))}
-        </span>
+        <span className="text-zinc-300">{HEDGE_DATE_FORMAT.format(new Date(row.dateTime))}</span>
       ),
       sortable: true,
     },
@@ -167,9 +179,7 @@ export function HedgeTransactionsTable({ rows }: HedgeTransactionsTableProps) {
       id: 'accountName',
       header: 'Account',
       accessor: (row) => row.accountName,
-      cell: (row) => (
-        <span className="text-zinc-200 font-semibold">{row.accountName}</span>
-      ),
+      cell: (row) => <span className="text-zinc-200 font-semibold">{row.accountName}</span>,
       sortable: true,
     },
     {
@@ -209,10 +219,12 @@ export function HedgeTransactionsTable({ rows }: HedgeTransactionsTableProps) {
       accessor: (row) => row.price ?? -Infinity,
       cell: (row) => (
         <span className="text-zinc-300">
-          {row.price ? `$${row.price.toLocaleString(undefined, {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 6,
-          })}` : '—'}
+          {row.price
+            ? `$${row.price.toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 6,
+            })}`
+            : '—'}
         </span>
       ),
       sortable: true,
@@ -232,9 +244,7 @@ export function HedgeTransactionsTable({ rows }: HedgeTransactionsTableProps) {
           maximumFractionDigits: 2,
         });
         return (
-          <span className="text-zinc-300">
-            {value < 0 ? `-$${formatted.slice(1)}` : `$${formatted}`}
-          </span>
+          <span className="text-zinc-300">{value < 0 ? `-$${formatted.slice(1)}` : `$${formatted}`}</span>
         );
       },
       sortable: true,
@@ -246,9 +256,7 @@ export function HedgeTransactionsTable({ rows }: HedgeTransactionsTableProps) {
 
   const toolbar = (
     <span className="text-xs text-zinc-500">
-      {rows.length === 1
-        ? '1 volatile hedge entry'
-        : `${rows.length} volatile hedge entries`}
+      {rows.length === 1 ? '1 volatile hedge entry' : `${rows.length} volatile hedge entries`}
     </span>
   );
 
@@ -310,10 +318,12 @@ export function AggregatedHedgesTable({ rows }: AggregatedHedgesTableProps) {
       accessor: (row) => row.price ?? -Infinity,
       cell: (row) => (
         <span className="text-zinc-300">
-          {row.price ? `$${row.price.toLocaleString(undefined, {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 6,
-          })}` : '—'}
+          {row.price
+            ? `$${row.price.toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 6,
+            })}`
+            : '—'}
         </span>
       ),
       sortable: true,
@@ -332,11 +342,7 @@ export function AggregatedHedgesTable({ rows }: AggregatedHedgesTableProps) {
           minimumFractionDigits: 2,
           maximumFractionDigits: 2,
         });
-        return (
-          <span className="text-zinc-300">
-            {value < 0 ? `-$${formatted}` : `$${formatted}`}
-          </span>
-        );
+        return <span className="text-zinc-300">{value < 0 ? `-$${formatted}` : `$${formatted}`}</span>;
       },
       sortable: true,
       sortFn: (a, b) => (a.totalMarketValue ?? -Infinity) - (b.totalMarketValue ?? -Infinity),
@@ -347,9 +353,7 @@ export function AggregatedHedgesTable({ rows }: AggregatedHedgesTableProps) {
 
   const toolbar = (
     <span className="text-xs text-zinc-500">
-      {rows.length === 1
-        ? '1 volatile hedge asset'
-        : `${rows.length} volatile hedge assets`}
+      {rows.length === 1 ? '1 volatile hedge asset' : `${rows.length} volatile hedge assets`}
     </span>
   );
 
@@ -364,6 +368,111 @@ export function AggregatedHedgesTable({ rows }: AggregatedHedgesTableProps) {
       rowClassName={() => 'hover:bg-zinc-800/30'}
       toolbar={toolbar}
       stickyHeader
+    />
+  );
+}
+
+type AccountAggregatedHedgesTableProps = {
+  rows: AccountAggregatedHedgeRow[];
+};
+
+export function AccountAggregatedHedgesTable({ rows }: AccountAggregatedHedgesTableProps) {
+  const columns: DataTableColumn<AccountAggregatedHedgeRow>[] = [
+    {
+      id: 'accountName',
+      header: 'Account',
+      accessor: (row) => row.accountName,
+      cell: (row) => <span className="text-zinc-200 font-semibold">{row.accountName}</span>,
+      sortable: true,
+    },
+    {
+      id: 'assetSymbol',
+      header: 'Asset',
+      accessor: (row) => `${row.assetSymbol} ${row.assetName}`,
+      cell: (row) => (
+        <span className="text-zinc-300">
+          {row.assetSymbol} <span className="text-zinc-500">({row.assetName})</span>
+        </span>
+      ),
+      sortable: true,
+    },
+    {
+      id: 'totalQuantityValue',
+      header: 'Total Quantity',
+      accessor: (row) => row.totalQuantityValue,
+      cell: (row) => {
+        const absValue = Math.abs(row.totalQuantityValue);
+        const formatted = absValue.toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+        return (
+          <span className="text-zinc-300">
+            {row.totalQuantityValue < 0 ? `-${formatted}` : `+${formatted}`}
+          </span>
+        );
+      },
+      sortable: true,
+      align: 'right',
+      className: 'text-right',
+    },
+    {
+      id: 'price',
+      header: 'Price',
+      accessor: (row) => row.price ?? -Infinity,
+      cell: (row) => (
+        <span className="text-zinc-300">
+          {row.price
+            ? `$${row.price.toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 6,
+            })}`
+            : '—'}
+        </span>
+      ),
+      sortable: true,
+      sortFn: (a, b) => (a.price ?? -Infinity) - (b.price ?? -Infinity),
+      align: 'right',
+      className: 'text-right',
+    },
+    {
+      id: 'totalMarketValue',
+      header: 'Total Market Value',
+      accessor: (row) => row.totalMarketValue ?? -Infinity,
+      cell: (row) => {
+        const value = row.totalMarketValue;
+        if (value === null || value === undefined) return <span className="text-zinc-300">—</span>;
+        const formatted = Math.abs(value).toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+        return <span className="text-zinc-300">{value < 0 ? `-$${formatted}` : `$${formatted}`}</span>;
+      },
+      sortable: true,
+      sortFn: (a, b) => (a.totalMarketValue ?? -Infinity) - (b.totalMarketValue ?? -Infinity),
+      align: 'right',
+      className: 'text-right',
+    },
+  ];
+
+  const toolbar = (
+    <span className="text-xs text-zinc-500">
+      {rows.length === 1 ? '1 volatile hedge position' : `${rows.length} volatile hedge positions`}
+    </span>
+  );
+
+  return (
+    <DataTable
+      columns={columns}
+      rows={rows}
+      keyFn={(row) => `${row.accountId}:${row.assetId}`}
+      defaultSort={{ columnId: 'totalMarketValue', direction: 'desc' }}
+      globalSearch={{ placeholder: 'Search hedge positions by account' }}
+      emptyMessage="No volatile hedge positions found."
+      rowClassName={() => 'hover:bg-zinc-800/30'}
+      toolbar={toolbar}
+      stickyHeader
+      dense
     />
   );
 }

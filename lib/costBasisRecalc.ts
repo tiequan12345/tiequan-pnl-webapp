@@ -12,7 +12,7 @@ export type RecalcTransaction = {
   quantity: string | number | DecimalLike;
   tx_type: string;
   external_reference: string | null;
-  match_reference: string | null;
+  match_reference?: string | null;
   total_value_in_base: string | number | DecimalLike | null;
   unit_price_in_base: string | number | DecimalLike | null;
   asset: {
