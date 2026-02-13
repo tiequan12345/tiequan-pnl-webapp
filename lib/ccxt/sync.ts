@@ -999,14 +999,26 @@ async function reconcileCcxtFuturesPositions(params: {
 
   const positionReferencePrefix = `CCXT:${params.exchangeId}:POSITION:${params.accountId}:`;
   const legacyPositionQuoteReferencePrefix = `CCXT:${params.exchangeId}:POSITION_QUOTE:${params.accountId}:`;
+  const dateKey = formatDateKey(params.asOf);
 
-  // Rebuild synthetic position reconciliation rows from scratch each run.
+  // Position reconciliation rows are synthetic "make-the-ledger-match-open-positions" adjustments.
+  //
+  // We keep (at most) one set per day (keyed by dateKey in external_reference) and update/delete in-place.
+  // Do NOT delete + recreate every run, otherwise we churn ledger IDs and report reconciliations every hour
+  // even when nothing changed.
   await prisma.ledgerTransaction.deleteMany({
     where: {
       account_id: params.accountId,
       OR: [
-        { external_reference: { startsWith: positionReferencePrefix } },
+        // Legacy position quote reconciliation rows from older implementations.
         { external_reference: { startsWith: legacyPositionQuoteReferencePrefix } },
+        // Drop any POSITION rows not for today's date key (prevents unbounded growth).
+        {
+          external_reference: {
+            startsWith: positionReferencePrefix,
+            not: { endsWith: `:${dateKey}` },
+          },
+        },
       ],
     },
   });
@@ -1025,6 +1037,38 @@ async function reconcileCcxtFuturesPositions(params: {
     },
   });
 
+  const existingPositionReconRows = await prisma.ledgerTransaction.findMany({
+    where: {
+      account_id: params.accountId,
+      external_reference: {
+        startsWith: positionReferencePrefix,
+        endsWith: `:${dateKey}`,
+      },
+    },
+    select: {
+      id: true,
+      external_reference: true,
+      quantity: true,
+    },
+  });
+
+  const existingReconBySymbol = new Map<string, { id: number; quantity: number }>();
+  for (const row of existingPositionReconRows) {
+    const ref = typeof row.external_reference === 'string' ? row.external_reference : '';
+    if (!ref.startsWith(positionReferencePrefix)) {
+      continue;
+    }
+
+    const remainder = ref.slice(positionReferencePrefix.length);
+    const symbol = remainder.split(':')[0]?.trim().toUpperCase();
+    if (!symbol) {
+      continue;
+    }
+
+    const qty = Number(row.quantity);
+    existingReconBySymbol.set(symbol, { id: row.id, quantity: Number.isFinite(qty) ? qty : 0 });
+  }
+
   const hedgeBaseSymbols = new Set<string>();
   for (const row of ledgerRows) {
     const symbol = row.asset.symbol.trim().toUpperCase();
@@ -1042,7 +1086,12 @@ async function reconcileCcxtFuturesPositions(params: {
     }
   }
 
-  const positionSymbols = new Set<string>([...targetBySymbol.keys(), ...hedgeBaseSymbols]);
+  const positionSymbols = new Set<string>([
+    ...targetBySymbol.keys(),
+    ...hedgeBaseSymbols,
+    ...existingReconBySymbol.keys(),
+  ]);
+
   if (positionSymbols.size === 0) {
     return 0;
   }
@@ -1051,6 +1100,16 @@ async function reconcileCcxtFuturesPositions(params: {
   for (const row of ledgerRows) {
     const symbol = row.asset.symbol.trim().toUpperCase();
     if (!symbol || !positionSymbols.has(symbol)) {
+      continue;
+    }
+
+    const externalReference = typeof row.external_reference === 'string' ? row.external_reference.trim() : '';
+
+    // Ignore synthetic position reconciliation rows when computing "raw" ledger exposure.
+    if (
+      externalReference.startsWith(positionReferencePrefix) ||
+      externalReference.startsWith(legacyPositionQuoteReferencePrefix)
+    ) {
       continue;
     }
 
@@ -1070,7 +1129,6 @@ async function reconcileCcxtFuturesPositions(params: {
     })),
   );
 
-  const dateKey = formatDateKey(params.asOf);
   let reconciled = 0;
 
   for (const symbol of symbolList) {
@@ -1083,7 +1141,34 @@ async function reconcileCcxtFuturesPositions(params: {
     const ledgerQty = ledgerBySymbol.get(symbol) ?? 0;
     const delta = targetQty - ledgerQty;
 
+    const externalReference = `${positionReferencePrefix}${symbol}:${dateKey}`;
+    const notes = `CCXT futures position reconcile ${symbol} ${dateKey}: exchange=${targetQty} ledger=${ledgerQty}`;
+
+    const existing = existingReconBySymbol.get(symbol);
+
     if (!Number.isFinite(delta) || Math.abs(delta) < epsilon) {
+      if (existing) {
+        await prisma.ledgerTransaction.delete({ where: { id: existing.id } });
+        reconciled += 1;
+      }
+      continue;
+    }
+
+    if (existing) {
+      if (Number.isFinite(existing.quantity) && Math.abs(existing.quantity - delta) < epsilon) {
+        // No meaningful change; avoid churn.
+        continue;
+      }
+
+      await prisma.ledgerTransaction.update({
+        where: { id: existing.id },
+        data: {
+          date_time: params.asOf,
+          quantity: String(delta),
+          notes,
+        },
+      });
+      reconciled += 1;
       continue;
     }
 
@@ -1094,8 +1179,8 @@ async function reconcileCcxtFuturesPositions(params: {
         asset_id: assetId,
         quantity: String(delta),
         tx_type: 'HEDGE',
-        external_reference: `${positionReferencePrefix}${symbol}:${dateKey}`,
-        notes: `CCXT futures position reconcile ${symbol} ${dateKey}: exchange=${targetQty} ledger=${ledgerQty}`,
+        external_reference: externalReference,
+        notes,
       },
     });
     reconciled += 1;
@@ -1417,6 +1502,8 @@ export async function syncCcxtAccount(params: {
   created: number;
   updated: number;
   reconciled: number;
+  reconciledPositions: number;
+  reconciledBalances: number;
   lastSyncAt: Date;
 }> {
   const mode = params.mode ?? 'trades';
@@ -1511,6 +1598,8 @@ export async function syncCcxtAccount(params: {
 
   let created = 0;
   let reconciled = 0;
+  let reconciledPositions = 0;
+  let reconciledBalances = 0;
   let latestTradeCursor: { tradeId: string; timestamp: Date } | null = null;
 
   if (mode === 'trades' || mode === 'full') {
@@ -1916,7 +2005,7 @@ export async function syncCcxtAccount(params: {
           : buildExchangeForSync({ defaultTypeOverride: 'swap' });
 
       await initializeCcxtExchange(futuresExchange);
-      reconciled += await reconcileCcxtFuturesPositions({
+      reconciledPositions += await reconcileCcxtFuturesPositions({
         accountId: params.accountId,
         exchangeId,
         exchange: futuresExchange,
@@ -1929,16 +2018,20 @@ export async function syncCcxtAccount(params: {
         ? buildExchangeForSync({ forceSpotWalletProfile: true })
         : buildExchangeForSync();
     await initializeCcxtExchange(balanceExchange);
-    reconciled += await reconcileCcxtBalances({
+    reconciledBalances += await reconcileCcxtBalances({
       accountId: params.accountId,
       exchangeId,
       exchange: balanceExchange,
       asOf: now,
     });
 
+    reconciled = reconciledPositions + reconciledBalances;
+
     await reportProgress(onProgress, {
       stage: 'balances.reconcile.complete',
       reconciled,
+      reconciledPositions,
+      reconciledBalances,
     });
   }
 
@@ -1966,6 +2059,8 @@ export async function syncCcxtAccount(params: {
     message: 'Sync completed successfully.',
     created,
     reconciled,
+    reconciledPositions,
+    reconciledBalances,
     lastSyncAt: now.toISOString(),
   });
 
@@ -1973,6 +2068,8 @@ export async function syncCcxtAccount(params: {
     created,
     updated: 0,
     reconciled,
+    reconciledPositions,
+    reconciledBalances,
     lastSyncAt: now,
   };
 }

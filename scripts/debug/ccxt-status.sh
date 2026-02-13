@@ -49,6 +49,7 @@ echo "CCXT Sync Status"
 echo "Generated: $(date -u +%Y-%m-%d\ %H:%M:%S\ UTC)"
 echo "Database:  $DB_PATH"
 echo "Thresholds: timeout=${RUNNING_TIMEOUT_MINUTES}m, stale-heartbeat=${HEARTBEAT_STALE_SECONDS}s"
+echo "Columns: Recon=result_json.reconciled, Pos=result_json.reconciledPositions (fallback: POSITION rows touched), Bal=result_json.reconciledBalances (fallback: BALANCE rows touched)"
 echo
 
 # Summary counts first for a quick at-a-glance status.
@@ -299,6 +300,7 @@ WITH cfg AS (
 ), jobs AS (
   SELECT
     id,
+    account_id,
     exchange_id,
     mode,
     status,
@@ -347,6 +349,7 @@ WITH cfg AS (
 )
 SELECT
   id AS "ID",
+  account_id AS "Acct",
   mode AS "Mode",
   status AS "Status",
   attempts AS "Try",
@@ -387,6 +390,39 @@ SELECT
   COALESCE(json_extract(result_json, '$.created'), '') AS "Created",
   COALESCE(json_extract(result_json, '$.updated'), '') AS "Updated",
   COALESCE(json_extract(result_json, '$.reconciled'), '') AS "Recon",
+  COALESCE(json_extract(result_json, '$.reconciledPositions'), (
+    SELECT COUNT(*)
+    FROM LedgerTransaction lt
+    WHERE lt.account_id = jobs.account_id
+      AND lt.external_reference IS NOT NULL
+      AND lt.external_reference LIKE ('CCXT:' || jobs.exchange_id || ':POSITION:' || jobs.account_id || ':%')
+      AND (
+        CASE
+          WHEN lt.date_time IS NULL THEN NULL
+          WHEN typeof(lt.date_time) IN ('integer','real') THEN CAST(lt.date_time AS INTEGER)
+          WHEN lt.date_time GLOB '[0-9]*' THEN CAST(lt.date_time AS INTEGER)
+          ELSE CAST(strftime('%s', lt.date_time) AS INTEGER) * 1000
+        END
+      ) BETWEEN (COALESCE(jobs.started_ms, jobs.created_ms) - 5000)
+        AND (COALESCE(jobs.finished_ms, jobs.started_ms, jobs.created_ms) + 5000)
+  )) AS "Pos",
+  COALESCE(json_extract(result_json, '$.reconciledBalances'), (
+    SELECT COUNT(*)
+    FROM LedgerTransaction lt
+    WHERE lt.account_id = jobs.account_id
+      AND lt.tx_type = 'RECONCILIATION'
+      AND lt.external_reference IS NOT NULL
+      AND lt.external_reference LIKE ('CCXT:' || jobs.exchange_id || ':BALANCE:' || jobs.account_id || ':%')
+      AND (
+        CASE
+          WHEN lt.date_time IS NULL THEN NULL
+          WHEN typeof(lt.date_time) IN ('integer','real') THEN CAST(lt.date_time AS INTEGER)
+          WHEN lt.date_time GLOB '[0-9]*' THEN CAST(lt.date_time AS INTEGER)
+          ELSE CAST(strftime('%s', lt.date_time) AS INTEGER) * 1000
+        END
+      ) BETWEEN (COALESCE(jobs.started_ms, jobs.created_ms) - 5000)
+        AND (COALESCE(jobs.finished_ms, jobs.started_ms, jobs.created_ms) + 5000)
+  )) AS "Bal",
   COALESCE(json_extract(progress_json, '$.stage'), '') AS "Stage",
   COALESCE(json_extract(progress_json, '$.symbol'), '') AS "Symbol",
   COALESCE(json_extract(progress_json, '$.page'), '') AS "Pg",

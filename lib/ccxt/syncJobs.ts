@@ -284,6 +284,8 @@ export async function runClaimedCcxtSyncJob(job: ClaimedCcxtSyncJob): Promise<{
     created: number;
     updated: number;
     reconciled: number;
+    reconciledPositions?: number;
+    reconciledBalances?: number;
     lastSyncAt: string;
   };
   error?: string;
@@ -354,6 +356,8 @@ export async function runClaimedCcxtSyncJob(job: ClaimedCcxtSyncJob): Promise<{
           created: result.created,
           updated: result.updated,
           reconciled: result.reconciled,
+          reconciledPositions: result.reconciledPositions,
+          reconciledBalances: result.reconciledBalances,
           lastSyncAt: result.lastSyncAt.toISOString(),
         }),
         progress_json: JSON.stringify({
@@ -362,6 +366,8 @@ export async function runClaimedCcxtSyncJob(job: ClaimedCcxtSyncJob): Promise<{
           updatedAt: finishedAt.toISOString(),
           created: result.created,
           reconciled: result.reconciled,
+          reconciledPositions: result.reconciledPositions,
+          reconciledBalances: result.reconciledBalances,
         }),
         claim_token: null,
       },
@@ -374,6 +380,8 @@ export async function runClaimedCcxtSyncJob(job: ClaimedCcxtSyncJob): Promise<{
         created: result.created,
         updated: result.updated,
         reconciled: result.reconciled,
+        reconciledPositions: result.reconciledPositions,
+        reconciledBalances: result.reconciledBalances,
         lastSyncAt: result.lastSyncAt.toISOString(),
       },
     };
