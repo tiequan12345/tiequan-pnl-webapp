@@ -1,0 +1,245 @@
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    TRANSFER SYNC FLOW DIAGRAM                           │
+│                                                                          │
+│  This document shows the problem flow and potential solution flows       │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ PROBLEM FLOW (Current Broken Behavior)                                  │
+└─────────────────────────────────────────────────────────────────────────┘
+
+User Action: Transfer 90K USDC from EVM Wallet → Bybit
+
+    ┌─────────────┐
+    │ EVM Wallet  │
+    │ (Manual)    │
+    └──────┬──────┘
+           │
+           │ 1. User initiates blockchain transfer
+           │
+           ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │                    User opens PNL Webapp                   │
+    └─────────────────────────────────────────────────────────────┘
+           │
+           │ 2. User manually creates TRANSFER
+           │    ┌──────────────────────────────────────────┐
+           │    │ From: EVM Wallet                         │
+           │    │ To:   Bybit                             │
+           │    │ Amount: 90,000 USDC                     │
+           │    │                                          │
+           │    │ Creates in LedgerTransaction:          │
+           │    │  • EVM:   TRANSFER -90,000 USDC         │
+           │    │  • Bybit: TRANSFER +90,000 USDC         │
+           │    │    Both with MATCH:uuid reference      │
+           │    └──────────────────────────────────────────┘
+           │
+           ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │                   Bybit shows 90K USDC                       │
+    │              (from manual TRANSFER entry)                    │
+    └─────────────────────────────────────────────────────────────┘
+           │
+           │ 3. 5-10 minutes later...
+           │
+           ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │                 CCXT Auto-sync runs                          │
+    │    ┌──────────────────────────────────────────┐             │
+    │    │ Queries Bybit API for recent deposits     │             │
+    │    │ Finds: 90,000 USDC deposit at [time]      │             │
+    │    │                                          │             │
+    │    │ Creates in LedgerTransaction:          │             │
+    │    │  • Bybit: DEPOSIT +90,000 USDC           │             │
+    │    │    With CCXT:bybit:DEPOSIT:[txid] ref    │             │
+    │    └──────────────────────────────────────────┘             │
+    └─────────────────────────────────────────────────────────────┘
+           │
+           ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │                    ❌ CONFLICT!                              │
+    │                                                              │
+    │  Bybit account now has TWO entries:                         │
+    │  • TRANSFER +90,000 (manual, from step 2)                    │
+    │  • DEPOSIT +90,000 (auto-synced, from step 3)               │
+    │                                                              │
+    │  UI displays: 180,000 USDC total (WRONG!)                    │
+    │  Cost basis: DEPOSIT resets to $1.00 (BROKEN!)              │
+    └─────────────────────────────────────────────────────────────┘
+           │
+           ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │                 User must reconcile manually                │
+    │  • Go to Reconcile page                                      │
+    │  • Find the ambiguous group                                  │
+    │  • Separate one entry                                        │
+    │  • Delete the duplicate                                     │
+    │  • Match remaining pair                                     │
+    │                                                              │
+    │  ⏱️  Takes 5-10 minutes per transfer!                        │
+    └─────────────────────────────────────────────────────────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ SOLUTION FLOW 1: Smart Detection (Recommended)                          │
+└─────────────────────────────────────────────────────────────────────────┘
+
+User Action: Transfer 90K USDC from EVM Wallet → Bybit
+
+    [Same steps 1-2 as above]
+
+    ┌─────────────────────────────────────────────────────────────┐
+    │                 CCXT Auto-sync runs                          │
+    │    ┌──────────────────────────────────────────┐             │
+    │    │ BEFORE creating DEPOSIT, checks:          │             │
+    │    │                                          │             │
+    │    │ Is there a TRANSFER -90K on EVM wallet   │             │
+    │    │ within ±1 hour of this deposit?          │             │
+    │    │                                          │             │
+    │    │ Query:                                 │             │
+    │    │ SELECT * FROM LedgerTransaction        │             │
+    │    │ WHERE tx_type = 'TRANSFER'            │             │
+    │    │   AND account_id = 8  -- EVM         │             │
+    │    │   AND quantity = -90000              │             │
+    │    │   AND date_time BETWEEN now()-1hr     │             │
+    │    │                    AND now()+1hr       │             │
+    │    └──────────────────────────────────────────┘             │
+    └─────────────────────────────────────────────────────────────┘
+           │
+           ├─ MATCH FOUND ─────────────────────────────────────┐
+           │                                                      │
+           │     ▼                                               ▼
+           │    ┌──────────────────┐                   ┌──────────────────┐
+           │    │ Skip creating    │                   │ Create DEPOSIT   │
+           │    │ DEPOSIT          │                   │ as normal        │
+           │    │                  │                   │                  │
+           │    │ Update existing  │                   │                  │
+           │    │ TRANSFER pair    │                   │                  │
+           │    │ to mark synced   │                   │                  │
+           │    └──────────────────┘                   └──────────────────┘
+           │                                                      │
+           │    ✅ RESULT:                                      │
+           │    • Bybit: 90K USDC (single entry)             │
+           │    • Cost basis preserved                           │
+           │    • No manual work needed                          │
+           │                                                      │
+           │                                                      │
+           │    ⚠️  RESULT:                                      │
+           │    • Bybit: 90K USDC (single DEPOSIT)             │
+           │    • May need manual reconciliation later        │
+           │                                                      │
+           └──────────────────────────────────────────────────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ SOLUTION FLOW 2: UI-First Approach                                       │
+└─────────────────────────────────────────────────────────────────────────┘
+
+User Action: Transfer 90K USDC from EVM Wallet → Bybit
+
+    ┌─────────────┐
+    │ EVM Wallet  │
+    └──────┬──────┘
+           │
+           │ 1. User opens PNL Webapp BEFORE initiating transfer
+           │
+           ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │              TRANSFER UI with Warning                         │
+    │    ┌──────────────────────────────────────────┐             │
+    │    │ ⚠️  Bybit auto-syncs DEPOSITS           │             │
+    │    │                                          │             │
+    │    │ From: EVM Wallet                         │             │
+    │    │ To:   Bybit                             │             │
+    │    │ Amount: 90,000 USDC                     │             │
+    │    │                                          │             │
+    │    │ Options:                               │             │
+    │    │ ○ Create TRANSFER pair now             │             │
+    │    │ ● Create EVM side only (skip Bybit)    │ ← RECOMMENDED│
+    │    │ ○ Let auto-sync handle it              │             │
+    │    │                                          │             │
+    │    │ [Create Transfer]                       │             │
+    │    └──────────────────────────────────────────┘             │
+    └─────────────────────────────────────────────────────────────┘
+           │
+           │ 2. User selects "Create EVM side only"
+           │
+           ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │          Creates ONLY EVM Wallet entry:                      │
+    │    • EVM: TRANSFER -90,000 USDC                             │
+    │    • Bybit: (nothing created)                              │
+    └─────────────────────────────────────────────────────────────┘
+           │
+           │ 3. User initiates blockchain transfer
+           │
+           ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │                   CCXT Auto-sync runs                       │
+    │    Creates: Bybit DEPOSIT +90,000 USDC                      │
+    └─────────────────────────────────────────────────────────────┘
+           │
+           ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │              Post-Sync Reconciliation Job                   │
+    │    ┌──────────────────────────────────────────┐             │
+    │    │ Detects: EVM TRANSFER -90K               │             │
+    │    │          Bybit DEPOSIT +90K             │             │
+    │    │                                          │             │
+    │    │ Converts: DEPOSIT → TRANSFER            │             │
+    │    │ Matches both with MATCH:uuid            │             │
+    │    └──────────────────────────────────────────┘             │
+    └─────────────────────────────────────────────────────────────┘
+           │
+           ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │                    ✅ CLEAN RESULT                            │
+    │    • EVM: TRANSFER -90,000                                 │
+    │    • Bybit: TRANSFER +90,000                               │
+    │    • Cost basis preserved                                  │
+    │    • No manual work needed                                 │
+    └─────────────────────────────────────────────────────────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ KEY DIFFERENCES BETWEEN APPROACHES                                      │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────┐
+│                        Smart Detection                                 │
+│                                                                        │
+│ Pro:   ✅ Zero UI changes                                              │
+│        ✅ Works with existing workflow                                  │
+│        ✅ Prevents duplicates at source                                 │
+│                                                                        │
+│ Con:   ⚠️  May miss edge cases                                          │
+│        ⚠️  Time window heuristic (1 hour?)                               │
+│        ⚠️  Complex backend logic                                         │
+│                                                                        │
+│ Effort: 3-5 days implementation                                         │
+└────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────┐
+│                       UI-First Approach                                │
+│                                                                        │
+│ Pro:   ✅ User controls behavior                                        │
+│        ✅ Explicit intent detection                                     │
+│        ✅ Clear communication                                           │
+│                                                                        │
+│ Con:   ⚠️  Requires UI changes                                           │
+│        ⚠️  Extra user step                                               │
+│        ⚠️  May confuse users                                             │
+│                                                                        │
+│ Effort: 5-7 days implementation                                         │
+└────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────┐
+│                     Hybrid (Best of Both)                               │
+│                                                                        │
+│        Combine both approaches:                                         │
+│        1. Smart detection as default                                    │
+│        2. UI warning for manual override                                 │
+│        3. Post-sync job as safety net                                  │
+│                                                                        │
+│ Effort: 7-10 days implementation                                       │
+└────────────────────────────────────────────────────────────────────────┘
