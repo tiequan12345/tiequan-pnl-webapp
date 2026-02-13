@@ -368,11 +368,12 @@ export default function PnlPageView() {
         }
         const previous = earliestAssets[asset.assetId];
         const previousValue = previous?.value ?? null;
-        const previousPrice = previous?.price ?? null;
         const change = previousValue !== null ? asset.value - previousValue : null;
+        // Calculate % change based on VALUE, not price, to ensure consistency with the "Change" column.
+        // For short positions (negative value), the sign of change will correctly reflect P&L.
         const changePct =
-          previousPrice !== null && previousPrice !== 0
-            ? ((asset.price - previousPrice) / previousPrice) * 100
+          previousValue !== null && previousValue !== 0
+            ? (change! / Math.abs(previousValue)) * 100
             : null;
         return {
           ...asset,
