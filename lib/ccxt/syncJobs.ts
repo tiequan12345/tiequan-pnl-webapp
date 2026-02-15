@@ -211,6 +211,26 @@ export async function claimNextCcxtSyncJob(
 
   const normalizedExchange = normalizeCcxtExchange(exchangeId);
 
+  // When no exchange is specified, find which exchanges already have RUNNING jobs
+  // so we can avoid claiming more jobs for those exchanges (allow parallel execution across exchanges)
+  let excludedExchanges: CcxtSupportedExchange[] = [];
+  if (!normalizedExchange) {
+    const runningJobs = await prisma.ccxtSyncJob.findMany({
+      where: {
+        status: 'RUNNING',
+      },
+      select: {
+        exchange_id: true,
+      },
+      distinct: ['exchange_id'],
+    });
+
+    excludedExchanges = runningJobs
+      .map((j) => normalizeCcxtExchange(j.exchange_id))
+      .filter((e): e is CcxtSupportedExchange => e !== undefined);
+  }
+
+
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const now = new Date();
     const queueWhere: Prisma.CcxtSyncJobWhereInput = {
@@ -219,7 +239,7 @@ export async function claimNextCcxtSyncJob(
         { next_run_at: null },
         { next_run_at: { lte: now } },
       ],
-      ...(normalizedExchange ? { exchange_id: normalizedExchange } : {}),
+      ...(normalizedExchange ? { exchange_id: normalizedExchange } : { exchange_id: { notIn: excludedExchanges } }),
     };
 
     const candidate = await prisma.ccxtSyncJob.findFirst({

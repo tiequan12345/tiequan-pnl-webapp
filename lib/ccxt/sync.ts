@@ -1282,6 +1282,48 @@ async function reconcileCcxtFuturesPositions(params: {
   return reconciled;
 }
 
+const CCXT_REFERENCE_TIMESTAMP_MARKER = /:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
+
+function extractCcxtTradeSymbolFromReference(params: {
+  externalReference: string;
+  exchangeId: CcxtExchangeId;
+}): string | null {
+  const { externalReference, exchangeId } = params;
+
+  const prefix = `CCXT:${exchangeId}:`;
+  if (!externalReference.startsWith(prefix)) {
+    return null;
+  }
+
+  const body = externalReference.slice(prefix.length);
+  if (
+    body.startsWith('DEPOSIT:') ||
+    body.startsWith('WITHDRAWAL:') ||
+    body.startsWith('BALANCE:') ||
+    body.startsWith('POSITION:') ||
+    body.startsWith('POSITION_QUOTE:') ||
+    body.startsWith('TRANSFER:')
+  ) {
+    return null;
+  }
+
+  const marker = body.match(CCXT_REFERENCE_TIMESTAMP_MARKER);
+  if (!marker || marker.index === undefined || marker.index <= 0) {
+    return null;
+  }
+
+  const symbol = body.slice(0, marker.index).trim();
+  return symbol.includes('/') ? symbol : null;
+}
+
+function isSyntheticDerivativeCcxtTradeReference(params: {
+  externalReference: string;
+  exchangeId: CcxtExchangeId;
+}): boolean {
+  const symbol = extractCcxtTradeSymbolFromReference(params);
+  return Boolean(symbol && symbol.includes(':'));
+}
+
 async function reconcileCcxtBalances(params: {
   accountId: number;
   exchangeId: CcxtExchangeId;
@@ -1335,11 +1377,13 @@ async function reconcileCcxtBalances(params: {
     });
   }
 
+  const dateKey = formatDateKey(params.asOf);
   const reconciliationReferencePrefix = `CCXT:${params.exchangeId}:BALANCE:${params.accountId}:`;
 
   const ledgerRows = await prisma.ledgerTransaction.findMany({
     where: { account_id: params.accountId },
     select: {
+      id: true,
       asset_id: true,
       tx_type: true,
       quantity: true,
@@ -1352,57 +1396,94 @@ async function reconcileCcxtBalances(params: {
     },
   });
 
-  const positionReferencePrefix = `CCXT:${params.exchangeId}:POSITION:${params.accountId}:`;
-
-  const hedgeAssetIds = new Set<number>();
-  const hedgeSymbols = new Set<string>();
+  const syntheticExposureAssetIds = new Set<number>();
 
   for (const row of ledgerRows) {
-    if (row.tx_type !== 'HEDGE') {
-      continue;
-    }
-
-    const symbol = row.asset.symbol.trim().toUpperCase();
     const externalReference = typeof row.external_reference === 'string' ? row.external_reference.trim() : '';
-    const isLegacyHedgeWithoutReference = externalReference.length === 0 && !USD_LIKE_SYMBOLS.has(symbol);
-    const isDerivativeBaseHedge =
-      isLegacyHedgeWithoutReference ||
-      externalReference.includes(':BASE') ||
-      externalReference.startsWith(positionReferencePrefix);
+    const isDerivativeCcxtTradeRow = isSyntheticDerivativeCcxtTradeReference({
+      externalReference,
+      exchangeId: params.exchangeId,
+    });
 
-    if (!isDerivativeBaseHedge) {
-      continue;
-    }
-
-    hedgeAssetIds.add(row.asset_id);
-    if (symbol) {
-      hedgeSymbols.add(symbol);
+    if (row.tx_type === 'HEDGE' || isDerivativeCcxtTradeRow) {
+      syntheticExposureAssetIds.add(row.asset_id);
     }
   }
 
-  if (hedgeAssetIds.size > 0) {
+  // Keep only one day's worth of CCXT balance reconciliation rows.
+  // Otherwise, old daily rows accumulate and cause persistent churn.
+  await prisma.ledgerTransaction.deleteMany({
+    where: {
+      account_id: params.accountId,
+      tx_type: 'RECONCILIATION',
+      external_reference: {
+        startsWith: reconciliationReferencePrefix,
+        not: { endsWith: `:${dateKey}` },
+      },
+    },
+  });
+
+  // If an asset has synthetic exposure (HEDGE positions or derivative trade references),
+  // CCXT spot balance reconciliation should not apply. Remove any lingering CCXT balance
+  // reconciliation rows for those assets.
+  if (syntheticExposureAssetIds.size > 0) {
     await prisma.ledgerTransaction.deleteMany({
       where: {
         account_id: params.accountId,
         tx_type: 'RECONCILIATION',
-        asset_id: { in: Array.from(hedgeAssetIds) },
+        asset_id: { in: Array.from(syntheticExposureAssetIds) },
         external_reference: { startsWith: reconciliationReferencePrefix },
       },
     });
   }
 
+  const existingReconTodayBySymbol = new Map<string, { id: number; quantity: number }>();
+
+  for (const row of ledgerRows) {
+    const externalReference = typeof row.external_reference === 'string' ? row.external_reference.trim() : '';
+
+    if (row.tx_type !== 'RECONCILIATION' || !externalReference.startsWith(reconciliationReferencePrefix)) {
+      continue;
+    }
+
+    // Old rows were deleted above; ignore them in our in-memory snapshot.
+    if (!externalReference.endsWith(`:${dateKey}`)) {
+      continue;
+    }
+
+    const remainder = externalReference.slice(reconciliationReferencePrefix.length);
+    const symbol = remainder.split(':')[0]?.trim().toUpperCase();
+    if (!symbol) {
+      continue;
+    }
+
+    const qty = Number(row.quantity);
+    existingReconTodayBySymbol.set(symbol, {
+      id: row.id,
+      quantity: Number.isFinite(qty) ? qty : 0,
+    });
+  }
+
+  // Ledger totals excluding CCXT balance reconciliation rows.
   const ledgerBySymbol = new Map<string, number>();
   for (const row of ledgerRows) {
     const symbol = row.asset.symbol.trim().toUpperCase();
     if (!symbol) continue;
 
-    const isRemovedHedgeReconciliation =
-      row.tx_type === 'RECONCILIATION' &&
-      hedgeAssetIds.has(row.asset_id) &&
-      typeof row.external_reference === 'string' &&
-      row.external_reference.startsWith(reconciliationReferencePrefix);
+    const externalReference = typeof row.external_reference === 'string' ? row.external_reference.trim() : '';
 
-    if (isRemovedHedgeReconciliation) {
+    // Do not treat CCXT BALANCE reconciliation rows as part of the base ledger exposure;
+    // we recompute them deterministically below.
+    if (row.tx_type === 'RECONCILIATION' && externalReference.startsWith(reconciliationReferencePrefix)) {
+      continue;
+    }
+
+    const isDerivativeCcxtTradeRow = isSyntheticDerivativeCcxtTradeReference({
+      externalReference,
+      exchangeId: params.exchangeId,
+    });
+
+    if (row.tx_type === 'HEDGE' || isDerivativeCcxtTradeRow) {
       continue;
     }
 
@@ -1411,7 +1492,11 @@ async function reconcileCcxtBalances(params: {
     ledgerBySymbol.set(symbol, (ledgerBySymbol.get(symbol) ?? 0) + quantity);
   }
 
-  const allSymbols = new Set<string>([...totalsBySymbol.keys(), ...ledgerBySymbol.keys()]);
+  const allSymbols = new Set<string>([
+    ...totalsBySymbol.keys(),
+    ...ledgerBySymbol.keys(),
+    ...existingReconTodayBySymbol.keys(),
+  ]);
   if (allSymbols.size === 0) {
     return 0;
   }
@@ -1424,20 +1509,19 @@ async function reconcileCcxtBalances(params: {
     })),
   );
 
-  const dateKey = formatDateKey(params.asOf);
   const epsilon = 1e-8;
 
   let reconciled = 0;
 
   for (const symbol of symbolList) {
-    // Derivatives positions are represented by HEDGE transactions, not wallet balances.
-    // Skip balance reconciliation for those assets so futures exposure remains visible.
-    if (hedgeSymbols.has(symbol)) {
+    const assetId = assetMap.get(symbol);
+    if (!assetId) {
       continue;
     }
 
-    const assetId = assetMap.get(symbol);
-    if (!assetId) {
+    // Futures/synthetic exposure rows are tracked in ledger as trade-like quantities.
+    // They do not map 1:1 to spot wallet balances and should never be balance-reconciled.
+    if (syntheticExposureAssetIds.has(assetId)) {
       continue;
     }
 
@@ -1445,30 +1529,33 @@ async function reconcileCcxtBalances(params: {
     const ledgerQty = ledgerBySymbol.get(symbol) ?? 0;
     const delta = exchangeQty - ledgerQty;
 
-    if (!Number.isFinite(delta) || Math.abs(delta) < epsilon) {
+    if (!Number.isFinite(delta)) {
       continue;
     }
 
     const externalReference = `${reconciliationReferencePrefix}${symbol}:${dateKey}`;
     const notes = `CCXT balance reconcile ${symbol} ${dateKey}: exchange=${exchangeQty} ledger=${ledgerQty}`;
 
-    const existing = await prisma.ledgerTransaction.findFirst({
-      where: {
-        account_id: params.accountId,
-        external_reference: externalReference,
-      },
-      select: { id: true, quantity: true },
-    });
+    const existing = existingReconTodayBySymbol.get(symbol);
+
+    if (Math.abs(delta) < epsilon) {
+      if (existing) {
+        await prisma.ledgerTransaction.delete({ where: { id: existing.id } });
+        reconciled += 1;
+      }
+      continue;
+    }
 
     if (existing) {
-      const existingQty = Number(existing.quantity);
-      const adjustedQuantity = Number.isFinite(existingQty) ? existingQty + delta : delta;
+      if (Math.abs(existing.quantity - delta) < epsilon) {
+        continue;
+      }
 
       await prisma.ledgerTransaction.update({
         where: { id: existing.id },
         data: {
           date_time: params.asOf,
-          quantity: String(adjustedQuantity),
+          quantity: String(delta),
           notes,
         },
       });
